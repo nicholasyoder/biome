@@ -2,5 +2,6 @@
 *.pro.autosave*
 .idea/
 .claude/
+.cache/
 build/
 CMakeLists.txt.user

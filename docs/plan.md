@@ -102,11 +102,34 @@ quit on keypress. Run it *nested* inside the current session (wlroots
 auto-detects a nested Wayland/X11 backend) as the fast iteration loop; test
 from a raw TTY via DRM/KMS only occasionally.
 
-**Phase 1 — Minimal functional compositor.**
+**Phase 1 — Minimal functional compositor.** *(done)*
 `xdg-shell` surfaces, pointer/keyboard input via libinput, floating window
 placement (Forest/xfwm4 is a floating WM, not tiling — match that model),
 basic move/resize, XWayland enabled so existing X11 apps run unmodified
 while the rest of Forest migrates. "Minimal but usable" — no polish.
+
+`BiomeToplevel` (`core/main.cpp`) now represents both xdg-shell and Xwayland
+windows behind one type tag, so focus/move/resize/placement are one code
+path instead of two. Xwayland surfaces are split into managed toplevels
+(`server->toplevels`, same treatment as xdg-shell) and unmanaged
+override-redirect surfaces (menus/tooltips/DnD icons — positioned by their
+own client, never focused unless `wlr_xwayland_or_surface_wants_focus()`
+says so, never part of move/resize). New toplevels are centered on the
+output layout with a small per-window cascade offset, rather than left at
+whatever `(0,0)` a client's scene node defaults to.
+
+Xwayland surfaced a third category of C-vs-C++ incompatibility beyond the
+two found in Phase 0: `wlr_xwayland_surface` has a member literally named
+`class` (the X11 `WM_CLASS` hint) — valid C, a reserved keyword in C++, and
+not fixable by `extern "C"` since that only changes linkage, not the
+parser's keyword table. `BiomeWlrootsShim.cmake`'s patching function was
+generalized to take an arbitrary `sed` expression per header and now also
+patches `wlr/xwayland/xwayland.h`, renaming that field to `class_` (same
+offset, same ABI, different source-level name).
+
+Verified via the same nested-X11 dev loop as Phase 0: `foot` (native
+Wayland, draws its own CSD) and `xterm` (Xwayland) running side by side,
+`xterm` centered with a cascade offset from `foot`, both interactive.
 
 **Phase 2 — xfwm4 feature parity.**
 Focus-follows-click, alt-tab, workspaces (if Forest uses them), window
