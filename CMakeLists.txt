@@ -14,4 +14,5 @@ pkg_check_modules(WLROOTS REQUIRED IMPORTED_TARGET wlroots-0.18)
 pkg_check_modules(WAYLAND_SERVER REQUIRED IMPORTED_TARGET wayland-server)
 pkg_check_modules(XKBCOMMON REQUIRED IMPORTED_TARGET xkbcommon)
 
+add_subdirectory(decoration)
 add_subdirectory(core)

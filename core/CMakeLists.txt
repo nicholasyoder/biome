@@ -16,6 +16,7 @@ target_include_directories(biome PRIVATE
     ${BIOME_PROTOCOL_DIR}
 )
 target_link_libraries(biome PRIVATE
+    biome_decoration
     PkgConfig::WLROOTS
     PkgConfig::WAYLAND_SERVER
     PkgConfig::XKBCOMMON

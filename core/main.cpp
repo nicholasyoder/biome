@@ -12,12 +12,25 @@
 
 #include "wlroots.hpp"
 
+#include "decoration/layout.h"
+#include "decoration/renderer.h"
+#include "decoration/switcher.h"
+#include "decoration/theme_colors.h"
+
+#include <QApplication>
+
 #include <cassert>
 #include <cstdlib>
 #include <cstdio>
+#include <cstring>
 #include <ctime>
+#include <drm_fourcc.h>
 #include <getopt.h>
+#include <linux/input-event-codes.h>
+#include <string>
 #include <unistd.h>
+#include <utility>
+#include <vector>
 #include <xcb/xproto.h>
 #include <xkbcommon/xkbcommon.h>
 
@@ -31,14 +44,6 @@ enum class BiomeToplevelType {
     Xdg,
     Xwayland,
 };
-
-// Phase 2: flat-colored SSD border (visual only, no interactive
-// border-drag-resize, no xdg-decoration negotiation - CSD clients like foot
-// will show both their own CSD and this border. Matches sway/river's simple
-// default look, not a full decoration protocol implementation).
-constexpr int kBorderWidth = 2;
-constexpr float kBorderColorFocused[4] = {0.20f, 0.52f, 0.89f, 1.0f};
-constexpr float kBorderColorUnfocused[4] = {0.35f, 0.35f, 0.35f, 1.0f};
 
 // Matches workspace_count in forest/usr/share/forest/xfwm4.xml.
 constexpr int kWorkspaceCount = 4;
@@ -58,6 +63,11 @@ struct BiomeServer {
     wl_listener new_xdg_toplevel = {};
     wl_listener new_xdg_popup = {};
     wl_list toplevels = {};
+
+    // Biome always draws its own decoration (see decoration/), so this just
+    // forces server-side mode on every client that asks - no negotiation.
+    wlr_xdg_decoration_manager_v1 *xdg_decoration_manager = nullptr;
+    wl_listener new_xdg_toplevel_decoration = {};
 
     wlr_xwayland *xwayland = nullptr;
     wl_listener new_xwayland_surface = {};
@@ -82,7 +92,23 @@ struct BiomeServer {
     wlr_box grab_geobox = {};
     uint32_t resize_edges = 0;
 
+    // For double-click-titlebar-to-maximize detection in server_cursor_button.
+    uint32_t last_left_click_time = 0;
+    struct BiomeToplevel *last_left_click_toplevel = nullptr;
+
     int active_workspace = 0;
+
+    // Sourced once at startup from Forest's active QSS theme (falls back to
+    // Biome's own flat colors if Forest's theme files aren't found) - see
+    // decoration/theme_colors.h.
+    biome_decoration::DecorationColors decoration_colors = {};
+
+    // Graphical Alt-Tab switcher overlay. switcher_active tracks whether
+    // Alt is currently held with the switcher shown (set on the first
+    // Tab press, cleared on Alt release - see keyboard_handle_modifiers);
+    // switcher_buffer is created once at startup and just hidden/shown.
+    bool switcher_active = false;
+    wlr_scene_buffer *switcher_buffer = nullptr;
 
     wlr_output_layout *output_layout = nullptr;
     wl_list outputs = {};
@@ -104,13 +130,26 @@ struct BiomeToplevel {
     BiomeToplevelType type = BiomeToplevelType::Xdg;
     int workspace = 0;
 
+    // Set by set_toplevel_maximized. restore_box is the pre-maximize
+    // visible content box (position + size), in output-layout coordinates -
+    // reapplied on un-maximize.
+    bool maximized = false;
+    wlr_box restore_box = {};
+
+    // Set by set_toplevel_minimized. No taskbar exists under Biome yet
+    // (Phase 4), so the only way to restore a minimized window right now is
+    // the graphical Alt-Tab switcher.
+    bool minimized = false;
+
     // scene_tree is the container: its position is the window's on-screen
     // position (what move/resize/focus-raise all act on). content_tree is
-    // the actual surface tree, a child of scene_tree offset by kBorderWidth
-    // so the border rects (also children of scene_tree) can frame it.
+    // the actual surface tree, a child of scene_tree offset by
+    // (kBorderWidth, kTitlebarHeight) so decoration_buffer (also a child of
+    // scene_tree, painted by decoration/renderer.h) can frame it.
     wlr_scene_tree *scene_tree = nullptr;
     wlr_scene_tree *content_tree = nullptr;
-    wlr_scene_rect *border[4] = {}; // top, bottom, left, right
+    wlr_scene_buffer *decoration_buffer = nullptr;
+    bool focused = false; // drives which colors render_toplevel_decoration uses
 
     wlr_xdg_toplevel *xdg_toplevel = nullptr;         // type == Xdg
     wlr_xwayland_surface *xwayland_surface = nullptr; // type == Xwayland
@@ -123,6 +162,14 @@ struct BiomeToplevel {
     wl_listener request_resize = {};
     wl_listener request_maximize = {};
     wl_listener request_fullscreen = {};
+    wl_listener request_minimize = {};
+
+    // xdg only: set by server_new_xdg_toplevel_decoration when a decoration
+    // object arrives before the toplevel's initial commit (the common
+    // case), applied once xdg_toplevel_commit reaches that initial commit -
+    // see the comment there for why it can't be applied immediately.
+    wlr_xdg_toplevel_decoration_v1 *pending_decoration = nullptr;
+    wl_listener pending_decoration_destroy = {};
 
     // Xwayland only: the underlying wlr_surface only exists between
     // associate/dissociate, so map/unmap are (dis)connected there instead
@@ -164,10 +211,29 @@ struct BiomeKeyboard {
     wl_listener destroy = {};
 };
 
+// Forward declarations for a few functions whose natural definition site
+// (following the file's "helpers before callers" convention) comes after
+// some of their callers.
+static void handle_decoration_click(BiomeToplevel *toplevel, biome_decoration::Region region);
+static void set_toplevel_maximized(BiomeToplevel *toplevel, bool maximized);
+static void set_toplevel_minimized(BiomeToplevel *toplevel, bool minimized);
+static void update_switcher_overlay(BiomeServer *server);
+
 static wlr_surface *toplevel_surface(BiomeToplevel *toplevel) {
     return toplevel->type == BiomeToplevelType::Xdg
         ? toplevel->xdg_toplevel->base->surface
         : toplevel->xwayland_surface->surface;
+}
+
+// Asks the client to close itself (the same request a client's own close
+// button/Alt+F4/etc. would send) - doesn't destroy anything directly, the
+// client tears its own surface down via the normal unmap/destroy path.
+static void close_toplevel(BiomeToplevel *toplevel) {
+    if (toplevel->type == BiomeToplevelType::Xdg) {
+        wlr_xdg_toplevel_send_close(toplevel->xdg_toplevel);
+    } else {
+        wlr_xwayland_surface_close(toplevel->xwayland_surface);
+    }
 }
 
 static void toplevel_get_geometry(BiomeToplevel *toplevel, wlr_box *box) {
@@ -202,45 +268,159 @@ static BiomeToplevel *toplevel_from_xwayland(wlr_xwayland_surface *xsurface) {
     return tree ? static_cast<BiomeToplevel *>(tree->node.data) : nullptr;
 }
 
-// Resizes/repositions the 4 border rects to frame content_tree (which sits
-// at a fixed (kBorderWidth, kBorderWidth) offset inside scene_tree). Called
-// whenever a toplevel's content geometry changes.
-static void update_toplevel_decoration(BiomeToplevel *toplevel) {
+// --- Decoration buffer: wraps a decoration/renderer.h RenderedFrame in a
+// minimal software wlr_buffer, so it can be handed to
+// wlr_scene_buffer_set_buffer like any other buffer-backed scene node. ---
+
+struct BiomeDecorationBuffer {
+    wlr_buffer base = {};
+    std::vector<uint8_t> pixels;
+    int stride = 0;
+};
+
+static void decoration_buffer_destroy(wlr_buffer *buf) {
+    BiomeDecorationBuffer *buffer = wl_container_of(buf, buffer, base);
+    delete buffer;
+}
+
+static bool decoration_buffer_begin_data_ptr_access(wlr_buffer *buf,
+        uint32_t flags, void **data, uint32_t *format, size_t *stride) {
+    (void)flags;
+    BiomeDecorationBuffer *buffer = wl_container_of(buf, buffer, base);
+    *data = buffer->pixels.data();
+    *format = DRM_FORMAT_ARGB8888;
+    *stride = static_cast<size_t>(buffer->stride);
+    return true;
+}
+
+static void decoration_buffer_end_data_ptr_access(wlr_buffer *buf) {
+    (void)buf;
+}
+
+// wlr_buffer_impl is a plain field-order aggregate (destroy, get_dmabuf,
+// get_shm, begin_data_ptr_access, end_data_ptr_access) - see
+// wlr/interfaces/wlr_buffer.h. This buffer is CPU-only pixel data, so
+// get_dmabuf/get_shm stay null.
+static const wlr_buffer_impl kDecorationBufferImpl = {
+    decoration_buffer_destroy,
+    nullptr,
+    nullptr,
+    decoration_buffer_begin_data_ptr_access,
+    decoration_buffer_end_data_ptr_access,
+};
+
+// Takes ownership of frame's pixels and wraps them in a new wlr_buffer
+// (refcount 1, per wlr_buffer_init's contract - the caller must drop it
+// once done, e.g. right after handing it to wlr_scene_buffer_set_buffer).
+// Returns nullptr for an empty frame (zero content size).
+static wlr_buffer *create_decoration_buffer(biome_decoration::RenderedFrame &&frame) {
+    if (frame.width <= 0 || frame.height <= 0) {
+        return nullptr;
+    }
+    auto *buffer = new BiomeDecorationBuffer();
+    buffer->stride = frame.stride;
+    buffer->pixels = std::move(frame.pixels);
+    wlr_buffer_init(&buffer->base, &kDecorationBufferImpl, frame.width, frame.height);
+    return &buffer->base;
+}
+
+// Re-renders the full decoration frame (titlebar + border, using
+// toplevel->focused and the server's QSS-derived colors) and uploads it.
+// Called whenever a toplevel's content geometry, focus state, or title
+// changes.
+static void render_toplevel_decoration(BiomeToplevel *toplevel) {
+    if (toplevel == nullptr || toplevel->decoration_buffer == nullptr) {
+        return;
+    }
     wlr_box geo;
     toplevel_get_geometry(toplevel, &geo);
     int width = geo.width > 0 ? geo.width : 0;
     int height = geo.height > 0 ? geo.height : 0;
 
-    wlr_scene_rect_set_size(toplevel->border[0], width + 2 * kBorderWidth, kBorderWidth);
-    wlr_scene_node_set_position(&toplevel->border[0]->node, 0, 0);
+    const char *title = toplevel->type == BiomeToplevelType::Xdg
+        ? toplevel->xdg_toplevel->title
+        : toplevel->xwayland_surface->title;
 
-    wlr_scene_rect_set_size(toplevel->border[1], width + 2 * kBorderWidth, kBorderWidth);
-    wlr_scene_node_set_position(&toplevel->border[1]->node, 0, kBorderWidth + height);
-
-    wlr_scene_rect_set_size(toplevel->border[2], kBorderWidth, height);
-    wlr_scene_node_set_position(&toplevel->border[2]->node, 0, kBorderWidth);
-
-    wlr_scene_rect_set_size(toplevel->border[3], kBorderWidth, height);
-    wlr_scene_node_set_position(&toplevel->border[3]->node, kBorderWidth + width, kBorderWidth);
+    biome_decoration::RenderedFrame frame = biome_decoration::render_decoration(
+        width, height, toplevel->server->decoration_colors, toplevel->focused, title);
+    wlr_buffer *buffer = create_decoration_buffer(std::move(frame));
+    if (buffer == nullptr) {
+        return;
+    }
+    wlr_scene_buffer_set_buffer(toplevel->decoration_buffer, buffer);
+    wlr_buffer_drop(buffer);
 }
 
-static void update_toplevel_border_color(BiomeToplevel *toplevel, bool focused) {
+// Shows/refreshes/hides the Alt-Tab switcher overlay to match
+// server->switcher_active and the current server->toplevels order. Called
+// after every Tab press (handle_keybinding) and on Alt release
+// (keyboard_handle_modifiers). The window list and cycling order are
+// exactly Phase 2's existing MRU logic - this only adds a visual layer on
+// top, it doesn't change which window Tab actually selects.
+static void update_switcher_overlay(BiomeServer *server) {
+    if (!server->switcher_active || wl_list_length(&server->toplevels) < 2) {
+        if (server->switcher_buffer != nullptr) {
+            wlr_scene_node_set_enabled(&server->switcher_buffer->node, false);
+        }
+        return;
+    }
+
+    std::vector<biome_decoration::SwitcherEntry> entries;
+    BiomeToplevel *pos;
+    wl_list_for_each(pos, &server->toplevels, link) {
+        const char *title = pos->type == BiomeToplevelType::Xdg
+            ? pos->xdg_toplevel->title
+            : pos->xwayland_surface->title;
+        const char *app_id = pos->type == BiomeToplevelType::Xdg
+            ? pos->xdg_toplevel->app_id
+            : pos->xwayland_surface->class_;
+        std::string label;
+        if (title != nullptr && title[0] != '\0') {
+            label = title;
+        } else if (app_id != nullptr && app_id[0] != '\0') {
+            label = app_id;
+        } else {
+            label = "(untitled)";
+        }
+        entries.push_back({label});
+    }
+
+    // server->toplevels is MRU-ordered (focus_toplevel keeps the head as
+    // the most-recently-focused), so the currently-focused window - the one
+    // Tab just landed on - is always entry 0.
+    biome_decoration::RenderedFrame frame = biome_decoration::render_switcher(
+        entries, 0, server->decoration_colors);
+    wlr_buffer *buffer = create_decoration_buffer(std::move(frame));
+    if (buffer == nullptr) {
+        wlr_scene_node_set_enabled(&server->switcher_buffer->node, false);
+        return;
+    }
+    wlr_scene_buffer_set_buffer(server->switcher_buffer, buffer);
+    wlr_buffer_drop(buffer);
+
+    wlr_box layout_box;
+    wlr_output_layout_get_box(server->output_layout, nullptr, &layout_box);
+    wlr_scene_node_set_position(&server->switcher_buffer->node,
+        layout_box.x + (layout_box.width - frame.width) / 2,
+        layout_box.y + (layout_box.height - frame.height) / 2);
+    wlr_scene_node_set_enabled(&server->switcher_buffer->node, true);
+    wlr_scene_node_raise_to_top(&server->switcher_buffer->node);
+}
+
+// Creates the (initially empty) decoration_buffer scene node as a child of
+// scene_tree (the container), positioned at its origin. Filled in by
+// render_toplevel_decoration once geometry is known.
+static void create_toplevel_decoration(BiomeToplevel *toplevel) {
+    toplevel->decoration_buffer = wlr_scene_buffer_create(toplevel->scene_tree, nullptr);
+    wlr_scene_node_set_position(&toplevel->decoration_buffer->node, 0, 0);
+}
+
+static void set_toplevel_focused(BiomeToplevel *toplevel, bool focused) {
     if (toplevel == nullptr) {
         return;
     }
-    const float *color = focused ? kBorderColorFocused : kBorderColorUnfocused;
-    for (wlr_scene_rect *rect : toplevel->border) {
-        wlr_scene_rect_set_color(rect, color);
-    }
-}
-
-// Creates the 4 border rects as children of scene_tree (the container).
-// Sized/positioned later by update_toplevel_decoration once geometry is
-// known.
-static void create_toplevel_border(BiomeToplevel *toplevel) {
-    for (wlr_scene_rect *&rect : toplevel->border) {
-        rect = wlr_scene_rect_create(toplevel->scene_tree, 0, 0, kBorderColorUnfocused);
-    }
+    toplevel->focused = focused;
+    render_toplevel_decoration(toplevel);
 }
 
 // Used during interactive resize: xdg-shell only needs the new size (the
@@ -290,13 +470,13 @@ static void focus_toplevel(BiomeToplevel *toplevel, wlr_surface *surface) {
             wlr_xdg_toplevel_try_from_wlr_surface(prev_surface);
         if (prev_xdg_toplevel != nullptr) {
             wlr_xdg_toplevel_set_activated(prev_xdg_toplevel, false);
-            update_toplevel_border_color(toplevel_from_xdg(prev_xdg_toplevel), false);
+            set_toplevel_focused(toplevel_from_xdg(prev_xdg_toplevel), false);
         } else {
             wlr_xwayland_surface *prev_xwayland_surface =
                 wlr_xwayland_surface_try_from_wlr_surface(prev_surface);
             if (prev_xwayland_surface != nullptr) {
                 wlr_xwayland_surface_activate(prev_xwayland_surface, false);
-                update_toplevel_border_color(toplevel_from_xwayland(prev_xwayland_surface), false);
+                set_toplevel_focused(toplevel_from_xwayland(prev_xwayland_surface), false);
             }
         }
     }
@@ -316,7 +496,7 @@ static void focus_toplevel(BiomeToplevel *toplevel, wlr_surface *surface) {
         // sibling stacking order.
         wlr_xwayland_surface_restack(toplevel->xwayland_surface, nullptr, XCB_STACK_MODE_ABOVE);
     }
-    update_toplevel_border_color(toplevel, true);
+    set_toplevel_focused(toplevel, true);
     // Tell the seat to have the keyboard enter this surface. wlroots will
     // keep track of this and automatically send key events to the
     // appropriate clients without additional work on your part.
@@ -339,14 +519,33 @@ static void keyboard_handle_modifiers(wl_listener *listener, void *data) {
     // Send modifiers to the client.
     wlr_seat_keyboard_notify_modifiers(keyboard->server->seat,
         &keyboard->wlr->modifiers);
+
+    // Alt released while the switcher was up (started by a Tab press in
+    // handle_keybinding) - dismiss it. The actual focus change already
+    // happened per-Tab-press, same as Phase 2; this is purely visual.
+    BiomeServer *server = keyboard->server;
+    if (server->switcher_active && !(wlr_keyboard_get_modifiers(keyboard->wlr) & WLR_MODIFIER_ALT)) {
+        server->switcher_active = false;
+        update_switcher_overlay(server);
+    }
+}
+
+// A toplevel's scene node should be enabled iff it's on the active
+// workspace AND not minimized - the two hide-mechanisms are independent
+// (either alone should hide it), so every place that changes either one
+// goes through this instead of setting enabled directly.
+static void update_toplevel_visibility(BiomeToplevel *toplevel) {
+    bool visible = toplevel->workspace == toplevel->server->active_workspace && !toplevel->minimized;
+    wlr_scene_node_set_enabled(&toplevel->scene_tree->node, visible);
 }
 
 // Hands focus to the topmost (most-recently-focused) toplevel that's on the
-// active workspace, or clears keyboard focus if there isn't one.
+// active workspace and not minimized, or clears keyboard focus if there
+// isn't one.
 static void focus_topmost_on_active_workspace(BiomeServer *server) {
     BiomeToplevel *pos;
     wl_list_for_each(pos, &server->toplevels, link) {
-        if (pos->workspace == server->active_workspace) {
+        if (pos->workspace == server->active_workspace && !pos->minimized) {
             focus_toplevel(pos, toplevel_surface(pos));
             return;
         }
@@ -373,7 +572,7 @@ static void switch_workspace(BiomeServer *server, int index) {
 
     BiomeToplevel *pos;
     wl_list_for_each(pos, &server->toplevels, link) {
-        wlr_scene_node_set_enabled(&pos->scene_tree->node, pos->workspace == index);
+        update_toplevel_visibility(pos);
     }
     // The pointer may be sitting over a surface that just got hidden;
     // clear its focus so stale events don't reach it. It'll be re-resolved
@@ -389,7 +588,7 @@ static void move_toplevel_to_workspace(BiomeToplevel *toplevel, int index) {
         return;
     }
     toplevel->workspace = index;
-    wlr_scene_node_set_enabled(&toplevel->scene_tree->node, index == server->active_workspace);
+    update_toplevel_visibility(toplevel);
     if (server->seat->keyboard_state.focused_surface == toplevel_surface(toplevel) &&
             index != server->active_workspace) {
         wlr_seat_pointer_clear_focus(server->seat);
@@ -440,7 +639,14 @@ static bool handle_keybinding(BiomeServer *server, xkb_keysym_t sym, uint32_t mo
             // Rotate the least-recently-used window to the front.
             target = wl_container_of(server->toplevels.prev, target, link);
         }
+        if (target->minimized) {
+            // Cycling to a minimized window should bring it back, not just
+            // hand it invisible keyboard focus.
+            set_toplevel_minimized(target, false);
+        }
         focus_toplevel(target, toplevel_surface(target));
+        server->switcher_active = true;
+        update_switcher_overlay(server);
         return true;
     }
     case XKB_KEY_Left:
@@ -643,6 +849,64 @@ static BiomeToplevel *desktop_toplevel_at(
     return tree ? static_cast<BiomeToplevel *>(tree->node.data) : nullptr;
 }
 
+// Like desktop_toplevel_at, but for Biome's own decoration_buffer nodes
+// instead of client surfaces - the topmost-node lookup is what makes this
+// respect real stacking order (a focused window's decoration correctly
+// occludes a window behind it), the same as desktop_toplevel_at does for
+// content. Returns nullptr (region left untouched) if the point isn't over
+// any toplevel's decoration - including when it's over a client surface,
+// or over the empty interior gap decoration/layout.h's hit_test leaves for
+// desktop_toplevel_at to handle instead.
+static BiomeToplevel *decoration_toplevel_at(
+        BiomeServer *server, double lx, double ly, biome_decoration::Region *out_region) {
+    double sx, sy;
+    wlr_scene_node *node = wlr_scene_node_at(&server->scene->tree.node, lx, ly, &sx, &sy);
+    if (node == nullptr || node->type != WLR_SCENE_NODE_BUFFER) {
+        return nullptr;
+    }
+    wlr_scene_buffer *scene_buffer = wlr_scene_buffer_from_node(node);
+    if (wlr_scene_surface_try_from_buffer(scene_buffer) != nullptr) {
+        // A real client surface, not our decoration.
+        return nullptr;
+    }
+
+    wlr_scene_tree *tree = node->parent;
+    while (tree != nullptr && tree->node.data == nullptr) {
+        tree = tree->node.parent;
+    }
+    BiomeToplevel *toplevel = tree ? static_cast<BiomeToplevel *>(tree->node.data) : nullptr;
+    if (toplevel == nullptr) {
+        return nullptr;
+    }
+
+    wlr_box geo;
+    toplevel_get_geometry(toplevel, &geo);
+    int width = geo.width > 0 ? geo.width : 0;
+    int height = geo.height > 0 ? geo.height : 0;
+    biome_decoration::Region region =
+        biome_decoration::hit_test(static_cast<int>(sx), static_cast<int>(sy), width, height);
+    if (region == biome_decoration::Region::None) {
+        return nullptr;
+    }
+    *out_region = region;
+    return toplevel;
+}
+
+static const char *resize_cursor_name(biome_decoration::Region region) {
+    using biome_decoration::Region;
+    switch (region) {
+    case Region::ResizeN: return "n-resize";
+    case Region::ResizeS: return "s-resize";
+    case Region::ResizeE: return "e-resize";
+    case Region::ResizeW: return "w-resize";
+    case Region::ResizeNE: return "ne-resize";
+    case Region::ResizeNW: return "nw-resize";
+    case Region::ResizeSE: return "se-resize";
+    case Region::ResizeSW: return "sw-resize";
+    default: return "default";
+    }
+}
+
 static void reset_cursor_mode(BiomeServer *server) {
     // Reset the cursor mode to passthrough.
     server->cursor_mode = BiomeCursorMode::Passthrough;
@@ -658,7 +922,7 @@ static void process_cursor_move(BiomeServer *server, uint32_t time) {
     wlr_scene_node_set_position(&toplevel->scene_tree->node, x, y);
     // The X server has no notion of our border - tell it about the visible
     // content position, not the container's.
-    toplevel_sync_position(toplevel, x + kBorderWidth, y + kBorderWidth);
+    toplevel_sync_position(toplevel, x + biome_decoration::kBorderWidth, y + biome_decoration::kTitlebarHeight);
 }
 
 static void process_cursor_resize(BiomeServer *server, uint32_t time) {
@@ -705,12 +969,13 @@ static void process_cursor_resize(BiomeServer *server, uint32_t time) {
     wlr_box geo_box;
     toplevel_get_geometry(toplevel, &geo_box);
     wlr_scene_node_set_position(&toplevel->scene_tree->node,
-        new_left - geo_box.x - kBorderWidth, new_top - geo_box.y - kBorderWidth);
+        new_left - geo_box.x - biome_decoration::kBorderWidth,
+        new_top - geo_box.y - biome_decoration::kTitlebarHeight);
 
     int new_width = new_right - new_left;
     int new_height = new_bottom - new_top;
     toplevel_set_size(toplevel, new_left - geo_box.x, new_top - geo_box.y, new_width, new_height);
-    update_toplevel_decoration(toplevel);
+    render_toplevel_decoration(toplevel);
 }
 
 static void process_cursor_motion(BiomeServer *server, uint32_t time) {
@@ -730,10 +995,13 @@ static void process_cursor_motion(BiomeServer *server, uint32_t time) {
     BiomeToplevel *toplevel = desktop_toplevel_at(server,
         server->cursor->x, server->cursor->y, &surface, &sx, &sy);
     if (!toplevel) {
-        // If there's no toplevel under the cursor, set the cursor image to
-        // a default. This is what makes the cursor image appear when you
-        // move it around the screen, not over any toplevels.
-        wlr_cursor_set_xcursor(server->cursor, server->cursor_mgr, "default");
+        // No client surface under the cursor - either nothing at all, or
+        // our own decoration (border/titlebar/buttons). Either way, this is
+        // what makes the cursor image appear/update as it moves around,
+        // including resize-direction hints over a window's edges.
+        biome_decoration::Region region = biome_decoration::Region::None;
+        decoration_toplevel_at(server, server->cursor->x, server->cursor->y, &region);
+        wlr_cursor_set_xcursor(server->cursor, server->cursor_mgr, resize_cursor_name(region));
     }
     if (surface) {
         // Send pointer enter and motion events.
@@ -789,17 +1057,46 @@ static void server_cursor_button(wl_listener *listener, void *data) {
     // Notify the client with pointer focus that a button press has occurred
     wlr_seat_pointer_notify_button(server->seat,
         event->time_msec, event->button, event->state);
+
+    if (event->state == WL_POINTER_BUTTON_STATE_RELEASED) {
+        // If you released any buttons, we exit interactive move/resize mode.
+        reset_cursor_mode(server);
+        return;
+    }
+
+    // A press over our own decoration (titlebar, border, or a button) is
+    // handled entirely by Biome - it never reaches desktop_toplevel_at's
+    // client-surface lookup below.
+    biome_decoration::Region region = biome_decoration::Region::None;
+    BiomeToplevel *decoration_toplevel = decoration_toplevel_at(
+        server, server->cursor->x, server->cursor->y, &region);
+    if (decoration_toplevel != nullptr) {
+        focus_toplevel(decoration_toplevel, toplevel_surface(decoration_toplevel));
+        if (event->button == BTN_LEFT) {
+            constexpr uint32_t kDoubleClickMs = 400;
+            if (region == biome_decoration::Region::Titlebar &&
+                    server->last_left_click_toplevel == decoration_toplevel &&
+                    event->time_msec - server->last_left_click_time <= kDoubleClickMs) {
+                // Double-click on the titlebar toggles maximize, standard
+                // WM convention - consume the click pair so a third quick
+                // click doesn't immediately toggle it back again.
+                set_toplevel_maximized(decoration_toplevel, !decoration_toplevel->maximized);
+                server->last_left_click_toplevel = nullptr;
+            } else {
+                server->last_left_click_toplevel = decoration_toplevel;
+                server->last_left_click_time = event->time_msec;
+                handle_decoration_click(decoration_toplevel, region);
+            }
+        }
+        return;
+    }
+
     double sx, sy;
     wlr_surface *surface = nullptr;
     BiomeToplevel *toplevel = desktop_toplevel_at(server,
         server->cursor->x, server->cursor->y, &surface, &sx, &sy);
-    if (event->state == WL_POINTER_BUTTON_STATE_RELEASED) {
-        // If you released any buttons, we exit interactive move/resize mode.
-        reset_cursor_mode(server);
-    } else {
-        // Focus that client if the button was _pressed_
-        focus_toplevel(toplevel, surface);
-    }
+    // Focus that client if the button was _pressed_
+    focus_toplevel(toplevel, surface);
 }
 
 static void server_cursor_axis(wl_listener *listener, void *data) {
@@ -950,8 +1247,8 @@ static void place_new_toplevel(BiomeToplevel *toplevel) {
     if (parent != nullptr) {
         wlr_box parent_geo;
         toplevel_get_geometry(parent, &parent_geo);
-        int parent_vis_x = static_cast<int>(parent->scene_tree->node.x) + kBorderWidth + parent_geo.x;
-        int parent_vis_y = static_cast<int>(parent->scene_tree->node.y) + kBorderWidth + parent_geo.y;
+        int parent_vis_x = static_cast<int>(parent->scene_tree->node.x) + biome_decoration::kBorderWidth + parent_geo.x;
+        int parent_vis_y = static_cast<int>(parent->scene_tree->node.y) + biome_decoration::kTitlebarHeight + parent_geo.y;
         vis_x = parent_vis_x + (parent_geo.width - width) / 2;
         vis_y = parent_vis_y + (parent_geo.height - height) / 2;
         toplevel->workspace = parent->workspace;
@@ -969,9 +1266,96 @@ static void place_new_toplevel(BiomeToplevel *toplevel) {
     }
 
     wlr_scene_node_set_position(&toplevel->scene_tree->node,
-        vis_x - kBorderWidth, vis_y - kBorderWidth);
+        vis_x - biome_decoration::kBorderWidth, vis_y - biome_decoration::kTitlebarHeight);
     toplevel_sync_position(toplevel, vis_x, vis_y);
-    wlr_scene_node_set_enabled(&toplevel->scene_tree->node, toplevel->workspace == server->active_workspace);
+    update_toplevel_visibility(toplevel);
+}
+
+// The output the toplevel is currently (mostly) on, by its visible
+// content's top-left corner - falls back to the full output layout extents
+// (all outputs combined) if that point isn't on any output, same fallback
+// place_new_toplevel uses for centering.
+static wlr_box maximize_target_box(BiomeToplevel *toplevel) {
+    BiomeServer *server = toplevel->server;
+    double vis_x = toplevel->scene_tree->node.x + biome_decoration::kBorderWidth;
+    double vis_y = toplevel->scene_tree->node.y + biome_decoration::kTitlebarHeight;
+
+    wlr_output *output = wlr_output_layout_output_at(server->output_layout, vis_x, vis_y);
+    wlr_box box = {};
+    wlr_output_layout_get_box(server->output_layout, output, &box);
+    return box;
+}
+
+// Real maximize/restore: no work-area reservation yet (no panel exists
+// under Biome until Phase 4), so this simply fills the current output.
+static void set_toplevel_maximized(BiomeToplevel *toplevel, bool maximized) {
+    if (toplevel->maximized == maximized) {
+        return;
+    }
+
+    if (maximized) {
+        wlr_box geo;
+        toplevel_get_geometry(toplevel, &geo);
+        toplevel->restore_box.x =
+            static_cast<int>(toplevel->scene_tree->node.x) + biome_decoration::kBorderWidth;
+        toplevel->restore_box.y =
+            static_cast<int>(toplevel->scene_tree->node.y) + biome_decoration::kTitlebarHeight;
+        toplevel->restore_box.width = geo.width;
+        toplevel->restore_box.height = geo.height;
+
+        wlr_box target = maximize_target_box(toplevel);
+        if (wlr_box_empty(&target)) {
+            return;
+        }
+        toplevel->maximized = true;
+        wlr_scene_node_set_position(&toplevel->scene_tree->node,
+            target.x - biome_decoration::kBorderWidth, target.y - biome_decoration::kTitlebarHeight);
+        toplevel_set_size(toplevel, target.x, target.y, target.width, target.height);
+        toplevel_sync_position(toplevel, target.x, target.y);
+    } else {
+        toplevel->maximized = false;
+        wlr_box restore = toplevel->restore_box;
+        wlr_scene_node_set_position(&toplevel->scene_tree->node,
+            restore.x - biome_decoration::kBorderWidth, restore.y - biome_decoration::kTitlebarHeight);
+        toplevel_set_size(toplevel, restore.x, restore.y, restore.width, restore.height);
+        toplevel_sync_position(toplevel, restore.x, restore.y);
+    }
+
+    if (toplevel->type == BiomeToplevelType::Xdg) {
+        wlr_xdg_toplevel_set_maximized(toplevel->xdg_toplevel, maximized);
+    } else {
+        wlr_xwayland_surface_set_maximized(toplevel->xwayland_surface, maximized);
+    }
+    render_toplevel_decoration(toplevel);
+}
+
+// Minimize just hides the toplevel (update_toplevel_visibility) and moves
+// focus elsewhere if it was focused - there's no taskbar under Biome yet
+// (Phase 4's foreign-toplevel-management work) for the usual "click to
+// restore", so the graphical Alt-Tab switcher is the only way back for now.
+static void set_toplevel_minimized(BiomeToplevel *toplevel, bool minimized) {
+    if (toplevel->minimized == minimized) {
+        return;
+    }
+    toplevel->minimized = minimized;
+    update_toplevel_visibility(toplevel);
+
+    BiomeServer *server = toplevel->server;
+    if (minimized) {
+        if (server->seat->keyboard_state.focused_surface == toplevel_surface(toplevel)) {
+            wlr_seat_pointer_clear_focus(server->seat);
+            focus_topmost_on_active_workspace(server);
+        }
+    } else {
+        focus_toplevel(toplevel, toplevel_surface(toplevel));
+    }
+
+    // xdg-shell has no "minimized" configure state to ack (unlike
+    // maximize/fullscreen - minimize is a one-way client request with
+    // nothing for the compositor to reply with). Xwayland does track it.
+    if (toplevel->type == BiomeToplevelType::Xwayland) {
+        wlr_xwayland_surface_set_minimized(toplevel->xwayland_surface, minimized);
+    }
 }
 
 // Shared between xdg-shell and Xwayland: called once the underlying
@@ -981,7 +1365,7 @@ static void toplevel_map(wl_listener *listener, void *data) {
     BiomeToplevel *toplevel = wl_container_of(listener, toplevel, map);
 
     place_new_toplevel(toplevel);
-    update_toplevel_decoration(toplevel);
+    render_toplevel_decoration(toplevel);
     wl_list_insert(&toplevel->server->toplevels, &toplevel->link);
     focus_toplevel(toplevel, toplevel_surface(toplevel));
 }
@@ -1010,11 +1394,17 @@ static void xdg_toplevel_commit(wl_listener *listener, void *data) {
         // Biome configures the xdg_toplevel with 0,0 size to let the client
         // pick the dimensions itself.
         wlr_xdg_toplevel_set_size(toplevel->xdg_toplevel, 0, 0);
+        if (toplevel->pending_decoration != nullptr) {
+            wl_list_remove(&toplevel->pending_decoration_destroy.link);
+            wlr_xdg_toplevel_decoration_v1_set_mode(
+                toplevel->pending_decoration, WLR_XDG_TOPLEVEL_DECORATION_V1_MODE_SERVER_SIDE);
+            toplevel->pending_decoration = nullptr;
+        }
         return;
     }
-    // The client may have resized itself (e.g. due to a content change)
-    // outside of an interactive grab - keep the border in sync.
-    update_toplevel_decoration(toplevel);
+    // The client may have resized itself, or changed its title, outside of
+    // an interactive grab - keep the decoration in sync.
+    render_toplevel_decoration(toplevel);
 }
 
 static void xdg_toplevel_destroy(wl_listener *listener, void *data) {
@@ -1030,6 +1420,15 @@ static void xdg_toplevel_destroy(wl_listener *listener, void *data) {
     wl_list_remove(&toplevel->request_resize.link);
     wl_list_remove(&toplevel->request_maximize.link);
     wl_list_remove(&toplevel->request_fullscreen.link);
+    wl_list_remove(&toplevel->request_minimize.link);
+    if (toplevel->pending_decoration != nullptr) {
+        // The toplevel is being destroyed before ever reaching its initial
+        // commit (e.g. a client that creates a decoration object then
+        // disconnects) - drop the listener registered on the decoration's
+        // own destroy signal before this toplevel (and that listener along
+        // with it) is freed below.
+        wl_list_remove(&toplevel->pending_decoration_destroy.link);
+    }
 
     // Unlike Phase 1, scene_tree is a plain wlr_scene_tree_create() we
     // allocated ourselves (to hold the border rects), not one tied to the
@@ -1040,15 +1439,24 @@ static void xdg_toplevel_destroy(wl_listener *listener, void *data) {
     free(toplevel);
 }
 
-static void begin_interactive(BiomeToplevel *toplevel, BiomeCursorMode mode, uint32_t edges) {
+// check_pointer_focus should be true for client-requested moves/resizes
+// (xdg-shell/Xwayland request_move/request_resize - an unfocused client
+// could send these unprompted, so they're checked against actual pointer
+// focus) and false for moves/resizes Biome itself initiates from a
+// decoration click (decoration_toplevel_at already found this exact
+// toplevel under the cursor, so there's nothing to spoof).
+static void begin_interactive(BiomeToplevel *toplevel, BiomeCursorMode mode, uint32_t edges,
+        bool check_pointer_focus) {
     // This function sets up an interactive move or resize operation, where
     // the compositor stops propagating pointer events to clients and
     // instead consumes them itself, to move or resize windows.
     BiomeServer *server = toplevel->server;
-    wlr_surface *focused_surface = server->seat->pointer_state.focused_surface;
-    if (toplevel_surface(toplevel) != wlr_surface_get_root_surface(focused_surface)) {
-        // Deny move/resize requests from unfocused clients.
-        return;
+    if (check_pointer_focus) {
+        wlr_surface *focused_surface = server->seat->pointer_state.focused_surface;
+        if (toplevel_surface(toplevel) != wlr_surface_get_root_surface(focused_surface)) {
+            // Deny move/resize requests from unfocused clients.
+            return;
+        }
     }
     server->grabbed_toplevel = toplevel;
     server->cursor_mode = mode;
@@ -1060,18 +1468,71 @@ static void begin_interactive(BiomeToplevel *toplevel, BiomeCursorMode mode, uin
         wlr_box geo_box;
         toplevel_get_geometry(toplevel, &geo_box);
 
-        double border_x = (toplevel->scene_tree->node.x + kBorderWidth + geo_box.x) +
+        double border_x = (toplevel->scene_tree->node.x + biome_decoration::kBorderWidth + geo_box.x) +
             ((edges & WLR_EDGE_RIGHT) ? geo_box.width : 0);
-        double border_y = (toplevel->scene_tree->node.y + kBorderWidth + geo_box.y) +
+        double border_y = (toplevel->scene_tree->node.y + biome_decoration::kTitlebarHeight + geo_box.y) +
             ((edges & WLR_EDGE_BOTTOM) ? geo_box.height : 0);
         server->grab_x = server->cursor->x - border_x;
         server->grab_y = server->cursor->y - border_y;
 
         server->grab_geobox = geo_box;
-        server->grab_geobox.x += static_cast<int>(toplevel->scene_tree->node.x) + kBorderWidth;
-        server->grab_geobox.y += static_cast<int>(toplevel->scene_tree->node.y) + kBorderWidth;
+        server->grab_geobox.x += static_cast<int>(toplevel->scene_tree->node.x) + biome_decoration::kBorderWidth;
+        server->grab_geobox.y += static_cast<int>(toplevel->scene_tree->node.y) + biome_decoration::kTitlebarHeight;
 
         server->resize_edges = edges;
+    }
+}
+
+// Dispatches a left-click hit-test result from decoration_toplevel_at (see
+// server_cursor_button) - the click has already focused/raised toplevel by
+// this point. Button regions are no-ops for now (wired up in later
+// subtasks: maximize, close, minimize).
+static void handle_decoration_click(BiomeToplevel *toplevel, biome_decoration::Region region) {
+    using biome_decoration::Region;
+    switch (region) {
+    case Region::Titlebar:
+        // Grabbing the titlebar of a maximized window un-maximizes it
+        // first, then starts the move as normal - standard WM convention.
+        if (toplevel->maximized) {
+            set_toplevel_maximized(toplevel, false);
+        }
+        begin_interactive(toplevel, BiomeCursorMode::Move, 0, false);
+        break;
+    case Region::ResizeN:
+        begin_interactive(toplevel, BiomeCursorMode::Resize, WLR_EDGE_TOP, false);
+        break;
+    case Region::ResizeS:
+        begin_interactive(toplevel, BiomeCursorMode::Resize, WLR_EDGE_BOTTOM, false);
+        break;
+    case Region::ResizeE:
+        begin_interactive(toplevel, BiomeCursorMode::Resize, WLR_EDGE_RIGHT, false);
+        break;
+    case Region::ResizeW:
+        begin_interactive(toplevel, BiomeCursorMode::Resize, WLR_EDGE_LEFT, false);
+        break;
+    case Region::ResizeNE:
+        begin_interactive(toplevel, BiomeCursorMode::Resize, WLR_EDGE_TOP | WLR_EDGE_RIGHT, false);
+        break;
+    case Region::ResizeNW:
+        begin_interactive(toplevel, BiomeCursorMode::Resize, WLR_EDGE_TOP | WLR_EDGE_LEFT, false);
+        break;
+    case Region::ResizeSE:
+        begin_interactive(toplevel, BiomeCursorMode::Resize, WLR_EDGE_BOTTOM | WLR_EDGE_RIGHT, false);
+        break;
+    case Region::ResizeSW:
+        begin_interactive(toplevel, BiomeCursorMode::Resize, WLR_EDGE_BOTTOM | WLR_EDGE_LEFT, false);
+        break;
+    case Region::ButtonMaximize:
+        set_toplevel_maximized(toplevel, !toplevel->maximized);
+        break;
+    case Region::ButtonClose:
+        close_toplevel(toplevel);
+        break;
+    case Region::ButtonMinimize:
+        set_toplevel_minimized(toplevel, true);
+        break;
+    case Region::None:
+        break;
     }
 }
 
@@ -1086,7 +1547,7 @@ static void toplevel_request_move(wl_listener *listener, void *data) {
     // this client, to prevent the client from requesting this whenever they
     // want.
     BiomeToplevel *toplevel = wl_container_of(listener, toplevel, request_move);
-    begin_interactive(toplevel, BiomeCursorMode::Move, 0);
+    begin_interactive(toplevel, BiomeCursorMode::Move, 0, true);
 }
 
 static void xdg_toplevel_request_resize(wl_listener *listener, void *data) {
@@ -1098,21 +1559,27 @@ static void xdg_toplevel_request_resize(wl_listener *listener, void *data) {
     // want.
     auto *event = static_cast<wlr_xdg_toplevel_resize_event *>(data);
     BiomeToplevel *toplevel = wl_container_of(listener, toplevel, request_resize);
-    begin_interactive(toplevel, BiomeCursorMode::Resize, event->edges);
+    begin_interactive(toplevel, BiomeCursorMode::Resize, event->edges, true);
 }
 
 static void xdg_toplevel_request_maximize(wl_listener *listener, void *data) {
     (void)data;
-    // This event is raised when a client would like to maximize itself,
-    // typically because the user clicked on the maximize button on
-    // client-side decorations. Biome doesn't support maximization, but to
-    // conform to xdg-shell protocol we still must send a configure.
-    // wlr_xdg_surface_schedule_configure() is used to send an empty reply.
-    // However, if the request was sent before an initial commit, we don't
-    // do anything and let the client finish the initial surface setup.
+    // This event is raised when a client would like to maximize (or
+    // unmaximize - both go through this one signal, distinguished by
+    // requested.maximized) itself, typically its own titlebar's maximize
+    // button for a CSD client. If the request was sent before an initial
+    // commit, don't do anything and let the client finish its initial setup.
     BiomeToplevel *toplevel = wl_container_of(listener, toplevel, request_maximize);
-    if (toplevel->xdg_toplevel->base->initialized) {
-        wlr_xdg_surface_schedule_configure(toplevel->xdg_toplevel->base);
+    if (!toplevel->xdg_toplevel->base->initialized) {
+        return;
+    }
+    bool requested = toplevel->xdg_toplevel->requested.maximized;
+    bool was_maximized = toplevel->maximized;
+    set_toplevel_maximized(toplevel, requested);
+    if (was_maximized == requested) {
+        // set_toplevel_maximized no-op'd (already in the requested state),
+        // but xdg-shell still requires a configure reply to every request.
+        wlr_xdg_toplevel_set_maximized(toplevel->xdg_toplevel, requested);
     }
 }
 
@@ -1123,6 +1590,14 @@ static void xdg_toplevel_request_fullscreen(wl_listener *listener, void *data) {
     if (toplevel->xdg_toplevel->base->initialized) {
         wlr_xdg_surface_schedule_configure(toplevel->xdg_toplevel->base);
     }
+}
+
+static void xdg_toplevel_request_minimize(wl_listener *listener, void *data) {
+    (void)data;
+    // Unlike maximize/fullscreen, xdg-shell has no configure state for
+    // minimized and thus no acknowledgment requirement - just act on it.
+    BiomeToplevel *toplevel = wl_container_of(listener, toplevel, request_minimize);
+    set_toplevel_minimized(toplevel, toplevel->xdg_toplevel->requested.minimized);
 }
 
 static void server_new_xdg_toplevel(wl_listener *listener, void *data) {
@@ -1138,12 +1613,13 @@ static void server_new_xdg_toplevel(wl_listener *listener, void *data) {
 
     toplevel->scene_tree = wlr_scene_tree_create(&toplevel->server->scene->tree);
     toplevel->scene_tree->node.data = toplevel;
-    create_toplevel_border(toplevel);
+    create_toplevel_decoration(toplevel);
 
     toplevel->content_tree =
         wlr_scene_xdg_surface_create(toplevel->scene_tree, xdg_toplevel->base);
     toplevel->content_tree->node.data = toplevel;
-    wlr_scene_node_set_position(&toplevel->content_tree->node, kBorderWidth, kBorderWidth);
+    wlr_scene_node_set_position(&toplevel->content_tree->node,
+        biome_decoration::kBorderWidth, biome_decoration::kTitlebarHeight);
     xdg_toplevel->base->data = toplevel->content_tree;
 
     // Listen to the various events it can emit
@@ -1165,6 +1641,8 @@ static void server_new_xdg_toplevel(wl_listener *listener, void *data) {
     wl_signal_add(&xdg_toplevel->events.request_maximize, &toplevel->request_maximize);
     toplevel->request_fullscreen.notify = xdg_toplevel_request_fullscreen;
     wl_signal_add(&xdg_toplevel->events.request_fullscreen, &toplevel->request_fullscreen);
+    toplevel->request_minimize.notify = xdg_toplevel_request_minimize;
+    wl_signal_add(&xdg_toplevel->events.request_minimize, &toplevel->request_minimize);
 }
 
 static void xdg_popup_commit(wl_listener *listener, void *data) {
@@ -1218,6 +1696,42 @@ static void server_new_xdg_popup(wl_listener *listener, void *data) {
     wl_signal_add(&xdg_popup->events.destroy, &popup->destroy);
 }
 
+static void pending_decoration_destroy_handler(wl_listener *listener, void *data) {
+    (void)data;
+    BiomeToplevel *toplevel = wl_container_of(listener, toplevel, pending_decoration_destroy);
+    wl_list_remove(&toplevel->pending_decoration_destroy.link);
+    toplevel->pending_decoration = nullptr;
+}
+
+static void server_new_xdg_toplevel_decoration(wl_listener *listener, void *data) {
+    (void)listener;
+    // A client created an xdg_toplevel_decoration object, whether to ask
+    // for server-side or client-side decorations. Biome always draws its
+    // own (decoration/), so the client's request is irrelevant - always
+    // force server-side and skip client-side entirely. This is what
+    // resolves the CSD-double-decoration rough edge from Phase 2: a
+    // CSD-capable client (foot, GTK apps) that honors this now won't draw
+    // its own frame on top of Biome's.
+    auto *decoration = static_cast<wlr_xdg_toplevel_decoration_v1 *>(data);
+    if (decoration->toplevel->base->initialized) {
+        wlr_xdg_toplevel_decoration_v1_set_mode(decoration, WLR_XDG_TOPLEVEL_DECORATION_V1_MODE_SERVER_SIDE);
+        return;
+    }
+    // Not initialized yet - the common case, since clients create their
+    // decoration object before their first surface commit. Setting the
+    // mode now would hit wlroots' "configure scheduled for an
+    // uninitialized xdg_surface" guard and get silently dropped. Defer to
+    // xdg_toplevel_commit's initial_commit handling instead, which is
+    // guaranteed to run after initialization.
+    BiomeToplevel *toplevel = toplevel_from_xdg(decoration->toplevel);
+    if (toplevel == nullptr) {
+        return;
+    }
+    toplevel->pending_decoration = decoration;
+    toplevel->pending_decoration_destroy.notify = pending_decoration_destroy_handler;
+    wl_signal_add(&decoration->events.destroy, &toplevel->pending_decoration_destroy);
+}
+
 // --- Xwayland: managed toplevels -------------------------------------
 
 static void xwayland_toplevel_associate(wl_listener *listener, void *data) {
@@ -1230,7 +1744,8 @@ static void xwayland_toplevel_associate(wl_listener *listener, void *data) {
     toplevel->content_tree =
         wlr_scene_subsurface_tree_create(toplevel->scene_tree, xsurface->surface);
     toplevel->content_tree->node.data = toplevel;
-    wlr_scene_node_set_position(&toplevel->content_tree->node, kBorderWidth, kBorderWidth);
+    wlr_scene_node_set_position(&toplevel->content_tree->node,
+        biome_decoration::kBorderWidth, biome_decoration::kTitlebarHeight);
     xsurface->data = toplevel->content_tree;
 
     toplevel->map.notify = toplevel_map;
@@ -1265,6 +1780,7 @@ static void xwayland_toplevel_destroy(wl_listener *listener, void *data) {
     wl_list_remove(&toplevel->request_resize.link);
     wl_list_remove(&toplevel->request_maximize.link);
     wl_list_remove(&toplevel->request_fullscreen.link);
+    wl_list_remove(&toplevel->request_minimize.link);
     wl_list_remove(&toplevel->request_configure.link);
 
     // scene_tree (the container + border rects) was created up front in
@@ -1278,22 +1794,30 @@ static void xwayland_toplevel_destroy(wl_listener *listener, void *data) {
 static void xwayland_toplevel_request_resize(wl_listener *listener, void *data) {
     auto *event = static_cast<wlr_xwayland_resize_event *>(data);
     BiomeToplevel *toplevel = wl_container_of(listener, toplevel, request_resize);
-    begin_interactive(toplevel, BiomeCursorMode::Resize, event->edges);
+    begin_interactive(toplevel, BiomeCursorMode::Resize, event->edges, true);
 }
 
 static void xwayland_toplevel_request_maximize(wl_listener *listener, void *data) {
     (void)data;
-    // Biome doesn't support maximization yet (matches the xdg-shell path);
-    // explicitly reject so clients don't sit in a "waiting for the WM"
-    // state.
+    // X11 tracks maximize as two independent axes (_NET_WM_STATE_MAXIMIZED_
+    // VERT/HORZ); Biome doesn't offer a partial-axis maximize, so treat
+    // "maximized" as both being requested together.
     BiomeToplevel *toplevel = wl_container_of(listener, toplevel, request_maximize);
-    wlr_xwayland_surface_set_maximized(toplevel->xwayland_surface, false);
+    bool requested = toplevel->xwayland_surface->maximized_vert &&
+        toplevel->xwayland_surface->maximized_horz;
+    set_toplevel_maximized(toplevel, requested);
 }
 
 static void xwayland_toplevel_request_fullscreen(wl_listener *listener, void *data) {
     (void)data;
     BiomeToplevel *toplevel = wl_container_of(listener, toplevel, request_fullscreen);
     wlr_xwayland_surface_set_fullscreen(toplevel->xwayland_surface, false);
+}
+
+static void xwayland_toplevel_request_minimize(wl_listener *listener, void *data) {
+    auto *event = static_cast<wlr_xwayland_minimize_event *>(data);
+    BiomeToplevel *toplevel = wl_container_of(listener, toplevel, request_minimize);
+    set_toplevel_minimized(toplevel, event->minimize);
 }
 
 static void xwayland_toplevel_request_configure(wl_listener *listener, void *data) {
@@ -1307,8 +1831,8 @@ static void xwayland_toplevel_request_configure(wl_listener *listener, void *dat
         event->x, event->y, event->width, event->height);
     if (toplevel->content_tree) {
         wlr_scene_node_set_position(&toplevel->scene_tree->node,
-            event->x - kBorderWidth, event->y - kBorderWidth);
-        update_toplevel_decoration(toplevel);
+            event->x - biome_decoration::kBorderWidth, event->y - biome_decoration::kTitlebarHeight);
+        render_toplevel_decoration(toplevel);
     }
 }
 
@@ -1410,10 +1934,10 @@ static void server_new_xwayland_surface(wl_listener *listener, void *data) {
     toplevel->xwayland_surface = xsurface;
 
     // Created up front (unlike content_tree, which comes and goes with
-    // associate/dissociate) so the border rects survive re-association.
+    // associate/dissociate) so the decoration survives re-association.
     toplevel->scene_tree = wlr_scene_tree_create(&server->scene->tree);
     toplevel->scene_tree->node.data = toplevel;
-    create_toplevel_border(toplevel);
+    create_toplevel_decoration(toplevel);
 
     toplevel->associate.notify = xwayland_toplevel_associate;
     wl_signal_add(&xsurface->events.associate, &toplevel->associate);
@@ -1429,6 +1953,8 @@ static void server_new_xwayland_surface(wl_listener *listener, void *data) {
     wl_signal_add(&xsurface->events.request_maximize, &toplevel->request_maximize);
     toplevel->request_fullscreen.notify = xwayland_toplevel_request_fullscreen;
     wl_signal_add(&xsurface->events.request_fullscreen, &toplevel->request_fullscreen);
+    toplevel->request_minimize.notify = xwayland_toplevel_request_minimize;
+    wl_signal_add(&xsurface->events.request_minimize, &toplevel->request_minimize);
     toplevel->request_configure.notify = xwayland_toplevel_request_configure;
     wl_signal_add(&xsurface->events.request_configure, &toplevel->request_configure);
 }
@@ -1467,7 +1993,19 @@ int main(int argc, char *argv[]) {
         return 0;
     }
 
+    // Offscreen QApplication for the decoration/ Qt renderer - no real
+    // display needed, and Biome never calls exec(): QPainter/QImage
+    // rendering is driven synchronously from this event loop, not a Qt one.
+    // Uses its own fixed argc/argv rather than Biome's real ones, since
+    // Biome's "-s"/"-h" flags are unrelated to Qt's own CLI arguments.
+    qputenv("QT_QPA_PLATFORM", "offscreen");
+    static int qt_argc = 1;
+    static char qt_arg0[] = "biome";
+    static char *qt_argv[] = {qt_arg0, nullptr};
+    QApplication qt_app(qt_argc, qt_argv);
+
     BiomeServer server;
+    server.decoration_colors = biome_decoration::load_decoration_colors();
     // The Wayland display is managed by libwayland. It handles accepting
     // clients from the Unix socket, managing Wayland globals, and so on.
     server.display = wl_display_create();
@@ -1532,6 +2070,12 @@ int main(int argc, char *argv[]) {
     server.scene = wlr_scene_create();
     server.scene_layout = wlr_scene_attach_output_layout(server.scene, server.output_layout);
 
+    // Alt-Tab switcher overlay - created once, hidden until update_switcher_
+    // overlay has something to show. A direct child of the scene root (not
+    // any toplevel's) since it isn't owned by a specific window.
+    server.switcher_buffer = wlr_scene_buffer_create(&server.scene->tree, nullptr);
+    wlr_scene_node_set_enabled(&server.switcher_buffer->node, false);
+
     // Set up xdg-shell version 3. The xdg-shell is a Wayland protocol which
     // is used for application windows.
     wl_list_init(&server.toplevels);
@@ -1540,6 +2084,11 @@ int main(int argc, char *argv[]) {
     wl_signal_add(&server.xdg_shell->events.new_toplevel, &server.new_xdg_toplevel);
     server.new_xdg_popup.notify = server_new_xdg_popup;
     wl_signal_add(&server.xdg_shell->events.new_popup, &server.new_xdg_popup);
+
+    server.xdg_decoration_manager = wlr_xdg_decoration_manager_v1_create(server.display);
+    server.new_xdg_toplevel_decoration.notify = server_new_xdg_toplevel_decoration;
+    wl_signal_add(&server.xdg_decoration_manager->events.new_toplevel_decoration,
+        &server.new_xdg_toplevel_decoration);
 
     // Creates a cursor, which is a wlroots utility for tracking the cursor
     // image shown on screen.

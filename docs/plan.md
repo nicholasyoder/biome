@@ -148,7 +148,8 @@ along; and one window rule — transient windows (dialogs) center on their
 parent instead of the output, matching xfwm4's default dialog placement.
 Note the panel's `deskswitch` plugin itself won't drive Biome's workspaces
 yet — it talks XCB/EWMH directly to xfwm4, and gets replaced by
-Wayland-native IPC in Phase 3.
+Wayland-native IPC in Phase 4 (Forest shell integration, moved back from
+Phase 3 — see the 2026-08-14 note below).
 
 `BiomeToplevel::scene_tree` is now a container: a plain `wlr_scene_tree`
 holding both the border rects and a `content_tree` (the actual xdg/Xwayland
@@ -187,18 +188,123 @@ wired this up. Fixed by passing `&server.session` to
 produces for Ctrl-Alt-F1..F12, calling `wlr_session_change_vt(session, vt)`.
 No-ops safely on nested backends, which have no session.
 
-**Phase 3 — Forest shell integration.**
+**Phase 3 and 4 were swapped on 2026-08-14** (before either was started —
+Phase 2 was the last one built). Original order had Forest shell
+integration first; decorations/polish now comes first instead, so Biome
+gets further along as a standalone, better-feeling compositor before any
+code in `forest/` itself is touched. Everything in the new Phase 3 is
+verifiable through the same nested-session dev loop as Phases 0–2, with no
+Forest process involved — the first phase that actually touches Forest's
+codebase is now Phase 4.
+
+**Phase 3 — Qt-based decorations & polish.** *(window-chrome work done;
+output-management/HiDPI/damage-tracking still open)*
+
+Real Qt-rendered title bars and borders, replacing Phase 2's flat-colored
+`wlr_scene_rect` border entirely. New `decoration/` module (a
+`biome_decoration` static library linked into `core/`):
+`theme_colors.{h,cpp}` sources title bar/border colors from Forest's actual
+QSS theme — not by reusing an existing decoration stylesheet (Forest's QSS
+has none; `fstyleloader` only ever styles Forest's own widget chrome) but
+by reimplementing its theme-cascade resolution standalone (reading
+`~/.config/Forest/Forest.conf`'s active theme, each `theme.conf`'s
+`parent_themes` chain, and the resulting `forest.css` concatenation), then
+applying that stylesheet to an offscreen `QWidget` tagged the same way
+Forest's own code tags its `FSS-color="surface"`/`"pane"` widgets and
+reading back the real QSS-engine-resolved colors — rather than a
+hand-rolled CSS parser. This keeps Biome independently buildable (no
+cross-repo *source* dependency on Forest, only its data files) and falls
+back to Phase 2's flat colors if Forest's theme files aren't found. One
+color stays Biome-native regardless: the focused-border accent, since
+Forest's QSS has no accent/highlight concept to source it from.
+
+`layout.h/cpp` defines the shared titlebar/border geometry and hit-testing
+(titlebar height, border width, 8 resize regions, 3 button hotspots) used
+by both the renderer and `core/main.cpp`'s pointer handling, so painted and
+clickable regions can't drift apart. `renderer.h/cpp` paints the full
+decoration frame (titlebar + border, transparent hole for the client's own
+surface) as one `QImage`, uploaded into the scene graph as a single
+`wlr_scene_buffer` via a small custom software `wlr_buffer` implementation
+in `core/main.cpp` (CPU-only pixel data, `DRM_FORMAT_ARGB8888`) — replacing
+`BiomeToplevel`'s four border rects with one buffer node. `switcher.h/cpp`
+renders the Alt-Tab overlay (below) with the same pipeline.
+
+`xdg-decoration-unstable-v1` is now negotiated: Biome always forces
+server-side mode on any client that creates a decoration object, resolving
+Phase 2's known CSD-double-decoration rough edge. One wrinkle: clients
+typically create that object *before* their first surface commit, and
+setting the mode right then hits wlroots' "configure scheduled for an
+uninitialized xdg_surface" guard and gets silently dropped — fixed by
+deferring the mode-set to `xdg_toplevel_commit`'s `initial_commit` branch
+(guaranteed to run after wlroots' own initialization), tracked via a
+`pending_decoration` pointer with its own destroy-listener safety net.
+
+Border-drag interaction is new too: `decoration_toplevel_at()` (a sibling
+to the existing `desktop_toplevel_at()`, using the same z-order-respecting
+`wlr_scene_node_at()` lookup) resolves a click to a decoration region, and
+`server_cursor_button` dispatches titlebar clicks to interactive move and
+the 8 edge/corner regions to interactive resize — reusing Phase 2's
+move/resize math unchanged, just triggered by a direct border click
+instead of only a client's own `request_move`/`request_resize`. This also
+fixed a pre-existing gap where clicking the flat Phase 2 border did
+nothing at all, not even focus. Hovering the border now shows
+resize-direction cursors.
+
+Maximize, minimize, and close are all real now (previously stubs or
+entirely unwired): maximize fills the current output (no work-area
+reservation yet — no panel exists under Biome until Phase 4) via the
+button, double-click-titlebar (which un-maximizes-then-moves if you grab
+an already-maximized window's titlebar), and both platforms'
+`request_maximize` events; close wires the close button to
+`wlr_xdg_toplevel_send_close()`/`wlr_xwayland_surface_close()`; minimize
+wires the previously-unwired `request_minimize` signals plus a button to
+hiding the toplevel and moving focus elsewhere (`update_toplevel_visibility`
+now combines minimize state with the existing per-workspace visibility
+check, since the two hide-mechanisms have to compose). No taskbar exists
+under Biome yet (Phase 4's foreign-toplevel-management work), so the
+graphical Alt-Tab switcher is currently the only way to restore a
+minimized window — matches xfwm4's own default of showing minimized
+windows in its cycle list.
+
+The graphical Alt-Tab switcher replaces Phase 2's invisible MRU cycling
+with an actual on-screen overlay: a centered panel listing window titles
+(falling back to app_id/class), the focused entry highlighted, shown on
+the first Tab press and dismissed on Alt release. Kept to a text list, not
+live thumbnails, matching the `cycle_preview=false` convention Phase 2
+already mirrored and avoiding a live per-window texture-readback pipeline
+this phase doesn't otherwise need. It reuses Phase 2's exact MRU list and
+cycling logic unchanged — the only functional addition is that cycling
+onto a minimized window now un-minimizes it first, so selecting it
+actually brings it back.
+
+Deliberately deferred, not forgotten: `wlr-output-management-unstable-v1`,
+HiDPI/scaling, and damage-tracking tuning (all named in this phase's
+original scope) weren't built this pass. A right-click titlebar
+window-operations menu, drop shadows, app icons, and live QSS theme-switch
+reload were scoped out from the start as later polish.
+
+Verified via clean builds (zero warnings throughout) and repeated
+nested-X11 crash/orphan smoke tests after every sub-feature, with both
+`foot` (xdg-shell) and `xterm` (Xwayland) clients. Per established
+preference, visual quality and drag/keyboard-driven interaction were left
+to the user's own manual testing rather than the agent self-verifying via
+screenshots or synthetic input. User feedback so far: the title bar
+renders correctly via QSS; the focused border's blue accent is
+intentionally Biome-native rather than a Phase 2 leftover, as clarified
+mid-session — specific styling choices (colors, etc.) are planned for a
+later session.
+
+**Phase 4 — Forest shell integration.**
 Layer-shell for panel + desktop, foreign-toplevel-management for the
 windowlist plugin, DBus hotkey service replacing `qxtglobalshortcut`,
-screencopy for screenshots, idle-notify for the session locker. This is
-where Forest's shell processes become Wayland-native instead of X11
-clients — effectively executing the `xcbutills` replacement that
-`wayland_AI_assessment.md` flagged as the biggest chunk of shell-side work.
-
-**Phase 4 — Qt-based decorations & polish.**
-Real title bars/buttons via the offscreen-Qt renderer, shared QSS theming
-with the panel, output-management protocol for the display settings app,
-HiDPI/scaling, damage tracking tuned for performance.
+screencopy for screenshots, idle-notify for the session locker, and
+wiring the display settings app to `wlr-output-management-unstable-v1`
+(Biome-side protocol support for that still needs to land too, in Phase 3
+or here, whichever comes first). This is where Forest's shell processes
+become Wayland-native instead of X11 clients — effectively executing the
+`xcbutills` replacement that `wayland_AI_assessment.md` flagged as the
+biggest chunk of shell-side work, and the first phase where any `forest/`
+code itself gets modified.
 
 **Phase 5 — Cutover.**
 New `forest-session` variant that execs Biome instead of `xfwm4`, a Wayland
@@ -210,7 +316,7 @@ is solid, then eventually deprecated.
 - **Global hotkeys need a real rewrite, not a port.** Wayland has no
   global-hotkey grab primitive by design (security model), so
   `services/services-app/hotkeys` can't be mechanically translated. Worth
-  prototyping early in Phase 3 since it touches both Biome and Forest.
+  prototyping early in Phase 4 since it touches both Biome and Forest.
 - **Greeter/session integration** (LightDM Wayland session support, a new
   `.desktop` session entry) is Phase 5 infra work, not a blocker for early
   development, but should be scoped before Phase 5 starts.
