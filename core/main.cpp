@@ -1,11 +1,14 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 //
-// Biome Phase 1: minimal functional compositor, still built on tinywl's
-// bones (see git history for the Phase 0 port). This phase adds: XWayland
-// (both managed toplevels and override-redirect popups/menus), and centered
-// floating placement for newly-mapped windows (xfwm4-style, not tiling).
-// A single BiomeToplevel type now represents both xdg-shell and Xwayland
-// windows so focus/move/resize/placement logic is shared between them.
+// Biome Phase 2: xfwm4 feature parity, still built on tinywl's bones (see
+// git history for the Phase 0 port and Phase 1's XWayland/placement work).
+// This phase adds: Alt-Tab/Alt-Shift-Tab MRU window cycling, 4 workspaces
+// (matching Forest's xfwm4 config) with switch/move-window-to hotkeys,
+// transient-dialog placement (centers on parent instead of the output),
+// and a flat-colored SSD focus border. The border needed every toplevel's
+// scene_tree to become a container (border rects + a content_tree holding
+// the actual surface, offset inside it) rather than the surface's own
+// scene tree directly - see docs/plan.md's Phase 2 writeup for the details.
 
 #include "wlroots.hpp"
 
@@ -29,9 +32,23 @@ enum class BiomeToplevelType {
     Xwayland,
 };
 
+// Phase 2: flat-colored SSD border (visual only, no interactive
+// border-drag-resize, no xdg-decoration negotiation - CSD clients like foot
+// will show both their own CSD and this border. Matches sway/river's simple
+// default look, not a full decoration protocol implementation).
+constexpr int kBorderWidth = 2;
+constexpr float kBorderColorFocused[4] = {0.20f, 0.52f, 0.89f, 1.0f};
+constexpr float kBorderColorUnfocused[4] = {0.35f, 0.35f, 0.35f, 1.0f};
+
+// Matches workspace_count in forest/usr/share/forest/xfwm4.xml.
+constexpr int kWorkspaceCount = 4;
+
 struct BiomeServer {
     wl_display *display = nullptr;
     wlr_backend *backend = nullptr;
+    // Only non-null on a real KMS/DRM session (nested Wayland/X11 backends
+    // have none). Needed to hand VT-switching back to the kernel below.
+    wlr_session *session = nullptr;
     wlr_renderer *renderer = nullptr;
     wlr_allocator *allocator = nullptr;
     wlr_scene *scene = nullptr;
@@ -65,6 +82,8 @@ struct BiomeServer {
     wlr_box grab_geobox = {};
     uint32_t resize_edges = 0;
 
+    int active_workspace = 0;
+
     wlr_output_layout *output_layout = nullptr;
     wl_list outputs = {};
     wl_listener new_output = {};
@@ -83,7 +102,15 @@ struct BiomeToplevel {
     wl_list link = {};
     BiomeServer *server = nullptr;
     BiomeToplevelType type = BiomeToplevelType::Xdg;
+    int workspace = 0;
+
+    // scene_tree is the container: its position is the window's on-screen
+    // position (what move/resize/focus-raise all act on). content_tree is
+    // the actual surface tree, a child of scene_tree offset by kBorderWidth
+    // so the border rects (also children of scene_tree) can frame it.
     wlr_scene_tree *scene_tree = nullptr;
+    wlr_scene_tree *content_tree = nullptr;
+    wlr_scene_rect *border[4] = {}; // top, bottom, left, right
 
     wlr_xdg_toplevel *xdg_toplevel = nullptr;         // type == Xdg
     wlr_xwayland_surface *xwayland_surface = nullptr; // type == Xwayland
@@ -154,6 +181,68 @@ static void toplevel_get_geometry(BiomeToplevel *toplevel, wlr_box *box) {
     box->height = toplevel->xwayland_surface->height;
 }
 
+// content_tree->node.data is set to the owning BiomeToplevel for both xdg
+// and Xwayland (mirroring base->data / xsurface->data below), so these can
+// recover a BiomeToplevel from a bare protocol object - used for looking up
+// a parent (transient placement) or the previously-focused surface (border
+// color) without needing a wlr_surface in hand.
+static BiomeToplevel *toplevel_from_xdg(wlr_xdg_toplevel *xdg_toplevel) {
+    if (xdg_toplevel == nullptr) {
+        return nullptr;
+    }
+    auto *tree = static_cast<wlr_scene_tree *>(xdg_toplevel->base->data);
+    return tree ? static_cast<BiomeToplevel *>(tree->node.data) : nullptr;
+}
+
+static BiomeToplevel *toplevel_from_xwayland(wlr_xwayland_surface *xsurface) {
+    if (xsurface == nullptr) {
+        return nullptr;
+    }
+    auto *tree = static_cast<wlr_scene_tree *>(xsurface->data);
+    return tree ? static_cast<BiomeToplevel *>(tree->node.data) : nullptr;
+}
+
+// Resizes/repositions the 4 border rects to frame content_tree (which sits
+// at a fixed (kBorderWidth, kBorderWidth) offset inside scene_tree). Called
+// whenever a toplevel's content geometry changes.
+static void update_toplevel_decoration(BiomeToplevel *toplevel) {
+    wlr_box geo;
+    toplevel_get_geometry(toplevel, &geo);
+    int width = geo.width > 0 ? geo.width : 0;
+    int height = geo.height > 0 ? geo.height : 0;
+
+    wlr_scene_rect_set_size(toplevel->border[0], width + 2 * kBorderWidth, kBorderWidth);
+    wlr_scene_node_set_position(&toplevel->border[0]->node, 0, 0);
+
+    wlr_scene_rect_set_size(toplevel->border[1], width + 2 * kBorderWidth, kBorderWidth);
+    wlr_scene_node_set_position(&toplevel->border[1]->node, 0, kBorderWidth + height);
+
+    wlr_scene_rect_set_size(toplevel->border[2], kBorderWidth, height);
+    wlr_scene_node_set_position(&toplevel->border[2]->node, 0, kBorderWidth);
+
+    wlr_scene_rect_set_size(toplevel->border[3], kBorderWidth, height);
+    wlr_scene_node_set_position(&toplevel->border[3]->node, kBorderWidth + width, kBorderWidth);
+}
+
+static void update_toplevel_border_color(BiomeToplevel *toplevel, bool focused) {
+    if (toplevel == nullptr) {
+        return;
+    }
+    const float *color = focused ? kBorderColorFocused : kBorderColorUnfocused;
+    for (wlr_scene_rect *rect : toplevel->border) {
+        wlr_scene_rect_set_color(rect, color);
+    }
+}
+
+// Creates the 4 border rects as children of scene_tree (the container).
+// Sized/positioned later by update_toplevel_decoration once geometry is
+// known.
+static void create_toplevel_border(BiomeToplevel *toplevel) {
+    for (wlr_scene_rect *&rect : toplevel->border) {
+        rect = wlr_scene_rect_create(toplevel->scene_tree, 0, 0, kBorderColorUnfocused);
+    }
+}
+
 // Used during interactive resize: xdg-shell only needs the new size (the
 // client acks asynchronously and the compositor owns position via the scene
 // graph); Xwayland surfaces track their own absolute geometry, so x/y/width/
@@ -201,11 +290,13 @@ static void focus_toplevel(BiomeToplevel *toplevel, wlr_surface *surface) {
             wlr_xdg_toplevel_try_from_wlr_surface(prev_surface);
         if (prev_xdg_toplevel != nullptr) {
             wlr_xdg_toplevel_set_activated(prev_xdg_toplevel, false);
+            update_toplevel_border_color(toplevel_from_xdg(prev_xdg_toplevel), false);
         } else {
             wlr_xwayland_surface *prev_xwayland_surface =
                 wlr_xwayland_surface_try_from_wlr_surface(prev_surface);
             if (prev_xwayland_surface != nullptr) {
                 wlr_xwayland_surface_activate(prev_xwayland_surface, false);
+                update_toplevel_border_color(toplevel_from_xwayland(prev_xwayland_surface), false);
             }
         }
     }
@@ -225,6 +316,7 @@ static void focus_toplevel(BiomeToplevel *toplevel, wlr_surface *surface) {
         // sibling stacking order.
         wlr_xwayland_surface_restack(toplevel->xwayland_surface, nullptr, XCB_STACK_MODE_ABOVE);
     }
+    update_toplevel_border_color(toplevel, true);
     // Tell the seat to have the keyboard enter this surface. wlroots will
     // keep track of this and automatically send key events to the
     // appropriate clients without additional work on your part.
@@ -249,30 +341,138 @@ static void keyboard_handle_modifiers(wl_listener *listener, void *data) {
         &keyboard->wlr->modifiers);
 }
 
-static bool handle_keybinding(BiomeServer *server, xkb_keysym_t sym) {
+// Hands focus to the topmost (most-recently-focused) toplevel that's on the
+// active workspace, or clears keyboard focus if there isn't one.
+static void focus_topmost_on_active_workspace(BiomeServer *server) {
+    BiomeToplevel *pos;
+    wl_list_for_each(pos, &server->toplevels, link) {
+        if (pos->workspace == server->active_workspace) {
+            focus_toplevel(pos, toplevel_surface(pos));
+            return;
+        }
+    }
+    wlr_seat_keyboard_notify_clear_focus(server->seat);
+}
+
+static int wrap_workspace(int index) {
+    if (index < 0) {
+        return kWorkspaceCount - 1;
+    }
+    if (index >= kWorkspaceCount) {
+        return 0;
+    }
+    return index;
+}
+
+static void switch_workspace(BiomeServer *server, int index) {
+    index = wrap_workspace(index);
+    if (index == server->active_workspace) {
+        return;
+    }
+    server->active_workspace = index;
+
+    BiomeToplevel *pos;
+    wl_list_for_each(pos, &server->toplevels, link) {
+        wlr_scene_node_set_enabled(&pos->scene_tree->node, pos->workspace == index);
+    }
+    // The pointer may be sitting over a surface that just got hidden;
+    // clear its focus so stale events don't reach it. It'll be re-resolved
+    // on the next motion event.
+    wlr_seat_pointer_clear_focus(server->seat);
+    focus_topmost_on_active_workspace(server);
+}
+
+static void move_toplevel_to_workspace(BiomeToplevel *toplevel, int index) {
+    BiomeServer *server = toplevel->server;
+    index = wrap_workspace(index);
+    if (index == toplevel->workspace) {
+        return;
+    }
+    toplevel->workspace = index;
+    wlr_scene_node_set_enabled(&toplevel->scene_tree->node, index == server->active_workspace);
+    if (server->seat->keyboard_state.focused_surface == toplevel_surface(toplevel) &&
+            index != server->active_workspace) {
+        wlr_seat_pointer_clear_focus(server->seat);
+        focus_topmost_on_active_workspace(server);
+    }
+}
+
+static bool handle_keybinding(BiomeServer *server, xkb_keysym_t sym, uint32_t modifiers) {
     // Here we handle compositor keybindings. This is when the compositor is
     // processing keys, rather than passing them on to the client for its
     // own processing.
     //
     // This function assumes Alt is held down.
+    bool ctrl = modifiers & WLR_MODIFIER_CTRL;
+    bool shift = modifiers & WLR_MODIFIER_SHIFT;
+
+    // Ctrl-Alt-F1..F12: hand VT switching back to the session/kernel. Taking
+    // over a KMS/DRM session puts the console in graphics mode, which stops
+    // the kernel from handling these itself - the compositor has to notice
+    // them and call wlr_session_change_vt(), same as every other wlroots
+    // compositor. No-op (but still swallowed) on nested backends, which have
+    // no session and nothing to switch away from.
+    if (sym >= XKB_KEY_XF86Switch_VT_1 && sym <= XKB_KEY_XF86Switch_VT_12) {
+        if (server->session != nullptr) {
+            unsigned vt = static_cast<unsigned>(sym - XKB_KEY_XF86Switch_VT_1 + 1);
+            wlr_session_change_vt(server->session, vt);
+        }
+        return true;
+    }
+
     switch (sym) {
     case XKB_KEY_Escape:
         wl_display_terminate(server->display);
-        break;
-    case XKB_KEY_F1: {
-        // Cycle to the next toplevel
+        return true;
+    case XKB_KEY_Tab:
+    case XKB_KEY_ISO_Left_Tab: {
+        // Alt-Tab / Alt-Shift-Tab: cycle through windows in MRU order, no
+        // live preview (matches xfwm4's cycle_preview=false default).
         if (wl_list_length(&server->toplevels) < 2) {
-            break;
+            return true;
         }
-        BiomeToplevel *next_toplevel =
-            wl_container_of(server->toplevels.prev, next_toplevel, link);
-        focus_toplevel(next_toplevel, toplevel_surface(next_toplevel));
-        break;
+        bool reverse = shift || sym == XKB_KEY_ISO_Left_Tab;
+        BiomeToplevel *target;
+        if (reverse) {
+            // "Previously focused window" - the second entry in MRU order.
+            target = wl_container_of(server->toplevels.next->next, target, link);
+        } else {
+            // Rotate the least-recently-used window to the front.
+            target = wl_container_of(server->toplevels.prev, target, link);
+        }
+        focus_toplevel(target, toplevel_surface(target));
+        return true;
+    }
+    case XKB_KEY_Left:
+    case XKB_KEY_Right: {
+        // Ctrl-Alt-Left/Right: switch workspace. Add Shift to bring the
+        // focused window along.
+        if (!ctrl) {
+            return false;
+        }
+        int dir = (sym == XKB_KEY_Right) ? 1 : -1;
+        int target = server->active_workspace + dir;
+        if (shift && !wl_list_empty(&server->toplevels)) {
+            BiomeToplevel *focused = wl_container_of(server->toplevels.next, focused, link);
+            move_toplevel_to_workspace(focused, target);
+        }
+        switch_workspace(server, target);
+        return true;
+    }
+    case XKB_KEY_1:
+    case XKB_KEY_2:
+    case XKB_KEY_3:
+    case XKB_KEY_4: {
+        // Ctrl-Alt-1..4: jump directly to a workspace.
+        if (!ctrl) {
+            return false;
+        }
+        switch_workspace(server, static_cast<int>(sym - XKB_KEY_1));
+        return true;
     }
     default:
         return false;
     }
-    return true;
 }
 
 static void keyboard_handle_key(wl_listener *listener, void *data) {
@@ -296,7 +496,7 @@ static void keyboard_handle_key(wl_listener *listener, void *data) {
         // If alt is held down and this button was _pressed_, we attempt to
         // process it as a compositor keybinding.
         for (int i = 0; i < nsyms; i++) {
-            handled = handle_keybinding(server, syms[i]);
+            handled = handle_keybinding(server, syms[i], modifiers);
         }
     }
 
@@ -456,7 +656,9 @@ static void process_cursor_move(BiomeServer *server, uint32_t time) {
     int x = static_cast<int>(server->cursor->x - server->grab_x);
     int y = static_cast<int>(server->cursor->y - server->grab_y);
     wlr_scene_node_set_position(&toplevel->scene_tree->node, x, y);
-    toplevel_sync_position(toplevel, x, y);
+    // The X server has no notion of our border - tell it about the visible
+    // content position, not the container's.
+    toplevel_sync_position(toplevel, x + kBorderWidth, y + kBorderWidth);
 }
 
 static void process_cursor_resize(BiomeServer *server, uint32_t time) {
@@ -503,11 +705,12 @@ static void process_cursor_resize(BiomeServer *server, uint32_t time) {
     wlr_box geo_box;
     toplevel_get_geometry(toplevel, &geo_box);
     wlr_scene_node_set_position(&toplevel->scene_tree->node,
-        new_left - geo_box.x, new_top - geo_box.y);
+        new_left - geo_box.x - kBorderWidth, new_top - geo_box.y - kBorderWidth);
 
     int new_width = new_right - new_left;
     int new_height = new_bottom - new_top;
     toplevel_set_size(toplevel, new_left - geo_box.x, new_top - geo_box.y, new_width, new_height);
+    update_toplevel_decoration(toplevel);
 }
 
 static void process_cursor_motion(BiomeServer *server, uint32_t time) {
@@ -720,30 +923,55 @@ static void server_new_output(wl_listener *listener, void *data) {
     wlr_scene_output_layout_add_output(server->scene_layout, l_output, scene_output);
 }
 
-// Places a newly-mapped floating toplevel centered on the output layout,
-// with a small cascading offset per concurrently-open window so repeated
-// launches don't stack exactly on top of each other. This mirrors xfwm4's
-// default (non-tiling) placement rather than anything protocol-driven.
+// Places a newly-mapped floating toplevel. Window rule: a transient window
+// (one with a parent, e.g. a dialog) centers on its parent, matching
+// xfwm4's default dialog placement. Otherwise it's centered on the output
+// layout, with a small cascading offset per concurrently-open window so
+// repeated launches don't stack exactly on top of each other - xfwm4's
+// default (non-tiling) placement, not anything protocol-driven.
 static void place_new_toplevel(BiomeToplevel *toplevel) {
     BiomeServer *server = toplevel->server;
-    wlr_box layout_box;
-    wlr_output_layout_get_box(server->output_layout, nullptr, &layout_box);
-    if (wlr_box_empty(&layout_box)) {
-        return;
-    }
 
     wlr_box geo;
     toplevel_get_geometry(toplevel, &geo);
     int width = geo.width > 0 ? geo.width : 0;
     int height = geo.height > 0 ? geo.height : 0;
 
-    int index = static_cast<int>(wl_list_length(&server->toplevels)) % 8;
-    int cascade = index * 24;
-    int x = layout_box.x + (layout_box.width - width) / 2 + cascade;
-    int y = layout_box.y + (layout_box.height - height) / 2 + cascade;
+    BiomeToplevel *parent = toplevel->type == BiomeToplevelType::Xdg
+        ? toplevel_from_xdg(toplevel->xdg_toplevel->parent)
+        : toplevel_from_xwayland(toplevel->xwayland_surface->parent);
 
-    wlr_scene_node_set_position(&toplevel->scene_tree->node, x, y);
-    toplevel_sync_position(toplevel, x, y);
+    // (vis_x, vis_y): desired top-left of the *visible content*, i.e.
+    // ignoring our border - toplevel_sync_position and the scene node
+    // position (which also needs the border subtracted) are derived from
+    // this below.
+    int vis_x, vis_y;
+
+    if (parent != nullptr) {
+        wlr_box parent_geo;
+        toplevel_get_geometry(parent, &parent_geo);
+        int parent_vis_x = static_cast<int>(parent->scene_tree->node.x) + kBorderWidth + parent_geo.x;
+        int parent_vis_y = static_cast<int>(parent->scene_tree->node.y) + kBorderWidth + parent_geo.y;
+        vis_x = parent_vis_x + (parent_geo.width - width) / 2;
+        vis_y = parent_vis_y + (parent_geo.height - height) / 2;
+        toplevel->workspace = parent->workspace;
+    } else {
+        wlr_box layout_box;
+        wlr_output_layout_get_box(server->output_layout, nullptr, &layout_box);
+        if (wlr_box_empty(&layout_box)) {
+            return;
+        }
+        int index = static_cast<int>(wl_list_length(&server->toplevels)) % 8;
+        int cascade = index * 24;
+        vis_x = layout_box.x + (layout_box.width - width) / 2 + cascade;
+        vis_y = layout_box.y + (layout_box.height - height) / 2 + cascade;
+        toplevel->workspace = server->active_workspace;
+    }
+
+    wlr_scene_node_set_position(&toplevel->scene_tree->node,
+        vis_x - kBorderWidth, vis_y - kBorderWidth);
+    toplevel_sync_position(toplevel, vis_x, vis_y);
+    wlr_scene_node_set_enabled(&toplevel->scene_tree->node, toplevel->workspace == server->active_workspace);
 }
 
 // Shared between xdg-shell and Xwayland: called once the underlying
@@ -753,6 +981,7 @@ static void toplevel_map(wl_listener *listener, void *data) {
     BiomeToplevel *toplevel = wl_container_of(listener, toplevel, map);
 
     place_new_toplevel(toplevel);
+    update_toplevel_decoration(toplevel);
     wl_list_insert(&toplevel->server->toplevels, &toplevel->link);
     focus_toplevel(toplevel, toplevel_surface(toplevel));
 }
@@ -781,7 +1010,11 @@ static void xdg_toplevel_commit(wl_listener *listener, void *data) {
         // Biome configures the xdg_toplevel with 0,0 size to let the client
         // pick the dimensions itself.
         wlr_xdg_toplevel_set_size(toplevel->xdg_toplevel, 0, 0);
+        return;
     }
+    // The client may have resized itself (e.g. due to a content change)
+    // outside of an interactive grab - keep the border in sync.
+    update_toplevel_decoration(toplevel);
 }
 
 static void xdg_toplevel_destroy(wl_listener *listener, void *data) {
@@ -797,6 +1030,12 @@ static void xdg_toplevel_destroy(wl_listener *listener, void *data) {
     wl_list_remove(&toplevel->request_resize.link);
     wl_list_remove(&toplevel->request_maximize.link);
     wl_list_remove(&toplevel->request_fullscreen.link);
+
+    // Unlike Phase 1, scene_tree is a plain wlr_scene_tree_create() we
+    // allocated ourselves (to hold the border rects), not one tied to the
+    // xdg_surface's own lifecycle - we have to destroy it explicitly.
+    // This recursively destroys content_tree and the border rects too.
+    wlr_scene_node_destroy(&toplevel->scene_tree->node);
 
     free(toplevel);
 }
@@ -821,16 +1060,16 @@ static void begin_interactive(BiomeToplevel *toplevel, BiomeCursorMode mode, uin
         wlr_box geo_box;
         toplevel_get_geometry(toplevel, &geo_box);
 
-        double border_x = (toplevel->scene_tree->node.x + geo_box.x) +
+        double border_x = (toplevel->scene_tree->node.x + kBorderWidth + geo_box.x) +
             ((edges & WLR_EDGE_RIGHT) ? geo_box.width : 0);
-        double border_y = (toplevel->scene_tree->node.y + geo_box.y) +
+        double border_y = (toplevel->scene_tree->node.y + kBorderWidth + geo_box.y) +
             ((edges & WLR_EDGE_BOTTOM) ? geo_box.height : 0);
         server->grab_x = server->cursor->x - border_x;
         server->grab_y = server->cursor->y - border_y;
 
         server->grab_geobox = geo_box;
-        server->grab_geobox.x += static_cast<int>(toplevel->scene_tree->node.x);
-        server->grab_geobox.y += static_cast<int>(toplevel->scene_tree->node.y);
+        server->grab_geobox.x += static_cast<int>(toplevel->scene_tree->node.x) + kBorderWidth;
+        server->grab_geobox.y += static_cast<int>(toplevel->scene_tree->node.y) + kBorderWidth;
 
         server->resize_edges = edges;
     }
@@ -896,10 +1135,16 @@ static void server_new_xdg_toplevel(wl_listener *listener, void *data) {
     toplevel->server = server;
     toplevel->type = BiomeToplevelType::Xdg;
     toplevel->xdg_toplevel = xdg_toplevel;
-    toplevel->scene_tree =
-        wlr_scene_xdg_surface_create(&toplevel->server->scene->tree, xdg_toplevel->base);
+
+    toplevel->scene_tree = wlr_scene_tree_create(&toplevel->server->scene->tree);
     toplevel->scene_tree->node.data = toplevel;
-    xdg_toplevel->base->data = toplevel->scene_tree;
+    create_toplevel_border(toplevel);
+
+    toplevel->content_tree =
+        wlr_scene_xdg_surface_create(toplevel->scene_tree, xdg_toplevel->base);
+    toplevel->content_tree->node.data = toplevel;
+    wlr_scene_node_set_position(&toplevel->content_tree->node, kBorderWidth, kBorderWidth);
+    xdg_toplevel->base->data = toplevel->content_tree;
 
     // Listen to the various events it can emit
     toplevel->map.notify = toplevel_map;
@@ -982,9 +1227,11 @@ static void xwayland_toplevel_associate(wl_listener *listener, void *data) {
     BiomeToplevel *toplevel = wl_container_of(listener, toplevel, associate);
     wlr_xwayland_surface *xsurface = toplevel->xwayland_surface;
 
-    toplevel->scene_tree =
-        wlr_scene_subsurface_tree_create(&toplevel->server->scene->tree, xsurface->surface);
-    toplevel->scene_tree->node.data = toplevel;
+    toplevel->content_tree =
+        wlr_scene_subsurface_tree_create(toplevel->scene_tree, xsurface->surface);
+    toplevel->content_tree->node.data = toplevel;
+    wlr_scene_node_set_position(&toplevel->content_tree->node, kBorderWidth, kBorderWidth);
+    xsurface->data = toplevel->content_tree;
 
     toplevel->map.notify = toplevel_map;
     wl_signal_add(&xsurface->surface->events.map, &toplevel->map);
@@ -1000,7 +1247,11 @@ static void xwayland_toplevel_dissociate(wl_listener *listener, void *data) {
     BiomeToplevel *toplevel = wl_container_of(listener, toplevel, dissociate);
     wl_list_remove(&toplevel->map.link);
     wl_list_remove(&toplevel->unmap.link);
-    toplevel->scene_tree = nullptr;
+    toplevel->xwayland_surface->data = nullptr;
+    // content_tree's node is destroyed by wlroots along with the surface
+    // it wraps; scene_tree (the container, and its border rects) persists
+    // in case this surface re-associates later.
+    toplevel->content_tree = nullptr;
 }
 
 static void xwayland_toplevel_destroy(wl_listener *listener, void *data) {
@@ -1015,6 +1266,11 @@ static void xwayland_toplevel_destroy(wl_listener *listener, void *data) {
     wl_list_remove(&toplevel->request_maximize.link);
     wl_list_remove(&toplevel->request_fullscreen.link);
     wl_list_remove(&toplevel->request_configure.link);
+
+    // scene_tree (the container + border rects) was created up front in
+    // server_new_xwayland_surface and outlives any single associate/
+    // dissociate cycle, so we own destroying it.
+    wlr_scene_node_destroy(&toplevel->scene_tree->node);
 
     free(toplevel);
 }
@@ -1049,8 +1305,10 @@ static void xwayland_toplevel_request_configure(wl_listener *listener, void *dat
     auto *event = static_cast<wlr_xwayland_surface_configure_event *>(data);
     wlr_xwayland_surface_configure(toplevel->xwayland_surface,
         event->x, event->y, event->width, event->height);
-    if (toplevel->scene_tree) {
-        wlr_scene_node_set_position(&toplevel->scene_tree->node, event->x, event->y);
+    if (toplevel->content_tree) {
+        wlr_scene_node_set_position(&toplevel->scene_tree->node,
+            event->x - kBorderWidth, event->y - kBorderWidth);
+        update_toplevel_decoration(toplevel);
     }
 }
 
@@ -1151,6 +1409,12 @@ static void server_new_xwayland_surface(wl_listener *listener, void *data) {
     toplevel->type = BiomeToplevelType::Xwayland;
     toplevel->xwayland_surface = xsurface;
 
+    // Created up front (unlike content_tree, which comes and goes with
+    // associate/dissociate) so the border rects survive re-association.
+    toplevel->scene_tree = wlr_scene_tree_create(&server->scene->tree);
+    toplevel->scene_tree->node.data = toplevel;
+    create_toplevel_border(toplevel);
+
     toplevel->associate.notify = xwayland_toplevel_associate;
     wl_signal_add(&xsurface->events.associate, &toplevel->associate);
     toplevel->dissociate.notify = xwayland_toplevel_dissociate;
@@ -1211,7 +1475,7 @@ int main(int argc, char *argv[]) {
     // and output hardware. The autocreate option will choose the most
     // suitable backend based on the current environment, such as opening an
     // X11 window if an X11 server is running.
-    server.backend = wlr_backend_autocreate(wl_display_get_event_loop(server.display), nullptr);
+    server.backend = wlr_backend_autocreate(wl_display_get_event_loop(server.display), &server.session);
     if (server.backend == nullptr) {
         wlr_log(WLR_ERROR, "failed to create wlr_backend");
         return 1;

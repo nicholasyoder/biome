@@ -131,10 +131,61 @@ Verified via the same nested-X11 dev loop as Phase 0: `foot` (native
 Wayland, draws its own CSD) and `xterm` (Xwayland) running side by side,
 `xterm` centered with a cascade offset from `foot`, both interactive.
 
-**Phase 2 — xfwm4 feature parity.**
+**Phase 2 — xfwm4 feature parity.** *(done)*
 Focus-follows-click, alt-tab, workspaces (if Forest uses them), window
 rules, and *simple* SSD (flat-colored focus border only, no Qt yet — matches
 what sway/river do).
+
+Click-to-focus and raise were already implicit in Phase 1's cursor-button
+handler, so this phase's main additions: Alt-Tab/Alt-Shift-Tab now cycle
+focus in MRU order with no live preview (matches xfwm4's
+`cycle_preview=false` default in `forest/usr/share/forest/xfwm4.xml`);
+4 workspaces (matching that same file's `workspace_count=4`, and the
+`deskswitch` panel plugin that drives it — confirmed Forest actually uses
+them before building this), switched via Ctrl-Alt-Left/Right or
+Ctrl-Alt-1..4, with Ctrl-Alt-Shift-Left/Right moving the focused window
+along; and one window rule — transient windows (dialogs) center on their
+parent instead of the output, matching xfwm4's default dialog placement.
+Note the panel's `deskswitch` plugin itself won't drive Biome's workspaces
+yet — it talks XCB/EWMH directly to xfwm4, and gets replaced by
+Wayland-native IPC in Phase 3.
+
+`BiomeToplevel::scene_tree` is now a container: a plain `wlr_scene_tree`
+holding both the border rects and a `content_tree` (the actual xdg/Xwayland
+surface tree, offset by `kBorderWidth` inside the container). `scene_tree`
+still anchors the window's on-screen position for move/resize/focus-raise,
+unchanged from Phase 1; only the code paths that compute the *visible*
+content box from that position (interactive resize math, Xwayland position
+sync, transient-parent placement) needed the border-width term added in.
+The container is created once per toplevel (not per Xwayland
+associate/dissociate cycle) so the border survives an X11 window's surface
+being torn down and recreated. One known rough edge, acceptable for this
+phase: since Biome doesn't negotiate `xdg-decoration-unstable-v1`, CSD
+clients (foot, GTK apps) still draw their own decorations *and* get
+Biome's border around them — looks like a thin frame around the client's
+own titlebar rather than a real double-decoration, but is a real
+Phase-4-or-earlier candidate to revisit once `xdg-decoration` is wired up.
+
+Verified in the nested-X11 dev loop: clean build, borders render (blue
+focused / gray unfocused) and update on click-to-focus for both xdg (foot)
+and Xwayland (xterm) toplevels, cascade placement, clean shutdown with no
+orphaned processes. Alt-Tab and the workspace hotkeys were confirmed
+working by the user directly (manual testing, not the agent — synthetic
+key injection into the nested session kept colliding with the host window
+manager's own global Alt-Tab/Ctrl-Alt-Arrow grabs).
+
+That same manual test surfaced a real regression: Ctrl-Alt-F1..F12 (VT
+switching) stopped working once Biome was running. On a real KMS/DRM
+session, taking over the console puts it in graphics mode, which disables
+the kernel's own VT-switch key handling — the compositor is expected to
+notice Ctrl-Alt-Fn itself and hand the switch back via
+`wlr_session_change_vt()`. `tinywl` (what Biome's still built on) never
+wired this up. Fixed by passing `&server.session` to
+`wlr_backend_autocreate()` (Phase 0/1 passed `nullptr`, discarding the
+`wlr_session*` the backend creates on bare metal) and adding a
+`handle_keybinding()` case for the `XF86Switch_VT_1..12` keysyms xkb
+produces for Ctrl-Alt-F1..F12, calling `wlr_session_change_vt(session, vt)`.
+No-ops safely on nested backends, which have no session.
 
 **Phase 3 — Forest shell integration.**
 Layer-shell for panel + desktop, foreign-toplevel-management for the
