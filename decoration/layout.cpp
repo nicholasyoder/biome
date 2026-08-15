@@ -4,6 +4,12 @@
 
 namespace biome_decoration {
 
+int kBorderWidth = 2;
+int kTitlebarHeight = 28;
+int kButtonSize = 16;
+int kButtonSpacing = 6;
+int kButtonMarginRight = 6;
+
 int container_width(int content_width) {
     return content_width + 2 * kBorderWidth;
 }
@@ -19,6 +25,28 @@ ButtonRects button_rects(int content_width) {
     rects.close_x = width - kBorderWidth - kButtonMarginRight - kButtonSize;
     rects.maximize_x = rects.close_x - kButtonSpacing - kButtonSize;
     rects.minimize_x = rects.maximize_x - kButtonSpacing - kButtonSize;
+    return rects;
+}
+
+TitleRect title_rect(int content_width) {
+    ButtonRects buttons = button_rects(content_width);
+    int right_margin = container_width(content_width) - buttons.minimize_x + 8;
+    TitleRect rect;
+    rect.x = 8;
+    rect.y = 0;
+    rect.width = container_width(content_width) - 8 - right_margin;
+    rect.height = kTitlebarHeight;
+    return rect;
+}
+
+BorderRects border_rects(int content_width, int content_height) {
+    int width = container_width(content_width);
+    int height = container_height(content_height);
+    int strip_height = height - kTitlebarHeight - kBorderWidth;
+    BorderRects rects;
+    rects.left = {0, kTitlebarHeight, kBorderWidth, strip_height};
+    rects.right = {width - kBorderWidth, kTitlebarHeight, kBorderWidth, strip_height};
+    rects.bottom = {0, height - kBorderWidth, width, kBorderWidth};
     return rects;
 }
 

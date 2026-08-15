@@ -2,7 +2,7 @@
 
 #pragma once
 
-#include "theme_colors.h"
+#include "layout.h" // Region
 
 #include <cstdint>
 #include <vector>
@@ -21,9 +21,15 @@ struct RenderedFrame {
     std::vector<uint8_t> pixels;
 };
 
-// content_width/content_height: size of the client's own surface. Requires
-// a QApplication to already exist (uses QPainter/QImage).
+// content_width/content_height: size of the client's own surface. Renders
+// theme.h's persistent, QSS-styled DecorationFrame widget (borders,
+// radius, padding, button hover/press all come from decoration/theme/
+// biome-dark.qss) - requires load_decoration_theme() to have already been
+// called, and a QApplication to already exist.
+//
+// hovered_region/pressed_region select which button (if any) gets a live
+// QSS :hover/:pressed state - Region::None for neither.
 RenderedFrame render_decoration(int content_width, int content_height,
-    const DecorationColors &colors, bool focused, const char *title);
+    bool focused, const char *title, Region hovered_region, Region pressed_region);
 
 } // namespace biome_decoration

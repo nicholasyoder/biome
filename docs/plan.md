@@ -294,6 +294,173 @@ intentionally Biome-native rather than a Phase 2 leftover, as clarified
 mid-session — specific styling choices (colors, etc.) are planned for a
 later session.
 
+*Follow-up restyle (still Phase 3): real QSS-styled decoration widgets.*
+The original pass above rendered decorations by hand — `theme_colors.cpp`
+sampled two flat colors out of Forest's QSS via a probe widget, and
+`renderer.cpp` painted flat `QPainter::fillRect`s with hardcoded alpha for
+unfocused dimming. No border-radius, padding, or button hover/press states
+were possible, since nothing was actually rendered *through* Qt's
+style/QSS engine. Replaced with a persistent, real Qt widget tree
+(`decoration/frame_widget.{h,cpp}`: `DecorationFrame` and
+`DecorationButton`, both `Q_OBJECT` with `Q_PROPERTY` int/color fields set
+by `qproperty-*` QSS declarations) that Biome's own embedded stylesheet
+styles natively — border, border-radius, padding, `:hover`/`:pressed` all
+come from QSS now, the same as any other Qt widget. Built once at startup
+and reused for every repaint by resizing it and toggling dynamic
+properties/state, then `QWidget::render()`ing it into the same offscreen
+`QImage` pipeline as before.
+
+`theme_colors.{h,cpp}` (Forest-theme-cascade loading) is replaced by
+`decoration/theme.{h,cpp}`, which loads a **self-contained theme embedded
+in Biome itself** — `decoration/theme/biome-dark.qss`, reproducing the
+color/shape values of Forest's `base-dark` + `base-rounded` theme layers
+for Biome's own new decoration selectors (`#biomeFrame`, `#biomeTitlebar`,
+`#biomeTitle`, `DecorationButton`) rather than depending on Forest's
+installed theme files — simpler to iterate on for now, with merging back
+into Forest's real theme cascade left for later. Single theme, no
+light/dark switch yet. The focused-border blue accent is preserved as
+Biome's own hardcoded value (still not sourced from QSS-authored colors,
+same as the original pass) so this restyle doesn't change that established
+look. `layout.h`'s `kBorderWidth`/`kTitlebarHeight`/`kButtonSize`/etc.
+became runtime globals (were `constexpr`) so the QSS file's `qproperty-*`
+values can drive them, read back once at startup — still not
+live-reloaded.
+
+Buttons get real, live `:hover`/`:pressed` QSS states, driven by actual
+pointer input rather than left static: `core/main.cpp`'s
+`process_cursor_motion` already resolved a decoration `Region` on every
+motion event (for resize-cursor icons), reused via a new
+`update_decoration_hover()` to toggle synthetic `QEvent::Enter`/`Leave` on
+the hovered button; `server_cursor_button` gained a matching
+`set_decoration_pressed()` for real button-down/up. `BiomeToplevel` gained
+`hovered_region`/`pressed_region`, `BiomeServer` gained
+`hovered_decoration_toplevel`/`pressed_decoration_toplevel` (same
+never-cleared-on-destroy convention as the existing
+`last_left_click_toplevel` — compared, never dereferenced, so a stale
+pointer is harmless).
+
+Verified via clean build (zero warnings). Visual/interactive verification
+(rounded corners, focus/hover/press states, resize/move/maximize still
+working) left to the user's own manual testing per established preference.
+
+*Follow-up bugfix, same day: the QSS wasn't actually applying.* The clean
+build above was misleading - the user's first manual test showed the entire
+border and titlebar rendering fully transparent, only the hand-drawn button
+glyphs and title text visible, meaning the widget tree was never getting
+styled at all. Since a build-clean/zero-warnings check can't catch "the
+stylesheet silently matched nothing," root-causing this needed actually
+rendering the widget tree offscreen and inspecting pixels - done via small
+standalone test harnesses linking `libbiome_decoration.a` directly (not
+checked into the repo), rather than the user's own manual/interactive
+testing this once, specifically to pin down a silent-failure bug precisely
+before handing it back. Three compounding bugs, all fixed:
+
+1. **The embedded Qt resource never registered.** Resources compiled into
+   a *static* library (`biome_decoration`) get dropped by the linker unless
+   something forces a reference into that translation unit - confirmed
+   directly (`QFile(":/biome/decoration/biome-dark.qss").exists()` was
+   `false`). Fixed with a `Q_INIT_RESOURCE(theme)` call (must be outside
+   any C++ namespace) in `decoration/theme.cpp`, invoked from
+   `load_decoration_theme()`.
+2. **`Qt::WA_TranslucentBackground` on `DecorationFrame` suppressed *all*
+   painting**, not just background compositing - confirmed with an
+   isolated repro (identical QSS painted correctly without the attribute,
+   painted nothing with it) on a widget that's never `show()`n, only
+   rendered offscreen via `QWidget::render()`. Removed; `WA_StyledBackground`
+   plus the frame's own `background: transparent` QSS declaration already
+   gives the same per-region transparency onto renderer.cpp's pre-cleared
+   `QImage`.
+3. **Namespaced C++ classes need `--` instead of `::` in Qt stylesheet type
+   selectors** (documented Qt behavior, easy to miss): `DecorationFrame`/
+   `DecorationButton` live in `namespace biome_decoration`, so
+   `QMetaObject::className()` reports `biome_decoration::DecorationFrame` -
+   every selector in `biome-dark.qss` needed rewriting to
+   `biome_decoration--DecorationFrame`/`biome_decoration--DecorationButton`
+   (ID-only selectors like `#biomeTitlebar` were unaffected). Without this,
+   *none* of the frame/button rules ever matched anything.
+
+Also removed the last hardcoded color duplication: `decoration/theme.cpp`
+previously mirrored `biome-dark.qss`'s literal color values as separate C++
+constants for `decoration/switcher.cpp`'s flat Alt-Tab panel. Replaced with
+real pixel/palette sampling off the actual styled `DecorationFrame`
+instance (grabbing it focused and unfocused, reading the title label's
+resolved QSS `color` back via its palette) - every switcher color now
+traces back to the QSS file with nothing hand-copied, and the focused
+border's blue accent is just an ordinary authored QSS value like any other,
+not a protected "Biome-native" special case.
+
+Re-verified end to end via the same offscreen harness: sampled colors now
+match the QSS file's literal values exactly, and a full pixel scan of a
+rendered frame shows the border/titlebar/rounded-corner regions opaque with
+the right colors and the client-surface hole staying transparent. Clean
+build maintained throughout. Still needs the user's own manual/interactive
+pass in the nested dev loop.
+
+*Follow-up bugfix, same day: crash on closing a window.* The user's manual
+pass (the actual test the previous fix was still waiting on) hit a real
+crash: pressing the titlebar's close button reliably crashed Biome. Root
+cause: `set_decoration_pressed()`/`update_decoration_hover()`
+(`core/main.cpp`) store raw `BiomeToplevel *` on `BiomeServer`
+(`hovered_decoration_toplevel`/`pressed_decoration_toplevel`) and later
+*dereference* them - via `render_toplevel_decoration()` - when clearing
+hover/press state. That's a different, stricter contract than the
+pre-existing `last_left_click_toplevel`, which is only ever compared via
+`==`, never dereferenced, so it was safe to leave uncleared on toplevel
+destroy (the convention these two new fields were modeled on, incorrectly -
+see the "hover/press plumbing" writeup above). Close is a request, not a
+synchronous teardown, but the client can still tear its surface down -
+freeing the `BiomeToplevel` via `xdg_toplevel_destroy`/
+`xwayland_toplevel_destroy` - before the button-*release* event that would
+otherwise clear `pressed_decoration_toplevel` ever arrives, leaving a
+dangling pointer that the release handler then dereferenced: a real
+use-after-free, not a race that merely happens to usually miss. Fixed with
+a `clear_decoration_tracking()` helper called from both destroy handlers
+before `free(toplevel)`, nulling out either field if it points at the
+toplevel being destroyed. Clean build maintained.
+
+*Follow-up, same day: independent border widgets and working button
+padding.* The user started hand-editing `biome-dark.qss` directly to learn
+the theme, and removed `biome-light.qss` entirely to simplify that
+iteration (single theme to think about; a light theme can be recreated
+later from `biome-dark.qss` once the dark one's shape is settled) - the
+`.qrc` and `docs/plan.md`'s remaining mentions were updated to match. Two
+real gaps turned up from that hands-on testing:
+
+- **The border wasn't independently styleable** - it was `#biomeFrame`'s
+  own CSS `border-left`/`-right`/`-bottom` shorthand, so it could only ever
+  be a flat stroke, not a widget with its own background/border/radius/
+  padding the way the titlebar already was. Fixed by giving the border its
+  own real widgets: `DecorationBorder` (`decoration/frame_widget.h`, a
+  near-empty `QWidget` subclass whose only job is being a distinct type
+  selector, `biome_decoration--DecorationBorder`, that styles all three
+  strips at once - the same pattern `DecorationButton` already uses for the
+  three buttons) - three instances (`#biomeBorderLeft`/`Right`/`Bottom`),
+  positioned by a new `layout.h`/`.cpp` `border_rects()` (mirrors
+  `button_rects()`). `#biomeFrame` itself now paints nothing at all
+  (`background: transparent`, no border) and exists purely as the
+  container + a `qproperty-borderWidth` metrics source for `layout.cpp`'s
+  hit-testing. Only the bottom strip carries the corner radius (it's the
+  one adjacent to both side strips) - worth knowing this means a radius
+  much larger than the strip's own thickness won't read as a smooth curve
+  anymore, unlike the old single-frame-border approach where the radius
+  applied to the whole window outline.
+- **Button padding had no effect at any value.** Root cause:
+  `DecorationButton::paintEvent` positioned the hand-drawn glyph from a
+  hardcoded 4px margin, never consulting QSS `padding` at all. The obvious
+  fix - use `QWidget::contentsRect()`/`contentsMargins()` - turned out to
+  be a dead end: verified directly that Qt's stylesheet engine does *not*
+  populate the generic `QWidget` margin API from `padding`, only
+  `QStyle::subElementRect()`/`sizeFromContents()` see it. Fixed by querying
+  `style()->subElementRect(QStyle::SE_FrameContents, &option, this)`
+  instead (verified directly: correctly returned the expected inset for a
+  padding+border combination). `biome-dark.qss`'s button padding, mid-edit
+  by the user at 20px (a value that would have degenerately shrunk the
+  16px glyph box to nothing once this actually started working), was reset
+  to 3px to reproduce the old hardcoded look as the sensible default.
+
+Clean build maintained; not yet re-verified by the user against these
+specific changes.
+
 **Phase 4 — Forest shell integration.**
 Layer-shell for panel + desktop, foreign-toplevel-management for the
 windowlist plugin, DBus hotkey service replacing `qxtglobalshortcut`,

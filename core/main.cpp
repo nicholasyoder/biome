@@ -15,7 +15,7 @@
 #include "decoration/layout.h"
 #include "decoration/renderer.h"
 #include "decoration/switcher.h"
-#include "decoration/theme_colors.h"
+#include "decoration/theme.h"
 
 #include <QApplication>
 
@@ -96,11 +96,22 @@ struct BiomeServer {
     uint32_t last_left_click_time = 0;
     struct BiomeToplevel *last_left_click_toplevel = nullptr;
 
+    // Which toplevel (if any) currently has a hovered/pressed decoration
+    // button, so process_cursor_motion/server_cursor_button know when to
+    // clear the old one's QSS :hover/:pressed state. Like
+    // last_left_click_toplevel above, not cleared on toplevel destroy -
+    // only ever compared, never dereferenced, so a stale pointer here is
+    // harmless.
+    struct BiomeToplevel *hovered_decoration_toplevel = nullptr;
+    struct BiomeToplevel *pressed_decoration_toplevel = nullptr;
+
     int active_workspace = 0;
 
-    // Sourced once at startup from Forest's active QSS theme (falls back to
-    // Biome's own flat colors if Forest's theme files aren't found) - see
-    // decoration/theme_colors.h.
+    // Sourced once at startup from Biome's own self-contained decoration
+    // theme (not Forest's - see decoration/theme.h). Still used by
+    // switcher.cpp's hand-painted Alt-Tab overlay; render_toplevel_decoration
+    // no longer needs it directly since decoration/theme/biome-dark.qss
+    // styles the real widget tree it renders.
     biome_decoration::DecorationColors decoration_colors = {};
 
     // Graphical Alt-Tab switcher overlay. switcher_active tracks whether
@@ -149,7 +160,13 @@ struct BiomeToplevel {
     wlr_scene_tree *scene_tree = nullptr;
     wlr_scene_tree *content_tree = nullptr;
     wlr_scene_buffer *decoration_buffer = nullptr;
-    bool focused = false; // drives which colors render_toplevel_decoration uses
+    bool focused = false; // drives which QSS [focused=...] state gets applied
+
+    // Which decoration button (if any) is currently hovered/pressed - kept
+    // per-toplevel so render_toplevel_decoration can pass the right state to
+    // decoration/renderer.h. Region::None for neither.
+    biome_decoration::Region hovered_region = biome_decoration::Region::None;
+    biome_decoration::Region pressed_region = biome_decoration::Region::None;
 
     wlr_xdg_toplevel *xdg_toplevel = nullptr;         // type == Xdg
     wlr_xwayland_surface *xwayland_surface = nullptr; // type == Xwayland
@@ -325,9 +342,9 @@ static wlr_buffer *create_decoration_buffer(biome_decoration::RenderedFrame &&fr
 }
 
 // Re-renders the full decoration frame (titlebar + border, using
-// toplevel->focused and the server's QSS-derived colors) and uploads it.
-// Called whenever a toplevel's content geometry, focus state, or title
-// changes.
+// toplevel->focused/hovered_region/pressed_region against the QSS-styled
+// widget tree in decoration/theme.h) and uploads it. Called whenever a
+// toplevel's content geometry, focus, title, or hover/press state changes.
 static void render_toplevel_decoration(BiomeToplevel *toplevel) {
     if (toplevel == nullptr || toplevel->decoration_buffer == nullptr) {
         return;
@@ -342,7 +359,7 @@ static void render_toplevel_decoration(BiomeToplevel *toplevel) {
         : toplevel->xwayland_surface->title;
 
     biome_decoration::RenderedFrame frame = biome_decoration::render_decoration(
-        width, height, toplevel->server->decoration_colors, toplevel->focused, title);
+        width, height, toplevel->focused, title, toplevel->hovered_region, toplevel->pressed_region);
     wlr_buffer *buffer = create_decoration_buffer(std::move(frame));
     if (buffer == nullptr) {
         return;
@@ -892,6 +909,83 @@ static BiomeToplevel *decoration_toplevel_at(
     return toplevel;
 }
 
+static bool is_button_region(biome_decoration::Region region) {
+    using biome_decoration::Region;
+    return region == Region::ButtonMinimize || region == Region::ButtonMaximize
+        || region == Region::ButtonClose;
+}
+
+// Updates whichever toplevel's decoration button is under the pointer so
+// its QSS :hover state stays in sync, re-rendering only the toplevel(s)
+// whose hover actually changed. toplevel/region come straight from
+// decoration_toplevel_at - toplevel may be nullptr (pointer isn't over any
+// decoration) and region may be a non-button region (titlebar/border), both
+// of which mean "no button is hovered".
+static void update_decoration_hover(BiomeServer *server, BiomeToplevel *toplevel,
+        biome_decoration::Region region) {
+    BiomeToplevel *new_hovered = is_button_region(region) ? toplevel : nullptr;
+    biome_decoration::Region new_region =
+        new_hovered != nullptr ? region : biome_decoration::Region::None;
+
+    BiomeToplevel *old_hovered = server->hovered_decoration_toplevel;
+    if (old_hovered == new_hovered && (old_hovered == nullptr || old_hovered->hovered_region == new_region)) {
+        return;
+    }
+
+    if (old_hovered != nullptr && old_hovered != new_hovered) {
+        old_hovered->hovered_region = biome_decoration::Region::None;
+        render_toplevel_decoration(old_hovered);
+    }
+    if (new_hovered != nullptr) {
+        new_hovered->hovered_region = new_region;
+        render_toplevel_decoration(new_hovered);
+    }
+    server->hovered_decoration_toplevel = new_hovered;
+}
+
+// Same shape as update_decoration_hover, but for the pressed QSS state a
+// left button-down/up on a decoration button drives (see
+// server_cursor_button) rather than pointer motion.
+static void set_decoration_pressed(BiomeServer *server, BiomeToplevel *toplevel,
+        biome_decoration::Region region) {
+    BiomeToplevel *new_pressed = is_button_region(region) ? toplevel : nullptr;
+    biome_decoration::Region new_region =
+        new_pressed != nullptr ? region : biome_decoration::Region::None;
+
+    BiomeToplevel *old_pressed = server->pressed_decoration_toplevel;
+    if (old_pressed == new_pressed && (old_pressed == nullptr || old_pressed->pressed_region == new_region)) {
+        return;
+    }
+
+    if (old_pressed != nullptr && old_pressed != new_pressed) {
+        old_pressed->pressed_region = biome_decoration::Region::None;
+        render_toplevel_decoration(old_pressed);
+    }
+    if (new_pressed != nullptr) {
+        new_pressed->pressed_region = new_region;
+        render_toplevel_decoration(new_pressed);
+    }
+    server->pressed_decoration_toplevel = new_pressed;
+}
+
+// Called from both toplevel destroy handlers, before free(). Unlike
+// last_left_click_toplevel (only ever compared via ==, never dereferenced,
+// so a stale pointer there is harmless), hovered_/pressed_decoration_toplevel
+// ARE dereferenced when clearing hover/press state (render_toplevel_decoration
+// above) - so a dangling pointer here is a real use-after-free. Concretely:
+// press the close button, and the client can tear its surface down (freeing
+// the toplevel via xdg_toplevel_destroy/xwayland_toplevel_destroy) before
+// the button-release event that would otherwise clear
+// pressed_decoration_toplevel ever arrives.
+static void clear_decoration_tracking(BiomeServer *server, BiomeToplevel *toplevel) {
+    if (server->hovered_decoration_toplevel == toplevel) {
+        server->hovered_decoration_toplevel = nullptr;
+    }
+    if (server->pressed_decoration_toplevel == toplevel) {
+        server->pressed_decoration_toplevel = nullptr;
+    }
+}
+
 static const char *resize_cursor_name(biome_decoration::Region region) {
     using biome_decoration::Region;
     switch (region) {
@@ -1000,8 +1094,12 @@ static void process_cursor_motion(BiomeServer *server, uint32_t time) {
         // what makes the cursor image appear/update as it moves around,
         // including resize-direction hints over a window's edges.
         biome_decoration::Region region = biome_decoration::Region::None;
-        decoration_toplevel_at(server, server->cursor->x, server->cursor->y, &region);
+        BiomeToplevel *decoration_toplevel =
+            decoration_toplevel_at(server, server->cursor->x, server->cursor->y, &region);
         wlr_cursor_set_xcursor(server->cursor, server->cursor_mgr, resize_cursor_name(region));
+        update_decoration_hover(server, decoration_toplevel, region);
+    } else {
+        update_decoration_hover(server, nullptr, biome_decoration::Region::None);
     }
     if (surface) {
         // Send pointer enter and motion events.
@@ -1059,6 +1157,7 @@ static void server_cursor_button(wl_listener *listener, void *data) {
         event->time_msec, event->button, event->state);
 
     if (event->state == WL_POINTER_BUTTON_STATE_RELEASED) {
+        set_decoration_pressed(server, nullptr, biome_decoration::Region::None);
         // If you released any buttons, we exit interactive move/resize mode.
         reset_cursor_mode(server);
         return;
@@ -1073,6 +1172,7 @@ static void server_cursor_button(wl_listener *listener, void *data) {
     if (decoration_toplevel != nullptr) {
         focus_toplevel(decoration_toplevel, toplevel_surface(decoration_toplevel));
         if (event->button == BTN_LEFT) {
+            set_decoration_pressed(server, decoration_toplevel, region);
             constexpr uint32_t kDoubleClickMs = 400;
             if (region == biome_decoration::Region::Titlebar &&
                     server->last_left_click_toplevel == decoration_toplevel &&
@@ -1436,6 +1536,7 @@ static void xdg_toplevel_destroy(wl_listener *listener, void *data) {
     // This recursively destroys content_tree and the border rects too.
     wlr_scene_node_destroy(&toplevel->scene_tree->node);
 
+    clear_decoration_tracking(toplevel->server, toplevel);
     free(toplevel);
 }
 
@@ -1788,6 +1889,7 @@ static void xwayland_toplevel_destroy(wl_listener *listener, void *data) {
     // dissociate cycle, so we own destroying it.
     wlr_scene_node_destroy(&toplevel->scene_tree->node);
 
+    clear_decoration_tracking(toplevel->server, toplevel);
     free(toplevel);
 }
 
@@ -2005,7 +2107,7 @@ int main(int argc, char *argv[]) {
     QApplication qt_app(qt_argc, qt_argv);
 
     BiomeServer server;
-    server.decoration_colors = biome_decoration::load_decoration_colors();
+    server.decoration_colors = biome_decoration::load_decoration_theme();
     // The Wayland display is managed by libwayland. It handles accepting
     // clients from the Unix socket, managing Wayland globals, and so on.
     server.display = wl_display_create();

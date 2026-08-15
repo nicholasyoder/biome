@@ -7,7 +7,7 @@
 #pragma once
 
 #include "renderer.h" // RenderedFrame
-#include "theme_colors.h"
+#include "theme.h"
 
 #include <string>
 #include <vector>
