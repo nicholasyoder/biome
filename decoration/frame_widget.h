@@ -44,19 +44,23 @@ public:
     DecorationBorder(const QString &object_name, QWidget *parent = nullptr);
 };
 
-// Paints its QSS background/border/radius/hover/pressed state via the base
-// QToolButton implementation, then draws the minimize/maximize/close glyph
-// on top - Forest's QSS has no icon set for these, so the glyph stays
-// hand-drawn (matching decoration/renderer.cpp's previous approach). Its own
-// size comes straight from QSS min-width/max-width/min-height/max-height
-// (biome-dark.qss) via the QLayout it sits in - buttonSpacing/
-// buttonMarginRight stay qproperty-driven since QSS has no equivalent for a
-// QLayout's spacing/margins between siblings.
+// Paints its QSS background/border/radius/hover/pressed state, and its icon
+// (the minimize/maximize/close glyph), entirely via the base QToolButton
+// implementation - the icon itself comes from QSS qproperty-icon
+// (biome-dark.qss selects a different image per button, and a dimmer variant
+// when the frame is unfocused, the same way it already re-selects title
+// color/border color), so there is no C++ glyph-drawing code to keep in
+// sync with the theme. The only override needed is resizeEvent(), which
+// keeps iconSize matched to the button's own QSS-driven content box so the
+// image always fills it exactly regardless of what size a theme gives the
+// button. Its own size comes straight from QSS min-width/max-width/
+// min-height/max-height (biome-dark.qss) via the QLayout it sits in -
+// buttonSpacing/buttonMarginRight stay qproperty-driven since QSS has no
+// equivalent for a QLayout's spacing/margins between siblings.
 class DecorationButton : public QToolButton {
     Q_OBJECT
     Q_PROPERTY(int buttonSpacing READ buttonSpacing WRITE setButtonSpacing)
     Q_PROPERTY(int buttonMarginRight READ buttonMarginRight WRITE setButtonMarginRight)
-    Q_PROPERTY(QColor glyphColor READ glyphColor WRITE setGlyphColor)
 
 public:
     DecorationButton(Region region, QWidget *parent = nullptr);
@@ -67,17 +71,14 @@ public:
     void setButtonSpacing(int value) { button_spacing_ = value; }
     int buttonMarginRight() const { return button_margin_right_; }
     void setButtonMarginRight(int value) { button_margin_right_ = value; }
-    QColor glyphColor() const { return glyph_color_; }
-    void setGlyphColor(const QColor &value) { glyph_color_ = value; }
 
 protected:
-    void paintEvent(QPaintEvent *event) override;
+    void resizeEvent(QResizeEvent *event) override;
 
 private:
     Region region_;
     int button_spacing_ = 6;
     int button_margin_right_ = 6;
-    QColor glyph_color_ = Qt::white;
 };
 
 class DecorationFrame : public QFrame {

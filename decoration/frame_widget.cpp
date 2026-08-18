@@ -7,9 +7,7 @@
 #include <QEnterEvent>
 #include <QEvent>
 #include <QLayout>
-#include <QPaintEvent>
-#include <QPainter>
-#include <QPen>
+#include <QResizeEvent>
 #include <QSizePolicy>
 #include <QStyle>
 #include <QStyleOptionToolButton>
@@ -72,45 +70,18 @@ DecorationButton::DecorationButton(Region region, QWidget *parent)
     setAttribute(Qt::WA_StyledBackground, true);
 }
 
-void DecorationButton::paintEvent(QPaintEvent *event) {
-    QToolButton::paintEvent(event);
+void DecorationButton::resizeEvent(QResizeEvent *event) {
+    QToolButton::resizeEvent(event);
 
-    // The button's QSS background/border/radius/hover/pressed state is
-    // already painted above - Forest's QSS has no icon set for these, so
-    // the minimize/maximize/close glyph itself stays hand-drawn on top.
-    //
-    // The glyph box comes from SE_FrameContents, not a hardcoded margin:
-    // QWidget::contentsRect()/contentsMargins() do NOT reflect QSS
-    // "padding" (verified directly - contentsMargins() stayed 0,0,0,0 with
-    // a 20px padding rule applied), since Qt's stylesheet engine only
-    // consults padding through QStyle's own subElementRect/sizeFromContents
-    // queries, not the generic QWidget margin API. SE_FrameContents is the
-    // query that does honor it (also verified directly: with a 20px
-    // padding + 1px border on a 60x60 widget it returned the expected
-    // 21,21,18,18).
+    // Keeps the icon filling exactly the button's QSS-driven content box
+    // (padding excluded) on every resize, so a theme can resize the button
+    // via plain QSS min/max-width/height without any C++ change - same
+    // SE_FrameContents query as before (see decoration/frame_widget.h),
+    // since QWidget::contentsRect() does NOT reflect QSS "padding".
     QStyleOptionToolButton option;
     option.initFrom(this);
     QRect box = style()->subElementRect(QStyle::SE_FrameContents, &option, this);
-
-    QPainter painter(this);
-    painter.setRenderHint(QPainter::Antialiasing, true);
-    painter.setPen(QPen(glyph_color_, 1.4));
-    painter.setBrush(Qt::NoBrush);
-
-    switch (region_) {
-    case Region::ButtonMinimize:
-        painter.drawLine(QPointF(box.left(), box.bottom()), QPointF(box.right(), box.bottom()));
-        break;
-    case Region::ButtonMaximize:
-        painter.drawRect(box);
-        break;
-    case Region::ButtonClose:
-        painter.drawLine(box.topLeft(), box.bottomRight());
-        painter.drawLine(box.topRight(), box.bottomLeft());
-        break;
-    default:
-        break;
-    }
+    setIconSize(box.size());
 }
 
 DecorationBorder::DecorationBorder(const QString &object_name, QWidget *parent) : QWidget(parent) {

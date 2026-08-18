@@ -56,11 +56,26 @@ biome_decoration--DecorationButton {
     max-height: 8px;
     qproperty-buttonSpacing: 6;
     qproperty-buttonMarginRight: 6;
-    qproperty-glyphColor: rgb(235, 235, 235);
 }
 
-biome_decoration--DecorationFrame#biomeFrame[focused="false"] biome_decoration--DecorationButton {
-    qproperty-glyphColor: rgb(150, 150, 150);
+biome_decoration--DecorationButton#biomeButtonMinimize {
+    qproperty-icon: url(:/biome/decoration/icons/minimize-normal.png);
+}
+biome_decoration--DecorationButton#biomeButtonMaximize {
+    qproperty-icon: url(:/biome/decoration/icons/maximize-normal.png);
+}
+biome_decoration--DecorationButton#biomeButtonClose {
+    qproperty-icon: url(:/biome/decoration/icons/close-normal.png);
+}
+
+biome_decoration--DecorationFrame#biomeFrame[focused="false"] biome_decoration--DecorationButton#biomeButtonMinimize {
+    qproperty-icon: url(:/biome/decoration/icons/minimize-dim.png);
+}
+biome_decoration--DecorationFrame#biomeFrame[focused="false"] biome_decoration--DecorationButton#biomeButtonMaximize {
+    qproperty-icon: url(:/biome/decoration/icons/maximize-dim.png);
+}
+biome_decoration--DecorationFrame#biomeFrame[focused="false"] biome_decoration--DecorationButton#biomeButtonClose {
+    qproperty-icon: url(:/biome/decoration/icons/close-dim.png);
 }
 
 biome_decoration--DecorationButton:hover {

@@ -1,5 +1,11 @@
 <RCC>
     <qresource prefix="/biome/decoration">
         <file>biome-dark.qss</file>
+        <file>icons/minimize-normal.png</file>
+        <file>icons/minimize-dim.png</file>
+        <file>icons/maximize-normal.png</file>
+        <file>icons/maximize-dim.png</file>
+        <file>icons/close-normal.png</file>
+        <file>icons/close-dim.png</file>
     </qresource>
 </RCC>
