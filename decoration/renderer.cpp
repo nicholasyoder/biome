@@ -12,9 +12,7 @@ namespace biome_decoration {
 RenderedFrame render_decoration(int content_width, int content_height,
         bool focused, const char *title, Region hovered_region, Region pressed_region) {
     RenderedFrame frame;
-    int width = container_width(content_width);
-    int height = container_height(content_height);
-    if (width <= 0 || height <= 0) {
+    if (content_width <= 0 || content_height <= 0) {
         return frame;
     }
 
@@ -25,6 +23,8 @@ RenderedFrame render_decoration(int content_width, int content_height,
     widget->setHoveredRegion(hovered_region);
     widget->setPressedRegion(pressed_region);
 
+    int width = widget->width();
+    int height = widget->height();
     QImage image(width, height, QImage::Format_ARGB32_Premultiplied);
     image.fill(Qt::transparent);
     widget->render(&image);

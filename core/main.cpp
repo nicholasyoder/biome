@@ -155,8 +155,9 @@ struct BiomeToplevel {
     // scene_tree is the container: its position is the window's on-screen
     // position (what move/resize/focus-raise all act on). content_tree is
     // the actual surface tree, a child of scene_tree offset by
-    // (kBorderWidth, kTitlebarHeight) so decoration_buffer (also a child of
-    // scene_tree, painted by decoration/renderer.h) can frame it.
+    // (decoration_border_width(), decoration_titlebar_height()) so
+    // decoration_buffer (also a child of scene_tree, painted by
+    // decoration/renderer.h) can frame it.
     wlr_scene_tree *scene_tree = nullptr;
     wlr_scene_tree *content_tree = nullptr;
     wlr_scene_buffer *decoration_buffer = nullptr;
@@ -251,6 +252,21 @@ static void close_toplevel(BiomeToplevel *toplevel) {
     } else {
         wlr_xwayland_surface_close(toplevel->xwayland_surface);
     }
+}
+
+// Content-size-independent decoration metrics, read live off the real
+// QSS-styled widget tree (decoration/theme/biome-dark.qss) instead of a
+// separately-duplicated constant - see DecorationFrame::borderWidth()/
+// titlebarHeight() (decoration/frame_widget.h). Thin call-site aliases only
+// so the offset arithmetic sprinkled through move/resize/place/maximize
+// below doesn't have to spell out biome_decoration::decoration_frame()->...
+// at every use.
+static int decoration_border_width() {
+    return biome_decoration::decoration_frame()->borderWidth();
+}
+
+static int decoration_titlebar_height() {
+    return biome_decoration::decoration_frame()->titlebarHeight();
 }
 
 static void toplevel_get_geometry(BiomeToplevel *toplevel, wlr_box *box) {
@@ -872,7 +888,7 @@ static BiomeToplevel *desktop_toplevel_at(
 // occludes a window behind it), the same as desktop_toplevel_at does for
 // content. Returns nullptr (region left untouched) if the point isn't over
 // any toplevel's decoration - including when it's over a client surface,
-// or over the empty interior gap decoration/layout.h's hit_test leaves for
+// or over the empty interior gap DecorationFrame::hitTest() leaves for
 // desktop_toplevel_at to handle instead.
 static BiomeToplevel *decoration_toplevel_at(
         BiomeServer *server, double lx, double ly, biome_decoration::Region *out_region) {
@@ -900,8 +916,8 @@ static BiomeToplevel *decoration_toplevel_at(
     toplevel_get_geometry(toplevel, &geo);
     int width = geo.width > 0 ? geo.width : 0;
     int height = geo.height > 0 ? geo.height : 0;
-    biome_decoration::Region region =
-        biome_decoration::hit_test(static_cast<int>(sx), static_cast<int>(sy), width, height);
+    biome_decoration::Region region = biome_decoration::decoration_frame()->hitTest(
+        static_cast<int>(sx), static_cast<int>(sy), width, height);
     if (region == biome_decoration::Region::None) {
         return nullptr;
     }
@@ -1016,7 +1032,7 @@ static void process_cursor_move(BiomeServer *server, uint32_t time) {
     wlr_scene_node_set_position(&toplevel->scene_tree->node, x, y);
     // The X server has no notion of our border - tell it about the visible
     // content position, not the container's.
-    toplevel_sync_position(toplevel, x + biome_decoration::kBorderWidth, y + biome_decoration::kTitlebarHeight);
+    toplevel_sync_position(toplevel, x + decoration_border_width(), y + decoration_titlebar_height());
 }
 
 static void process_cursor_resize(BiomeServer *server, uint32_t time) {
@@ -1063,8 +1079,8 @@ static void process_cursor_resize(BiomeServer *server, uint32_t time) {
     wlr_box geo_box;
     toplevel_get_geometry(toplevel, &geo_box);
     wlr_scene_node_set_position(&toplevel->scene_tree->node,
-        new_left - geo_box.x - biome_decoration::kBorderWidth,
-        new_top - geo_box.y - biome_decoration::kTitlebarHeight);
+        new_left - geo_box.x - decoration_border_width(),
+        new_top - geo_box.y - decoration_titlebar_height());
 
     int new_width = new_right - new_left;
     int new_height = new_bottom - new_top;
@@ -1347,8 +1363,8 @@ static void place_new_toplevel(BiomeToplevel *toplevel) {
     if (parent != nullptr) {
         wlr_box parent_geo;
         toplevel_get_geometry(parent, &parent_geo);
-        int parent_vis_x = static_cast<int>(parent->scene_tree->node.x) + biome_decoration::kBorderWidth + parent_geo.x;
-        int parent_vis_y = static_cast<int>(parent->scene_tree->node.y) + biome_decoration::kTitlebarHeight + parent_geo.y;
+        int parent_vis_x = static_cast<int>(parent->scene_tree->node.x) + decoration_border_width() + parent_geo.x;
+        int parent_vis_y = static_cast<int>(parent->scene_tree->node.y) + decoration_titlebar_height() + parent_geo.y;
         vis_x = parent_vis_x + (parent_geo.width - width) / 2;
         vis_y = parent_vis_y + (parent_geo.height - height) / 2;
         toplevel->workspace = parent->workspace;
@@ -1366,7 +1382,7 @@ static void place_new_toplevel(BiomeToplevel *toplevel) {
     }
 
     wlr_scene_node_set_position(&toplevel->scene_tree->node,
-        vis_x - biome_decoration::kBorderWidth, vis_y - biome_decoration::kTitlebarHeight);
+        vis_x - decoration_border_width(), vis_y - decoration_titlebar_height());
     toplevel_sync_position(toplevel, vis_x, vis_y);
     update_toplevel_visibility(toplevel);
 }
@@ -1377,8 +1393,8 @@ static void place_new_toplevel(BiomeToplevel *toplevel) {
 // place_new_toplevel uses for centering.
 static wlr_box maximize_target_box(BiomeToplevel *toplevel) {
     BiomeServer *server = toplevel->server;
-    double vis_x = toplevel->scene_tree->node.x + biome_decoration::kBorderWidth;
-    double vis_y = toplevel->scene_tree->node.y + biome_decoration::kTitlebarHeight;
+    double vis_x = toplevel->scene_tree->node.x + decoration_border_width();
+    double vis_y = toplevel->scene_tree->node.y + decoration_titlebar_height();
 
     wlr_output *output = wlr_output_layout_output_at(server->output_layout, vis_x, vis_y);
     wlr_box box = {};
@@ -1397,9 +1413,9 @@ static void set_toplevel_maximized(BiomeToplevel *toplevel, bool maximized) {
         wlr_box geo;
         toplevel_get_geometry(toplevel, &geo);
         toplevel->restore_box.x =
-            static_cast<int>(toplevel->scene_tree->node.x) + biome_decoration::kBorderWidth;
+            static_cast<int>(toplevel->scene_tree->node.x) + decoration_border_width();
         toplevel->restore_box.y =
-            static_cast<int>(toplevel->scene_tree->node.y) + biome_decoration::kTitlebarHeight;
+            static_cast<int>(toplevel->scene_tree->node.y) + decoration_titlebar_height();
         toplevel->restore_box.width = geo.width;
         toplevel->restore_box.height = geo.height;
 
@@ -1409,14 +1425,14 @@ static void set_toplevel_maximized(BiomeToplevel *toplevel, bool maximized) {
         }
         toplevel->maximized = true;
         wlr_scene_node_set_position(&toplevel->scene_tree->node,
-            target.x - biome_decoration::kBorderWidth, target.y - biome_decoration::kTitlebarHeight);
+            target.x - decoration_border_width(), target.y - decoration_titlebar_height());
         toplevel_set_size(toplevel, target.x, target.y, target.width, target.height);
         toplevel_sync_position(toplevel, target.x, target.y);
     } else {
         toplevel->maximized = false;
         wlr_box restore = toplevel->restore_box;
         wlr_scene_node_set_position(&toplevel->scene_tree->node,
-            restore.x - biome_decoration::kBorderWidth, restore.y - biome_decoration::kTitlebarHeight);
+            restore.x - decoration_border_width(), restore.y - decoration_titlebar_height());
         toplevel_set_size(toplevel, restore.x, restore.y, restore.width, restore.height);
         toplevel_sync_position(toplevel, restore.x, restore.y);
     }
@@ -1569,16 +1585,16 @@ static void begin_interactive(BiomeToplevel *toplevel, BiomeCursorMode mode, uin
         wlr_box geo_box;
         toplevel_get_geometry(toplevel, &geo_box);
 
-        double border_x = (toplevel->scene_tree->node.x + biome_decoration::kBorderWidth + geo_box.x) +
+        double border_x = (toplevel->scene_tree->node.x + decoration_border_width() + geo_box.x) +
             ((edges & WLR_EDGE_RIGHT) ? geo_box.width : 0);
-        double border_y = (toplevel->scene_tree->node.y + biome_decoration::kTitlebarHeight + geo_box.y) +
+        double border_y = (toplevel->scene_tree->node.y + decoration_titlebar_height() + geo_box.y) +
             ((edges & WLR_EDGE_BOTTOM) ? geo_box.height : 0);
         server->grab_x = server->cursor->x - border_x;
         server->grab_y = server->cursor->y - border_y;
 
         server->grab_geobox = geo_box;
-        server->grab_geobox.x += static_cast<int>(toplevel->scene_tree->node.x) + biome_decoration::kBorderWidth;
-        server->grab_geobox.y += static_cast<int>(toplevel->scene_tree->node.y) + biome_decoration::kTitlebarHeight;
+        server->grab_geobox.x += static_cast<int>(toplevel->scene_tree->node.x) + decoration_border_width();
+        server->grab_geobox.y += static_cast<int>(toplevel->scene_tree->node.y) + decoration_titlebar_height();
 
         server->resize_edges = edges;
     }
@@ -1720,7 +1736,7 @@ static void server_new_xdg_toplevel(wl_listener *listener, void *data) {
         wlr_scene_xdg_surface_create(toplevel->scene_tree, xdg_toplevel->base);
     toplevel->content_tree->node.data = toplevel;
     wlr_scene_node_set_position(&toplevel->content_tree->node,
-        biome_decoration::kBorderWidth, biome_decoration::kTitlebarHeight);
+        decoration_border_width(), decoration_titlebar_height());
     xdg_toplevel->base->data = toplevel->content_tree;
 
     // Listen to the various events it can emit
@@ -1846,7 +1862,7 @@ static void xwayland_toplevel_associate(wl_listener *listener, void *data) {
         wlr_scene_subsurface_tree_create(toplevel->scene_tree, xsurface->surface);
     toplevel->content_tree->node.data = toplevel;
     wlr_scene_node_set_position(&toplevel->content_tree->node,
-        biome_decoration::kBorderWidth, biome_decoration::kTitlebarHeight);
+        decoration_border_width(), decoration_titlebar_height());
     xsurface->data = toplevel->content_tree;
 
     toplevel->map.notify = toplevel_map;
@@ -1933,7 +1949,7 @@ static void xwayland_toplevel_request_configure(wl_listener *listener, void *dat
         event->x, event->y, event->width, event->height);
     if (toplevel->content_tree) {
         wlr_scene_node_set_position(&toplevel->scene_tree->node,
-            event->x - biome_decoration::kBorderWidth, event->y - biome_decoration::kTitlebarHeight);
+            event->x - decoration_border_width(), event->y - decoration_titlebar_height());
         render_toplevel_decoration(toplevel);
     }
 }

@@ -6,7 +6,6 @@ qt_add_resources(BIOME_DECORATION_QRC_SOURCES theme/theme.qrc)
 
 add_library(biome_decoration STATIC
     layout.h
-    layout.cpp
     theme.h
     theme.cpp
     frame_widget.h

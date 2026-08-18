@@ -1,43 +1,14 @@
-/* Biome's self-contained decoration theme (dark).
- *
- * Reproduces the color values of
- * forest/usr/share/forest/themes/base-dark/forest.css and the
- * corner-radius/hover conventions of base-rounded/forest.css, but for
- * Biome's own window-decoration selectors - Forest's real QSS never
- * defines window-decoration styling itself (see decoration/theme.h).
- *
- * qproperty-* lines expose the same border-width/radius/size the
- * neighboring visual declaration uses so decoration/theme.cpp can read the
- * numbers back for hit-testing (layout.cpp) - keep both in sync by hand.
- *
- * "biome_decoration--DecorationFrame"/"...--DecorationButton"/
- * "...--DecorationBorder": Qt requires a C++ namespace's "::" to be written
- * as "--" in a type selector (Qt stylesheet reference, "Selector" section) -
- * these classes (decoration/frame_widget.h) live in the biome_decoration
- * namespace. Leaving this off silently fails to match anything - verified
- * directly, it's what caused the border/titlebar to render fully
- * transparent (see git history for that fix).
- *
- * The frame itself paints nothing (background: transparent, no border) -
- * the left/right/bottom border is 3 separate DecorationBorder widgets
- * below (like the titlebar, a real widget with its own box model: they can
- * have their own background/border/radius/padding, not just a flat CSS
- * stroke around the whole window), and qproperty-borderWidth here is only
- * a metrics source for layout.cpp's hit-testing - keep it in sync with
- * DecorationBorder's actual size below by hand.
- */
-
 biome_decoration--DecorationFrame#biomeFrame {
     background: transparent;
-    qproperty-borderWidth: 2;
     qproperty-cornerRadius: 3;
-    qproperty-titlebarHeight: 28;
 }
 
 QWidget#biomeTitlebar {
     background: rgb(30, 30, 30);
     border-top-left-radius: 3px;
     border-top-right-radius: 3px;
+    /*min-height: 28px;
+    max-height: 28px;*/
 }
 
 biome_decoration--DecorationFrame#biomeFrame[focused="false"] QWidget#biomeTitlebar {
@@ -62,12 +33,14 @@ biome_decoration--DecorationFrame#biomeFrame[focused="false"] biome_decoration--
     background: rgb(89, 89, 89);
 }
 
-/* Only the bottom strip owns the rounded corners - it's the one that's
- * both wide and adjacent to the left/right strips at those corners. Note a
- * radius much bigger than qproperty-borderWidth above (or this widget's own
- * height) won't read as a smooth curve - it's rounding a thin strip, not
- * the whole window outline the old single-frame-border approach rounded. */
+QWidget#biomeBorderLeft, QWidget#biomeBorderRight {
+    min-width: 2px;
+    max-width: 2px;
+}
+
 QWidget#biomeBorderBottom {
+    min-height: 2px;
+    max-height: 2px;
     border-bottom-left-radius: 3px;
     border-bottom-right-radius: 3px;
 }
@@ -76,13 +49,11 @@ biome_decoration--DecorationButton {
     background: transparent;
     border: 1px solid transparent;
     border-radius: 3px;
-    /* padding actually insets the hand-drawn glyph now (DecorationButton::
-     * paintEvent reads it back via SE_FrameContents) - 3px reproduces the
-     * old hardcoded-in-C++ look (border 1px + padding 3px = 4px inset,
-     * matching the previous fixed 4px margin). Go bigger for a smaller
-     * glyph inside the same button box. */
     padding: 3px;
-    qproperty-buttonSize: 16;
+    min-width: 8px;
+    max-width: 8px;
+    min-height: 8px;
+    max-height: 8px;
     qproperty-buttonSpacing: 6;
     qproperty-buttonMarginRight: 6;
     qproperty-glyphColor: rgb(235, 235, 235);

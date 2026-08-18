@@ -61,7 +61,6 @@ DecorationColors load_decoration_theme() {
     g_frame = new DecorationFrame();
     g_frame->setStyleSheet(stylesheet);
     repolish_tree(g_frame);
-    g_frame->applyMetricsToLayout();
 
     // decoration/switcher.cpp's Alt-Tab panel is a separate hand-painted
     // overlay (not part of the QSS-styled widget tree), so it still needs
@@ -69,10 +68,11 @@ DecorationColors load_decoration_theme() {
     // widgets below via pixel/palette sampling, not duplicated as a
     // hand-copied literal that could drift out of sync with the QSS.
     g_frame->layoutFor(200, 200);
-    int border_sample_y = kTitlebarHeight + 10; // clear of the bottom radius
+    int titlebar_height = g_frame->titlebarHeight();
+    int border_sample_y = titlebar_height + 10; // clear of the bottom radius
 
     g_frame->setFocusedState(true);
-    QColor titlebar_bg = sample_pixel(g_frame->titlebarWidget(), 20, kTitlebarHeight / 2);
+    QColor titlebar_bg = sample_pixel(g_frame->titlebarWidget(), 20, titlebar_height / 2);
     QColor titlebar_fg = g_frame->titleColor();
     QColor border_focused = sample_pixel(g_frame, 0, border_sample_y);
 

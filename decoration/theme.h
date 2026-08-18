@@ -27,13 +27,13 @@ struct DecorationColors {
     float border_unfocused[4];
 };
 
-// Loads the embedded biome-dark.qss, builds and styles the persistent
+// Loads the embedded biome-dark.qss and builds/styles the persistent
 // DecorationFrame widget tree decoration/renderer.cpp renders for every
-// decoration repaint, and reads its qproperty-* metrics back into
-// layout.h's runtime geometry globals (kBorderWidth, kTitlebarHeight, ...).
-// Must be called once, after a QApplication exists, before any toplevel is
-// created - not live-reloaded. Returns the flat colors
-// decoration/switcher.cpp's hand-painted Alt-Tab overlay still uses.
+// decoration repaint and core/main.cpp hit-tests/positions against
+// (DecorationFrame::hitTest()/borderWidth()/titlebarHeight()). Must be
+// called once, after a QApplication exists, before any toplevel is created -
+// not live-reloaded. Returns the flat colors decoration/switcher.cpp's
+// hand-painted Alt-Tab overlay still uses.
 DecorationColors load_decoration_theme();
 
 // The persistent widget tree load_decoration_theme() built. Valid only
