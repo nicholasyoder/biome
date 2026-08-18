@@ -1,0 +1,268 @@
+// SPDX-License-Identifier: LGPL-3.0-or-later
+
+#include "desktop/xwayland_shell.h"
+
+#include "core/cursor.h"
+#include "desktop/decoration_bridge.h"
+#include "desktop/toplevel.h"
+
+#include <cstdlib>
+
+static void server_new_xwayland_surface(wl_listener *listener, void *data);
+static void server_xwayland_ready(wl_listener *listener, void *data);
+
+void xwayland_init(BiomeServer *server, wlr_compositor *compositor) {
+    server->xwayland = wlr_xwayland_create(server->display, compositor, true);
+    if (server->xwayland == nullptr) {
+        wlr_log(WLR_ERROR, "failed to start Xwayland; X11 apps will not work");
+        return;
+    }
+    server->new_xwayland_surface.notify = server_new_xwayland_surface;
+    wl_signal_add(&server->xwayland->events.new_surface, &server->new_xwayland_surface);
+    server->xwayland_ready.notify = server_xwayland_ready;
+    wl_signal_add(&server->xwayland->events.ready, &server->xwayland_ready);
+    wlr_xwayland_set_seat(server->xwayland, server->seat);
+    setenv("DISPLAY", server->xwayland->display_name, true);
+}
+
+// --- Xwayland: managed toplevels -------------------------------------
+
+static void xwayland_toplevel_associate(wl_listener *listener, void *data) {
+    (void)data;
+    // The wlr_surface backing this X11 window now exists - hook up map/
+    // unmap (shared with xdg-shell) and create its scene node.
+    BiomeToplevel *toplevel = wl_container_of(listener, toplevel, associate);
+    wlr_xwayland_surface *xsurface = toplevel->xwayland_surface;
+
+    toplevel->content_tree =
+        wlr_scene_subsurface_tree_create(toplevel->scene_tree, xsurface->surface);
+    toplevel->content_tree->node.data = toplevel;
+    wlr_scene_node_set_position(&toplevel->content_tree->node,
+        decoration_border_width(), decoration_titlebar_height());
+    xsurface->data = toplevel->content_tree;
+
+    toplevel->map.notify = toplevel_map;
+    wl_signal_add(&xsurface->surface->events.map, &toplevel->map);
+    toplevel->unmap.notify = toplevel_unmap;
+    wl_signal_add(&xsurface->surface->events.unmap, &toplevel->unmap);
+}
+
+static void xwayland_toplevel_dissociate(wl_listener *listener, void *data) {
+    (void)data;
+    // The wlr_surface is going away (but the X11 window wrapper itself may
+    // persist, e.g. it could be re-associated later). wlroots destroys the
+    // scene node tied to the surface itself, we just drop our listeners.
+    BiomeToplevel *toplevel = wl_container_of(listener, toplevel, dissociate);
+    wl_list_remove(&toplevel->map.link);
+    wl_list_remove(&toplevel->unmap.link);
+    toplevel->xwayland_surface->data = nullptr;
+    // content_tree's node is destroyed by wlroots along with the surface
+    // it wraps; scene_tree (the container, and its decoration) persists in
+    // case this surface re-associates later.
+    toplevel->content_tree = nullptr;
+}
+
+static void xwayland_toplevel_destroy(wl_listener *listener, void *data) {
+    (void)data;
+    BiomeToplevel *toplevel = wl_container_of(listener, toplevel, destroy);
+
+    wl_list_remove(&toplevel->associate.link);
+    wl_list_remove(&toplevel->dissociate.link);
+    wl_list_remove(&toplevel->destroy.link);
+    wl_list_remove(&toplevel->request_move.link);
+    wl_list_remove(&toplevel->request_resize.link);
+    wl_list_remove(&toplevel->request_maximize.link);
+    wl_list_remove(&toplevel->request_fullscreen.link);
+    wl_list_remove(&toplevel->request_minimize.link);
+    wl_list_remove(&toplevel->request_configure.link);
+
+    // scene_tree (the container + decoration) was created up front in
+    // server_new_xwayland_surface and outlives any single associate/
+    // dissociate cycle, so we own destroying it.
+    wlr_scene_node_destroy(&toplevel->scene_tree->node);
+
+    clear_decoration_tracking(toplevel->server, toplevel);
+    free(toplevel);
+}
+
+static void xwayland_toplevel_request_resize(wl_listener *listener, void *data) {
+    auto *event = static_cast<wlr_xwayland_resize_event *>(data);
+    BiomeToplevel *toplevel = wl_container_of(listener, toplevel, request_resize);
+    begin_interactive(toplevel, BiomeCursorMode::Resize, event->edges, true);
+}
+
+static void xwayland_toplevel_request_maximize(wl_listener *listener, void *data) {
+    (void)data;
+    // X11 tracks maximize as two independent axes (_NET_WM_STATE_MAXIMIZED_
+    // VERT/HORZ); Biome doesn't offer a partial-axis maximize, so treat
+    // "maximized" as both being requested together.
+    BiomeToplevel *toplevel = wl_container_of(listener, toplevel, request_maximize);
+    bool requested = toplevel->xwayland_surface->maximized_vert &&
+        toplevel->xwayland_surface->maximized_horz;
+    set_toplevel_maximized(toplevel, requested);
+}
+
+static void xwayland_toplevel_request_fullscreen(wl_listener *listener, void *data) {
+    (void)data;
+    BiomeToplevel *toplevel = wl_container_of(listener, toplevel, request_fullscreen);
+    wlr_xwayland_surface_set_fullscreen(toplevel->xwayland_surface, false);
+}
+
+static void xwayland_toplevel_request_minimize(wl_listener *listener, void *data) {
+    auto *event = static_cast<wlr_xwayland_minimize_event *>(data);
+    BiomeToplevel *toplevel = wl_container_of(listener, toplevel, request_minimize);
+    set_toplevel_minimized(toplevel, event->minimize);
+}
+
+static void xwayland_toplevel_request_configure(wl_listener *listener, void *data) {
+    // X11 clients can ask to move/resize themselves outside of an
+    // interactive grab (e.g. a terminal resizing to fit its font). Biome
+    // doesn't second-guess these, it just honors them and keeps the scene
+    // node in sync.
+    BiomeToplevel *toplevel = wl_container_of(listener, toplevel, request_configure);
+    auto *event = static_cast<wlr_xwayland_surface_configure_event *>(data);
+    wlr_xwayland_surface_configure(toplevel->xwayland_surface,
+        event->x, event->y, event->width, event->height);
+    if (toplevel->content_tree) {
+        wlr_scene_node_set_position(&toplevel->scene_tree->node,
+            event->x - decoration_border_width(), event->y - decoration_titlebar_height());
+        render_toplevel_decoration(toplevel);
+    }
+}
+
+// --- Xwayland: override-redirect (unmanaged) surfaces -----------------
+
+static void unmanaged_associate(wl_listener *listener, void *data) {
+    (void)data;
+    BiomeUnmanaged *surface = wl_container_of(listener, surface, associate);
+    wlr_xwayland_surface *xsurface = surface->xwayland_surface;
+
+    surface->scene_tree =
+        wlr_scene_subsurface_tree_create(&surface->server->scene->tree, xsurface->surface);
+    wlr_scene_node_set_position(&surface->scene_tree->node, xsurface->x, xsurface->y);
+
+    surface->map.notify = [](wl_listener *l, void *d) {
+        (void)d;
+        BiomeUnmanaged *s = wl_container_of(l, s, map);
+        wlr_scene_node_raise_to_top(&s->scene_tree->node);
+        if (wlr_xwayland_or_surface_wants_focus(s->xwayland_surface)) {
+            wlr_seat *seat = s->server->seat;
+            wlr_keyboard *keyboard = wlr_seat_get_keyboard(seat);
+            wlr_seat_keyboard_notify_enter(seat, s->xwayland_surface->surface,
+                keyboard ? keyboard->keycodes : nullptr,
+                keyboard ? keyboard->num_keycodes : 0,
+                keyboard ? &keyboard->modifiers : nullptr);
+        }
+    };
+    wl_signal_add(&xsurface->surface->events.map, &surface->map);
+
+    surface->unmap.notify = [](wl_listener *l, void *d) {
+        (void)d;
+        BiomeUnmanaged *s = wl_container_of(l, s, unmap);
+        wlr_seat *seat = s->server->seat;
+        if (seat->keyboard_state.focused_surface != s->xwayland_surface->surface) {
+            return;
+        }
+        // Hand focus back to the topmost managed toplevel, if any.
+        if (!wl_list_empty(&s->server->toplevels)) {
+            BiomeToplevel *top = wl_container_of(s->server->toplevels.next, top, link);
+            focus_toplevel(top, toplevel_surface(top));
+        } else {
+            wlr_seat_keyboard_notify_clear_focus(seat);
+        }
+    };
+    wl_signal_add(&xsurface->surface->events.unmap, &surface->unmap);
+}
+
+static void unmanaged_dissociate(wl_listener *listener, void *data) {
+    (void)data;
+    BiomeUnmanaged *surface = wl_container_of(listener, surface, dissociate);
+    wl_list_remove(&surface->map.link);
+    wl_list_remove(&surface->unmap.link);
+    surface->scene_tree = nullptr;
+}
+
+static void unmanaged_destroy(wl_listener *listener, void *data) {
+    (void)data;
+    BiomeUnmanaged *surface = wl_container_of(listener, surface, destroy);
+    wl_list_remove(&surface->associate.link);
+    wl_list_remove(&surface->dissociate.link);
+    wl_list_remove(&surface->destroy.link);
+    wl_list_remove(&surface->request_configure.link);
+    free(surface);
+}
+
+static void unmanaged_request_configure(wl_listener *listener, void *data) {
+    BiomeUnmanaged *surface = wl_container_of(listener, surface, request_configure);
+    auto *event = static_cast<wlr_xwayland_surface_configure_event *>(data);
+    wlr_xwayland_surface_configure(surface->xwayland_surface,
+        event->x, event->y, event->width, event->height);
+    if (surface->scene_tree) {
+        wlr_scene_node_set_position(&surface->scene_tree->node, event->x, event->y);
+    }
+}
+
+static void server_new_xwayland_surface(wl_listener *listener, void *data) {
+    BiomeServer *server = wl_container_of(listener, server, new_xwayland_surface);
+    auto *xsurface = static_cast<wlr_xwayland_surface *>(data);
+
+    if (xsurface->override_redirect) {
+        auto *surface = static_cast<BiomeUnmanaged *>(calloc(1, sizeof(BiomeUnmanaged)));
+        surface->server = server;
+        surface->xwayland_surface = xsurface;
+
+        surface->associate.notify = unmanaged_associate;
+        wl_signal_add(&xsurface->events.associate, &surface->associate);
+        surface->dissociate.notify = unmanaged_dissociate;
+        wl_signal_add(&xsurface->events.dissociate, &surface->dissociate);
+        surface->destroy.notify = unmanaged_destroy;
+        wl_signal_add(&xsurface->events.destroy, &surface->destroy);
+        surface->request_configure.notify = unmanaged_request_configure;
+        wl_signal_add(&xsurface->events.request_configure, &surface->request_configure);
+        return;
+    }
+
+    auto *toplevel = static_cast<BiomeToplevel *>(calloc(1, sizeof(BiomeToplevel)));
+    toplevel->server = server;
+    toplevel->type = BiomeToplevelType::Xwayland;
+    toplevel->xwayland_surface = xsurface;
+
+    // Created up front (unlike content_tree, which comes and goes with
+    // associate/dissociate) so the decoration survives re-association.
+    toplevel->scene_tree = wlr_scene_tree_create(&server->scene->tree);
+    toplevel->scene_tree->node.data = toplevel;
+    create_toplevel_decoration(toplevel);
+
+    toplevel->associate.notify = xwayland_toplevel_associate;
+    wl_signal_add(&xsurface->events.associate, &toplevel->associate);
+    toplevel->dissociate.notify = xwayland_toplevel_dissociate;
+    wl_signal_add(&xsurface->events.dissociate, &toplevel->dissociate);
+    toplevel->destroy.notify = xwayland_toplevel_destroy;
+    wl_signal_add(&xsurface->events.destroy, &toplevel->destroy);
+    toplevel->request_move.notify = toplevel_request_move;
+    wl_signal_add(&xsurface->events.request_move, &toplevel->request_move);
+    toplevel->request_resize.notify = xwayland_toplevel_request_resize;
+    wl_signal_add(&xsurface->events.request_resize, &toplevel->request_resize);
+    toplevel->request_maximize.notify = xwayland_toplevel_request_maximize;
+    wl_signal_add(&xsurface->events.request_maximize, &toplevel->request_maximize);
+    toplevel->request_fullscreen.notify = xwayland_toplevel_request_fullscreen;
+    wl_signal_add(&xsurface->events.request_fullscreen, &toplevel->request_fullscreen);
+    toplevel->request_minimize.notify = xwayland_toplevel_request_minimize;
+    wl_signal_add(&xsurface->events.request_minimize, &toplevel->request_minimize);
+    toplevel->request_configure.notify = xwayland_toplevel_request_configure;
+    wl_signal_add(&xsurface->events.request_configure, &toplevel->request_configure);
+}
+
+static void server_xwayland_ready(wl_listener *listener, void *data) {
+    (void)data;
+    // Give Xwayland a cursor image as soon as it's up - without this, X11
+    // clients show no cursor at all until they set their own.
+    BiomeServer *server = wl_container_of(listener, server, xwayland_ready);
+    wlr_xcursor *xcursor = wlr_xcursor_manager_get_xcursor(server->cursor_mgr, "default", 1.0f);
+    if (xcursor != nullptr && xcursor->image_count > 0) {
+        wlr_xcursor_image *image = xcursor->images[0];
+        wlr_xwayland_set_cursor(server->xwayland, image->buffer,
+            image->width * 4, image->width, image->height,
+            static_cast<int32_t>(image->hotspot_x), static_cast<int32_t>(image->hotspot_y));
+    }
+}
