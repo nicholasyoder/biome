@@ -14,7 +14,6 @@
 
 #include "layout.h" // Region
 
-#include <QColor>
 #include <QLabel>
 #include <QString>
 #include <QToolButton>
@@ -27,6 +26,23 @@ namespace biome_decoration {
 // are never QWidget::show()n (Biome renders offscreen), since Qt normally
 // only auto-polishes a widget on its first show.
 void repolish_tree(QWidget *root);
+
+// Forces root's QLayout (and every descendant's) to recompute geometry
+// immediately, top-down. A QLayout normally reflows via a posted
+// QEvent::LayoutRequest and only activate()s once until something
+// re-invalidates it - both assume a running Qt event loop delivering events
+// and re-triggering invalidation on every resize. Biome never runs one
+// (everything offscreen, driven synchronously - see frame_widget.cpp/
+// switcher.cpp), so a widget tree's layout would otherwise just keep stale
+// (default 100x30, top-left) geometry forever after the first call.
+// invalidate() + activate(), unconditionally, top-down on every layout in
+// the tree, sidesteps both assumptions - parent geometry (and so each child
+// widget's own rect) is always current before that child's own nested
+// layout, if any, recomputes against it. Shared by DecorationFrame::
+// layoutFor() and switcher.cpp's SwitcherPanel, which both resize() an
+// offscreen top-level widget and need its whole subtree to reflect that
+// immediately.
+void force_activate_layouts(QWidget *root);
 
 // One left/right/bottom border strip - a plain styled widget (background,
 // border, radius, all real QSS box-model properties) rather than a single
@@ -130,12 +146,6 @@ public:
     // ButtonClose/None.
     void setHoveredRegion(Region region);
     void setPressedRegion(Region region);
-
-    // Accessors used by theme.cpp to sample colors back out of the real
-    // QSS-styled widgets for decoration/switcher.cpp's separate hand-painted
-    // Alt-Tab panel, rather than duplicating literal color values in C++.
-    QWidget *titlebarWidget() const { return titlebar_; }
-    QColor titleColor() const { return title_label_->palette().color(title_label_->foregroundRole()); }
 
 private:
     QWidget *titlebar_ = nullptr;

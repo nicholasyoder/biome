@@ -107,13 +107,6 @@ struct BiomeServer {
 
     int active_workspace = 0;
 
-    // Sourced once at startup from Biome's own self-contained decoration
-    // theme (not Forest's - see decoration/theme.h). Still used by
-    // switcher.cpp's hand-painted Alt-Tab overlay; render_toplevel_decoration
-    // no longer needs it directly since decoration/theme/biome-dark.qss
-    // styles the real widget tree it renders.
-    biome_decoration::DecorationColors decoration_colors = {};
-
     // Graphical Alt-Tab switcher overlay. switcher_active tracks whether
     // Alt is currently held with the switcher shown (set on the first
     // Tab press, cleared on Alt release - see keyboard_handle_modifiers);
@@ -421,8 +414,7 @@ static void update_switcher_overlay(BiomeServer *server) {
     // server->toplevels is MRU-ordered (focus_toplevel keeps the head as
     // the most-recently-focused), so the currently-focused window - the one
     // Tab just landed on - is always entry 0.
-    biome_decoration::RenderedFrame frame = biome_decoration::render_switcher(
-        entries, 0, server->decoration_colors);
+    biome_decoration::RenderedFrame frame = biome_decoration::render_switcher(entries, 0);
     wlr_buffer *buffer = create_decoration_buffer(std::move(frame));
     if (buffer == nullptr) {
         wlr_scene_node_set_enabled(&server->switcher_buffer->node, false);
@@ -2123,7 +2115,7 @@ int main(int argc, char *argv[]) {
     QApplication qt_app(qt_argc, qt_argv);
 
     BiomeServer server;
-    server.decoration_colors = biome_decoration::load_decoration_theme();
+    biome_decoration::load_decoration_theme();
     // The Wayland display is managed by libwayland. It handles accepting
     // clients from the Unix socket, managing Wayland globals, and so on.
     server.display = wl_display_create();

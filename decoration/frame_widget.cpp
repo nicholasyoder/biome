@@ -23,19 +23,6 @@ void repolish_tree(QWidget *root) {
     }
 }
 
-namespace {
-
-// A QLayout normally reflows via a posted QEvent::LayoutRequest, and only
-// activate()s once until something re-invalidates it - both of which
-// assume a running Qt event loop delivering events and re-triggering
-// invalidation on every resize. Biome never runs one (see theme.cpp/
-// renderer.cpp: everything is driven synchronously through direct calls),
-// so titlebar_'s nested layout in particular would just keep stale
-// (default 100x30, top-left) geometry forever after the first call.
-// invalidate() + activate(), unconditionally, top-down on every layout in
-// the tree, sidesteps both assumptions - parent geometry (and so each
-// child widget's own rect) is always current before that child's own
-// nested layout, if any, recomputes against it.
 void force_activate_layouts(QWidget *root) {
     if (QLayout *layout = root->layout()) {
         layout->invalidate();
@@ -47,8 +34,6 @@ void force_activate_layouts(QWidget *root) {
         }
     }
 }
-
-} // namespace
 
 namespace {
 // How many pixels near a corner count as a diagonal resize handle rather

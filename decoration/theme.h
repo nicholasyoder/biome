@@ -15,26 +15,22 @@
 
 namespace biome_decoration {
 
-// Flat RGBA (0..1) colors for decoration/switcher.cpp's hand-painted
-// Alt-Tab panel - not used by the window frame itself (that's painted
-// entirely through QSS, see frame_widget.h). Every field here is read back
-// from the real QSS-styled widget tree by load_decoration_theme(), not a
-// hand-duplicated literal, so it can't drift out of sync with the theme.
-struct DecorationColors {
-    float titlebar_bg[4];
-    float titlebar_fg[4];
-    float border_focused[4];
-    float border_unfocused[4];
-};
+// Reads the embedded biome-dark.qss (see this file's header above) and
+// applies it to root, then repolishes root's whole subtree so every rule -
+// including qproperty-* values - takes effect immediately. Needed because
+// Biome never QWidget::show()s these widgets through a real event loop, so
+// Qt's normal on-first-show auto-polish never runs (see frame_widget.h's
+// repolish_tree()). Shared by load_decoration_theme() below, for its
+// DecorationFrame, and switcher.cpp's SwitcherPanel - two separate
+// top-level widget trees painted by the same stylesheet.
+void apply_decoration_stylesheet(QWidget *root);
 
-// Loads the embedded biome-dark.qss and builds/styles the persistent
-// DecorationFrame widget tree decoration/renderer.cpp renders for every
-// decoration repaint and core/main.cpp hit-tests/positions against
-// (DecorationFrame::hitTest()/borderWidth()/titlebarHeight()). Must be
-// called once, after a QApplication exists, before any toplevel is created -
-// not live-reloaded. Returns the flat colors decoration/switcher.cpp's
-// hand-painted Alt-Tab overlay still uses.
-DecorationColors load_decoration_theme();
+// Builds/styles the persistent DecorationFrame widget tree decoration/
+// renderer.cpp renders for every decoration repaint and core/main.cpp
+// hit-tests/positions against (DecorationFrame::hitTest()/borderWidth()/
+// titlebarHeight()). Must be called once, after a QApplication exists,
+// before any toplevel is created - not live-reloaded.
+void load_decoration_theme();
 
 // The persistent widget tree load_decoration_theme() built. Valid only
 // after load_decoration_theme() has been called.
