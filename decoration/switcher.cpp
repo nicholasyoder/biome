@@ -92,7 +92,10 @@ void SwitcherPanel::setEntries(const std::vector<SwitcherEntry> &entries, int se
     for (size_t i = 0; i < entries.size(); i++) {
         rows_[i]->setProperty("selected", static_cast<int>(i) == selected_index);
         full_labels_[i] = entries[i].label;
-        rows_[i]->setText(QString::fromUtf8(entries[i].label.c_str()));
+        // Same untrusted-title concern as DecorationFrame::setTitle()
+        // (frame_widget.cpp) - simplified() keeps an embedded newline from
+        // turning one row into a multi-line label.
+        rows_[i]->setText(QString::fromUtf8(entries[i].label.c_str()).simplified());
     }
 }
 
@@ -100,7 +103,7 @@ void SwitcherPanel::elideRows() {
     for (size_t i = 0; i < rows_.size(); i++) {
         QLabel *row = rows_[i];
         QFontMetrics metrics(row->font());
-        QString full = QString::fromUtf8(full_labels_[i].c_str());
+        QString full = QString::fromUtf8(full_labels_[i].c_str()).simplified();
         QString elided = metrics.elidedText(full, Qt::ElideRight, row->contentsRect().width());
         row->setText(elided);
     }

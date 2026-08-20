@@ -53,6 +53,12 @@ static void xdg_toplevel_commit(wl_listener *listener, void *data) {
     render_toplevel_decoration(toplevel);
 }
 
+static void xdg_toplevel_set_title(wl_listener *listener, void *data) {
+    (void)data;
+    BiomeToplevel *toplevel = wl_container_of(listener, toplevel, set_title);
+    render_toplevel_decoration(toplevel);
+}
+
 static void xdg_toplevel_destroy(wl_listener *listener, void *data) {
     (void)data;
     // Called when the xdg_toplevel is destroyed.
@@ -61,6 +67,7 @@ static void xdg_toplevel_destroy(wl_listener *listener, void *data) {
     wl_list_remove(&toplevel->map.link);
     wl_list_remove(&toplevel->unmap.link);
     wl_list_remove(&toplevel->commit.link);
+    wl_list_remove(&toplevel->set_title.link);
     wl_list_remove(&toplevel->destroy.link);
     wl_list_remove(&toplevel->request_move.link);
     wl_list_remove(&toplevel->request_resize.link);
@@ -165,6 +172,8 @@ static void server_new_xdg_toplevel(wl_listener *listener, void *data) {
     wl_signal_add(&xdg_toplevel->base->surface->events.unmap, &toplevel->unmap);
     toplevel->commit.notify = xdg_toplevel_commit;
     wl_signal_add(&xdg_toplevel->base->surface->events.commit, &toplevel->commit);
+    toplevel->set_title.notify = xdg_toplevel_set_title;
+    wl_signal_add(&xdg_toplevel->events.set_title, &toplevel->set_title);
 
     toplevel->destroy.notify = xdg_toplevel_destroy;
     wl_signal_add(&xdg_toplevel->events.destroy, &toplevel->destroy);

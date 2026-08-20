@@ -90,7 +90,7 @@ void create_toplevel_decoration(BiomeToplevel *toplevel) {
 }
 
 void render_toplevel_decoration(BiomeToplevel *toplevel) {
-    if (toplevel == nullptr || toplevel->decoration_buffer == nullptr) {
+    if (toplevel == nullptr || toplevel->decoration_buffer == nullptr || !toplevel->placed) {
         return;
     }
     wlr_box geo;
@@ -110,6 +110,15 @@ void render_toplevel_decoration(BiomeToplevel *toplevel) {
     }
     wlr_scene_buffer_set_buffer(toplevel->decoration_buffer, buffer);
     wlr_buffer_drop(buffer);
+
+    // Re-syncs content_tree to this same render's border/titlebar metrics,
+    // rather than trusting the one-time snapshot taken at creation - those
+    // metrics come from shared, mutable global state (decoration_frame()),
+    // not something guaranteed stable between then and now.
+    if (toplevel->content_tree != nullptr) {
+        wlr_scene_node_set_position(&toplevel->content_tree->node,
+            decoration_border_width(), decoration_titlebar_height());
+    }
 }
 
 void update_switcher_overlay(BiomeServer *server) {

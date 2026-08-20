@@ -62,12 +62,19 @@ static void xwayland_toplevel_dissociate(wl_listener *listener, void *data) {
     toplevel->content_tree = nullptr;
 }
 
+static void xwayland_toplevel_set_title(wl_listener *listener, void *data) {
+    (void)data;
+    BiomeToplevel *toplevel = wl_container_of(listener, toplevel, set_title);
+    render_toplevel_decoration(toplevel);
+}
+
 static void xwayland_toplevel_destroy(wl_listener *listener, void *data) {
     (void)data;
     BiomeToplevel *toplevel = wl_container_of(listener, toplevel, destroy);
 
     wl_list_remove(&toplevel->associate.link);
     wl_list_remove(&toplevel->dissociate.link);
+    wl_list_remove(&toplevel->set_title.link);
     wl_list_remove(&toplevel->destroy.link);
     wl_list_remove(&toplevel->request_move.link);
     wl_list_remove(&toplevel->request_resize.link);
@@ -121,6 +128,7 @@ static void xwayland_toplevel_request_configure(wl_listener *listener, void *dat
     // node in sync.
     BiomeToplevel *toplevel = wl_container_of(listener, toplevel, request_configure);
     auto *event = static_cast<wlr_xwayland_surface_configure_event *>(data);
+
     wlr_xwayland_surface_configure(toplevel->xwayland_surface,
         event->x, event->y, event->width, event->height);
     if (toplevel->content_tree) {
@@ -239,6 +247,8 @@ static void server_new_xwayland_surface(wl_listener *listener, void *data) {
     wl_signal_add(&xsurface->events.dissociate, &toplevel->dissociate);
     toplevel->destroy.notify = xwayland_toplevel_destroy;
     wl_signal_add(&xsurface->events.destroy, &toplevel->destroy);
+    toplevel->set_title.notify = xwayland_toplevel_set_title;
+    wl_signal_add(&xsurface->events.set_title, &toplevel->set_title);
     toplevel->request_move.notify = toplevel_request_move;
     wl_signal_add(&xsurface->events.request_move, &toplevel->request_move);
     toplevel->request_resize.notify = xwayland_toplevel_request_resize;

@@ -23,6 +23,13 @@ struct BiomeToplevel {
     BiomeToplevelType type = BiomeToplevelType::Xdg;
     int workspace = 0;
 
+    // Set once place_new_toplevel has given this toplevel its first real
+    // on-screen position. A scene node is visible from creation, at
+    // whatever default position it starts at, so render_toplevel_decoration
+    // checks this to avoid flashing a decoration buffer there before
+    // placement runs (e.g. an early Xwayland set_title, before map).
+    bool placed = false;
+
     // Set by set_toplevel_maximized. restore_box is the pre-maximize
     // visible content box (position + size), in output-layout coordinates -
     // reapplied on un-maximize.
@@ -57,6 +64,10 @@ struct BiomeToplevel {
     wl_listener map = {};
     wl_listener unmap = {};
     wl_listener commit = {}; // xdg only
+    // Shared: catches a title set/changed after map - Xwayland has no
+    // general commit hook to catch this opportunistically like xdg-shell's
+    // commit listener above does.
+    wl_listener set_title = {};
     wl_listener destroy = {};
     wl_listener request_move = {};
     wl_listener request_resize = {};

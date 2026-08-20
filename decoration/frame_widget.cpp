@@ -40,7 +40,7 @@ namespace {
 // than a plain edge - pure WM click-precision convention, not a rendered
 // decoration element, so there's no QSS/widget equivalent to source it
 // from (unlike border/titlebar/button metrics below).
-constexpr int kResizeCornerSize = 12;
+constexpr int kResizeCornerSize = 8;
 } // namespace
 
 DecorationButton::DecorationButton(Region region, QWidget *parent)
@@ -127,17 +127,20 @@ DecorationFrame::DecorationFrame(QWidget *parent) : QFrame(parent) {
 
 void DecorationFrame::layoutFor(int content_width, int content_height) {
     content_spacer_->setFixedSize(content_width, content_height);
-    // minimumSizeHint() (-> main_layout's totalMinimumSize()) is the frame's
-    // true required size: border/titlebar/border-bottom's own QSS min-sizes
-    // plus content_spacer_'s just-set fixed size, with title_label_ excluded
-    // via its Ignored size policy above. Resizing to it explicitly - rather
-    // than leaving this top-level widget to force_activate_layouts()'s
-    // activate() alone - matters because QLayout::activate() on a top-level
-    // widget only ever grows it (resize(minimumSize().expandedTo(size())):
-    // an expandedTo() can't shrink), so relying on activate() alone would
-    // silently freeze the frame at its largest-ever size and never shrink
-    // back down on a smaller content_width/content_height.
+    // Invalidate first: setFixedSize() normally flags stale layout caches
+    // via a posted QEvent::LayoutRequest, which never arrives since Biome
+    // has no running Qt event loop to pump it. Without this, minimumSizeHint()
+    // below could read a stale cached size from decoration_frame()'s
+    // *previous* caller - this widget is shared across every toplevel's
+    // render, so "previous" often means a different window's content size.
+    force_activate_layouts(this);
+    // minimumSizeHint() is the frame's true required size now that it's
+    // fresh. Resizing to it explicitly (vs. leaving it to the second
+    // force_activate_layouts() call below) matters because QLayout::
+    // activate() on a top-level widget only ever grows it, never shrinks.
     resize(minimumSizeHint());
+    // Re-activate now that the frame is at its correct final size, so every
+    // child is positioned/sized against that instead of the stale one above.
     force_activate_layouts(this);
 }
 
@@ -211,7 +214,10 @@ void DecorationFrame::setFocusedState(bool focused) {
 }
 
 void DecorationFrame::setTitle(const QString &title) {
-    title_label_->setText(title);
+    // A client's title is untrusted text - QLabel renders an embedded '\n'
+    // as a hard line break and grows the titlebar to fit, so simplified()
+    // collapses any whitespace/newlines to guarantee single-line text.
+    title_label_->setText(title.simplified());
 }
 
 void DecorationFrame::setHoveredRegion(Region region) {

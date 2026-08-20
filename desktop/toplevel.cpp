@@ -174,6 +174,7 @@ void place_new_toplevel(BiomeToplevel *toplevel) {
     wlr_scene_node_set_position(&toplevel->scene_tree->node,
         vis_x - decoration_border_width(), vis_y - decoration_titlebar_height());
     toplevel_sync_position(toplevel, vis_x, vis_y);
+    toplevel->placed = true;
     update_toplevel_visibility(toplevel);
 }
 
