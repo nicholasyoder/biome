@@ -66,46 +66,28 @@ public:
 // (biome-dark.qss selects a different image per button, and a dimmer variant
 // when the frame is unfocused, the same way it already re-selects title
 // color/border color), so there is no C++ glyph-drawing code to keep in
-// sync with the theme. The only override needed is resizeEvent(), which
-// keeps iconSize matched to the button's own QSS-driven content box so the
-// image always fills it exactly regardless of what size a theme gives the
-// button. Its own size comes straight from QSS min-width/max-width/
-// min-height/max-height (biome-dark.qss) via the QLayout it sits in -
-// buttonSpacing/buttonMarginRight stay qproperty-driven since QSS has no
-// equivalent for a QLayout's spacing/margins between siblings.
+// sync with the theme. Its own size and spacing from its siblings come
+// straight from QSS box-model properties (padding, margin) via the QLayout
+// it sits in - the one thing that isn't automatic is iconSize, which
+// DecorationFrame::layoutFor() keeps matched to each icon's own native
+// resolution (see the .cpp) before every layout pass.
 class DecorationButton : public QToolButton {
     Q_OBJECT
-    Q_PROPERTY(int buttonSpacing READ buttonSpacing WRITE setButtonSpacing)
-    Q_PROPERTY(int buttonMarginRight READ buttonMarginRight WRITE setButtonMarginRight)
 
 public:
     DecorationButton(Region region, QWidget *parent = nullptr);
 
     Region region() const { return region_; }
 
-    int buttonSpacing() const { return button_spacing_; }
-    void setButtonSpacing(int value) { button_spacing_ = value; }
-    int buttonMarginRight() const { return button_margin_right_; }
-    void setButtonMarginRight(int value) { button_margin_right_ = value; }
-
-protected:
-    void resizeEvent(QResizeEvent *event) override;
-
 private:
     Region region_;
-    int button_spacing_ = 6;
-    int button_margin_right_ = 6;
 };
 
 class DecorationFrame : public QFrame {
     Q_OBJECT
-    Q_PROPERTY(int cornerRadius READ cornerRadius WRITE setCornerRadius)
 
 public:
     explicit DecorationFrame(QWidget *parent = nullptr);
-
-    int cornerRadius() const { return corner_radius_; }
-    void setCornerRadius(int value) { corner_radius_ = value; }
 
     // Content-size-independent metrics, read live off content_spacer_'s own
     // laid-out position - it sits directly against border_left_/titlebar_ in
@@ -183,7 +165,6 @@ private:
     // any other fixed-size widget, so the borders never need manual
     // geometry math.
     QWidget *content_spacer_ = nullptr;
-    int corner_radius_ = 0;
 };
 
 } // namespace biome_decoration

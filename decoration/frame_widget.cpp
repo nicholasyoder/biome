@@ -7,10 +7,8 @@
 #include <QEnterEvent>
 #include <QEvent>
 #include <QLayout>
-#include <QResizeEvent>
 #include <QSizePolicy>
 #include <QStyle>
-#include <QStyleOptionToolButton>
 
 namespace biome_decoration {
 
@@ -55,20 +53,6 @@ DecorationButton::DecorationButton(Region region, QWidget *parent)
     setAttribute(Qt::WA_StyledBackground, true);
 }
 
-void DecorationButton::resizeEvent(QResizeEvent *event) {
-    QToolButton::resizeEvent(event);
-
-    // Keeps the icon filling exactly the button's QSS-driven content box
-    // (padding excluded) on every resize, so a theme can resize the button
-    // via plain QSS min/max-width/height without any C++ change - same
-    // SE_FrameContents query as before (see decoration/frame_widget.h),
-    // since QWidget::contentsRect() does NOT reflect QSS "padding".
-    QStyleOptionToolButton option;
-    option.initFrom(this);
-    QRect box = style()->subElementRect(QStyle::SE_FrameContents, &option, this);
-    setIconSize(box.size());
-}
-
 DecorationBorder::DecorationBorder(const QString &object_name, QWidget *parent) : QWidget(parent) {
     setObjectName(object_name);
     setAttribute(Qt::WA_StyledBackground, true);
@@ -97,7 +81,8 @@ DecorationFrame::DecorationFrame(QWidget *parent) : QFrame(parent) {
 
     auto *titlebar_layout = new QHBoxLayout(titlebar_);
     titlebar_layout->setContentsMargins(0, 0, 0, 0);
-    titlebar_layout->addWidget(title_label_, /*stretch=*/1);
+    titlebar_layout->setSpacing(0);
+    titlebar_layout->addWidget(title_label_, /*stretch=*/1, Qt::AlignVCenter);
     titlebar_layout->addWidget(button_minimize_, 0, Qt::AlignVCenter);
     titlebar_layout->addWidget(button_maximize_, 0, Qt::AlignVCenter);
     titlebar_layout->addWidget(button_close_, 0, Qt::AlignVCenter);
@@ -135,6 +120,7 @@ void DecorationFrame::layoutFor(int content_width, int content_height) {
     if (content_spacer_->width() == content_width && content_spacer_->height() == content_height) {
         return;
     }
+
     content_spacer_->setFixedSize(content_width, content_height);
     // Invalidate first: setFixedSize() normally flags stale layout caches
     // via a posted QEvent::LayoutRequest, which never arrives since Biome

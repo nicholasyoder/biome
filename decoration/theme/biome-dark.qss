@@ -1,9 +1,10 @@
+/* Main frame widget - transparent for rounded corner transparency */
 biome_decoration--DecorationFrame#biomeFrame {
     background: transparent;
-    qproperty-cornerRadius: 3;
 }
 
-QWidget#biomeTitlebar {
+/* Titlebar */
+biome_decoration--DecorationFrame#biomeFrame QWidget#biomeTitlebar {
     background: rgb(30, 30, 30);
     border-top-left-radius: 3px;
     border-top-right-radius: 3px;
@@ -12,17 +13,13 @@ QWidget#biomeTitlebar {
     border-top: 1px solid rgb(0,100,0);
 }
 
-biome_decoration--DecorationFrame#biomeFrame[focused="false"] QWidget#biomeTitlebar {
-    background: rgb(24, 24, 24);
-}
-
-QLabel#biomeTitle {
+/* Title QLabel */
+biome_decoration--DecorationFrame#biomeFrame QLabel#biomeTitle {
     background: transparent;
     color: rgb(235, 235, 235);
     font-size: 10pt;
-    margin: 2px 4px;
+    padding: 0px 6px;
 }
-
 biome_decoration--DecorationFrame#biomeFrame[focused="false"] QLabel#biomeTitle {
     color: rgb(150, 150, 150);
 }
@@ -33,7 +30,6 @@ biome_decoration--DecorationBorder {
 
 QWidget#biomeBorderLeft {
     min-width: 3px;
-    max-width: 3px;
     border-left: 1px solid rgb(0,100,0);
 }
 
@@ -44,7 +40,6 @@ QWidget#biomeBorderRight {
 
 QWidget#biomeBorderBottom {
     min-height: 3px;
-    max-height: 3px;
     border-bottom-left-radius: 3px;
     border-bottom-right-radius: 3px;
     border-left: 1px solid rgb(0,100,0);
@@ -52,15 +47,8 @@ QWidget#biomeBorderBottom {
     border-bottom: 1px solid rgb(0,100,0);
 }
 
-/* A maximized window already fills the output edge-to-edge, so rounded
-   corners would just clip a triangle of transparent nothing at each corner,
-   and there's no benefit to a visible grab border since edge-resize isn't
-   meaningful once the window fills the screen. */
-biome_decoration--DecorationFrame#biomeFrame[biomeMaximized="true"] {
-    qproperty-cornerRadius: 0;
-}
-
 biome_decoration--DecorationFrame#biomeFrame[biomeMaximized="true"] QWidget#biomeTitlebar {
+    border: none;
     border-top-left-radius: 0px;
     border-top-right-radius: 0px;
 }
@@ -68,12 +56,12 @@ biome_decoration--DecorationFrame#biomeFrame[biomeMaximized="true"] QWidget#biom
 biome_decoration--DecorationFrame#biomeFrame[biomeMaximized="true"] QWidget#biomeBorderLeft,
 biome_decoration--DecorationFrame#biomeFrame[biomeMaximized="true"] QWidget#biomeBorderRight {
     min-width: 0px;
-    max-width: 0px;
+    border: none;
 }
 
 biome_decoration--DecorationFrame#biomeFrame[biomeMaximized="true"] QWidget#biomeBorderBottom {
     min-height: 0px;
-    max-height: 0px;
+    border: none;
     border-bottom-left-radius: 0px;
     border-bottom-right-radius: 0px;
 }
@@ -82,53 +70,61 @@ biome_decoration--DecorationButton {
     background: transparent;
     border: 1px solid transparent;
     border-radius: 3px;
-    padding: 3px;
-    min-width: 8px;
-    max-width: 8px;
-    min-height: 8px;
-    max-height: 8px;
-    qproperty-buttonSpacing: 6;
-    qproperty-buttonMarginRight: 6;
+    padding: 4px 8px;
+    margin-top: 2px;
+    margin-bottom: 2px;
+    /* The icons are SVGs (scale-independent, no native pixel size to
+       inherit), so this is a real design decision, not a value read back
+       from the icon - see DecorationButton::sizeHint() being driven by
+       this via padding/border above it. */
+    qproperty-iconSize: 8px 8px;
 }
 
 biome_decoration--DecorationButton#biomeButtonMinimize {
-    qproperty-icon: url(:/biome/decoration/icons/minimize-normal.png);
+    qproperty-icon: url(:/biome/decoration/icons/minimize-normal.svg);
 }
 biome_decoration--DecorationButton#biomeButtonMaximize {
-    qproperty-icon: url(:/biome/decoration/icons/maximize-normal.png);
+    qproperty-icon: url(:/biome/decoration/icons/maximize-normal.svg);
 }
 biome_decoration--DecorationButton#biomeButtonClose {
-    qproperty-icon: url(:/biome/decoration/icons/close-normal.png);
+    qproperty-icon: url(:/biome/decoration/icons/close-normal.svg);
+    margin-right: 2px;
 }
 
 biome_decoration--DecorationFrame#biomeFrame[focused="false"] biome_decoration--DecorationButton#biomeButtonMinimize {
-    qproperty-icon: url(:/biome/decoration/icons/minimize-dim.png);
+    qproperty-icon: url(:/biome/decoration/icons/minimize-dim.svg);
 }
 biome_decoration--DecorationFrame#biomeFrame[focused="false"] biome_decoration--DecorationButton#biomeButtonMaximize {
-    qproperty-icon: url(:/biome/decoration/icons/maximize-dim.png);
+    qproperty-icon: url(:/biome/decoration/icons/maximize-dim.svg);
 }
 biome_decoration--DecorationFrame#biomeFrame[focused="false"] biome_decoration--DecorationButton#biomeButtonClose {
-    qproperty-icon: url(:/biome/decoration/icons/close-dim.png);
+    qproperty-icon: url(:/biome/decoration/icons/close-dim.svg);
+}
+biome_decoration--DecorationFrame#biomeFrame[biomeMaximized="true"] biome_decoration--DecorationButton#biomeButtonMaximize {
+    qproperty-icon: url(:/biome/decoration/icons/restore-normal.svg);
+}
+biome_decoration--DecorationFrame#biomeFrame[biomeMaximized="true"][focused="false"] biome_decoration--DecorationButton#biomeButtonMaximize {
+    qproperty-icon: url(:/biome/decoration/icons/restore-dim.svg);
 }
 
 biome_decoration--DecorationButton:hover {
     background: rgba(60, 60, 60, 70%);
-    border: 1px solid rgba(60, 60, 60, 60%);
+    border: 1px solid rgba(70, 70, 70, 70%);
 }
 
 biome_decoration--DecorationButton:pressed {
     background: rgba(45, 45, 45, 70%);
-    border: 1px solid rgba(55, 55, 55, 60%);
+    border: 1px solid rgba(55, 55, 55, 70%);
 }
 
 biome_decoration--DecorationButton#biomeButtonClose:hover {
-    background: rgba(196, 60, 60, 70%);
-    border: 1px solid rgba(196, 60, 60, 60%);
+    background: rgba(200, 0, 0, 70%);
+    border: 1px solid rgba(230, 0, 0, 70%);
 }
 
 biome_decoration--DecorationButton#biomeButtonClose:pressed {
-    background: rgba(165, 45, 45, 75%);
-    border: 1px solid rgba(165, 45, 45, 65%);
+    background: rgba(170, 0, 0, 70%);
+    border: 1px solid rgba(180, 0, 0, 70%);
 }
 
 QFrame#biomeSwitcherPanel {
