@@ -162,7 +162,7 @@ static void server_new_xdg_toplevel(wl_listener *listener, void *data) {
         wlr_scene_xdg_surface_create(toplevel->scene_tree, xdg_toplevel->base);
     toplevel->content_tree->node.data = toplevel;
     wlr_scene_node_set_position(&toplevel->content_tree->node,
-        decoration_border_width(), decoration_titlebar_height());
+        decoration_border_width(toplevel->maximized), decoration_titlebar_height(toplevel->maximized));
     xdg_toplevel->base->data = toplevel->content_tree;
 
     // Listen to the various events it can emit

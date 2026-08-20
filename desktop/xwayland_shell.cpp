@@ -37,8 +37,13 @@ static void xwayland_toplevel_associate(wl_listener *listener, void *data) {
     toplevel->content_tree =
         wlr_scene_subsurface_tree_create(toplevel->scene_tree, xsurface->surface);
     toplevel->content_tree->node.data = toplevel;
+    // Not necessarily a fresh toplevel - an Xwayland surface can dissociate
+    // and re-associate while staying mapped/maximized (content_tree gets
+    // torn down and recreated, but toplevel->maximized isn't touched), so
+    // this has to use the toplevel's actual current state rather than
+    // assuming false.
     wlr_scene_node_set_position(&toplevel->content_tree->node,
-        decoration_border_width(), decoration_titlebar_height());
+        decoration_border_width(toplevel->maximized), decoration_titlebar_height(toplevel->maximized));
     xsurface->data = toplevel->content_tree;
 
     toplevel->map.notify = toplevel_map;
@@ -133,7 +138,8 @@ static void xwayland_toplevel_request_configure(wl_listener *listener, void *dat
         event->x, event->y, event->width, event->height);
     if (toplevel->content_tree) {
         wlr_scene_node_set_position(&toplevel->scene_tree->node,
-            event->x - decoration_border_width(), event->y - decoration_titlebar_height());
+            event->x - decoration_border_width(toplevel->maximized),
+            event->y - decoration_titlebar_height(toplevel->maximized));
         render_toplevel_decoration(toplevel);
     }
 }

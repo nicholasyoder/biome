@@ -77,6 +77,7 @@ DecorationBorder::DecorationBorder(const QString &object_name, QWidget *parent) 
 DecorationFrame::DecorationFrame(QWidget *parent) : QFrame(parent) {
     setObjectName("biomeFrame");
     setProperty("focused", true);
+    setProperty("biomeMaximized", false);
 
     titlebar_ = new QWidget(this);
     titlebar_->setObjectName("biomeTitlebar");
@@ -144,7 +145,9 @@ void DecorationFrame::layoutFor(int content_width, int content_height) {
     force_activate_layouts(this);
 }
 
-Region DecorationFrame::hitTest(int local_x, int local_y, int content_width, int content_height) {
+Region DecorationFrame::hitTest(
+        int local_x, int local_y, int content_width, int content_height, bool maximized) {
+    setMaximizedState(maximized);
     layoutFor(content_width, content_height);
 
     int w = width();
@@ -211,6 +214,47 @@ void DecorationFrame::setFocusedState(bool focused) {
     // stylesheet rule cache is per-widget and isn't invalidated just because
     // an ancestor's dynamic property changed.
     repolish_tree(this);
+}
+
+void DecorationFrame::setMaximizedState(bool maximized) {
+    // Deliberately NOT "maximized" - QWidget already declares a real,
+    // read-only Q_PROPERTY of exactly that name (bool maximized READ
+    // isMaximized, see qwidget.h), and QObject::setProperty() silently
+    // no-ops (returns false, value left untouched) when a static property
+    // has no WRITE function. Verified directly: setProperty("maximized",
+    // true) on a QWidget-derived instance left property("maximized")
+    // reading back false, no error, no warning - every [maximized=...] QSS
+    // selector would have silently never matched.
+    setProperty("biomeMaximized", maximized);
+    // Same rationale as setFocusedState() above - descendant selectors keyed
+    // off #biomeFrame[biomeMaximized="..."] need their own repolish since an
+    // ancestor's dynamic property change alone doesn't invalidate a child's
+    // cached stylesheet rules.
+    repolish_tree(this);
+    // Unlike setFocusedState()'s QSS rules (colors only), [biomeMaximized=...]
+    // rules can change border strips' min-/max-width/height - real box-model
+    // geometry, not just paint. polish() (inside repolish_tree() above)
+    // updates each border widget's minimum/maximumSize from the new
+    // stylesheet, but the *layout* that actually resizes them to match only
+    // reflows via a posted QEvent::LayoutRequest - which never arrives, same
+    // "no running Qt event loop" issue layoutFor() already works around (see
+    // its own comment). Without this, borderWidth()/rightBorderWidth()/
+    // bottomBorderHeight()/hitTest() would keep reading the *previous*
+    // state's stale sizes right after this call.
+    //
+    // A plain force_activate_layouts() alone isn't enough here either -
+    // verified directly. Shrinking a border to 0 shrinks the *frame's*
+    // minimumSizeHint, but activate() on a top-level widget only ever grows
+    // it to fit a bigger hint, never shrinks it to a smaller one (same
+    // caveat layoutFor() documents above), so the frame was staying at its
+    // previous, larger size and silently handing the freed-up space to
+    // whichever sibling widget - the titlebar in practice - happened to be
+    // the QLayout's only non-fixed-size item, instead of actually shrinking.
+    // The explicit resize(minimumSizeHint()) below (identical to layoutFor())
+    // forces that shrink before the final re-activate.
+    force_activate_layouts(this);
+    resize(minimumSizeHint());
+    force_activate_layouts(this);
 }
 
 void DecorationFrame::setTitle(const QString &title) {

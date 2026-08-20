@@ -153,8 +153,10 @@ void place_new_toplevel(BiomeToplevel *toplevel) {
     if (parent != nullptr) {
         wlr_box parent_geo;
         toplevel_get_geometry(parent, &parent_geo);
-        int parent_vis_x = static_cast<int>(parent->scene_tree->node.x) + decoration_border_width() + parent_geo.x;
-        int parent_vis_y = static_cast<int>(parent->scene_tree->node.y) + decoration_titlebar_height() + parent_geo.y;
+        int parent_vis_x = static_cast<int>(parent->scene_tree->node.x)
+            + decoration_border_width(parent->maximized) + parent_geo.x;
+        int parent_vis_y = static_cast<int>(parent->scene_tree->node.y)
+            + decoration_titlebar_height(parent->maximized) + parent_geo.y;
         vis_x = parent_vis_x + (parent_geo.width - width) / 2;
         vis_y = parent_vis_y + (parent_geo.height - height) / 2;
         toplevel->workspace = parent->workspace;
@@ -171,8 +173,9 @@ void place_new_toplevel(BiomeToplevel *toplevel) {
         toplevel->workspace = server->active_workspace;
     }
 
+    // A freshly-placed toplevel is never already maximized.
     wlr_scene_node_set_position(&toplevel->scene_tree->node,
-        vis_x - decoration_border_width(), vis_y - decoration_titlebar_height());
+        vis_x - decoration_border_width(false), vis_y - decoration_titlebar_height(false));
     toplevel_sync_position(toplevel, vis_x, vis_y);
     toplevel->placed = true;
     update_toplevel_visibility(toplevel);
@@ -183,14 +186,46 @@ void place_new_toplevel(BiomeToplevel *toplevel) {
 // (all outputs combined) if that point isn't on any output, same fallback
 // place_new_toplevel uses for centering.
 static wlr_box maximize_target_box(BiomeToplevel *toplevel) {
+    // Called before toplevel->maximized flips to true (see set_toplevel_
+    // maximized below), so toplevel->maximized here still reflects the
+    // window's current (non-maximized) on-screen frame.
     BiomeServer *server = toplevel->server;
-    double vis_x = toplevel->scene_tree->node.x + decoration_border_width();
-    double vis_y = toplevel->scene_tree->node.y + decoration_titlebar_height();
+    double vis_x = toplevel->scene_tree->node.x + decoration_border_width(toplevel->maximized);
+    double vis_y = toplevel->scene_tree->node.y + decoration_titlebar_height(toplevel->maximized);
 
     wlr_output *output = wlr_output_layout_output_at(server->output_layout, vis_x, vis_y);
     wlr_box box = {};
     wlr_output_layout_get_box(server->output_layout, output, &box);
-    return box;
+    if (wlr_box_empty(&box)) {
+        return box;
+    }
+
+    // box is the whole output - inset it by the decorated frame's border/
+    // titlebar so the box this returns is the *content* area a maximized
+    // window should fill, matching what toplevel_set_size()/set_toplevel_
+    // maximized() below expect (they add the border/titlebar back on to get
+    // the outer frame position). Left as the raw output box, the frame ends
+    // up larger than the monitor - border/titlebar pushed off-screen on the
+    // top-left, overflowing past the edge on the bottom-right - which is why
+    // maximize used to look like it lost its border entirely.
+    //
+    // Unlike vis_x/vis_y above, this queries the *maximized* metrics
+    // (hardcoded true, not toplevel->maximized) - a theme is free to size a
+    // maximized window's border differently (decoration/theme/
+    // biome-dark.qss's [maximized="true"] rules), and it's that state's
+    // metrics the inset needs to reserve room for, not the window's current
+    // (about-to-be-replaced) ones.
+    int left = decoration_border_width(true);
+    int top = decoration_titlebar_height(true);
+    int right = decoration_border_right_width(true);
+    int bottom = decoration_border_bottom_height(true);
+    wlr_box content = {
+        box.x + left,
+        box.y + top,
+        box.width - left - right,
+        box.height - top - bottom,
+    };
+    return content;
 }
 
 void set_toplevel_maximized(BiomeToplevel *toplevel, bool maximized) {
@@ -202,9 +237,9 @@ void set_toplevel_maximized(BiomeToplevel *toplevel, bool maximized) {
         wlr_box geo;
         toplevel_get_geometry(toplevel, &geo);
         toplevel->restore_box.x =
-            static_cast<int>(toplevel->scene_tree->node.x) + decoration_border_width();
+            static_cast<int>(toplevel->scene_tree->node.x) + decoration_border_width(toplevel->maximized);
         toplevel->restore_box.y =
-            static_cast<int>(toplevel->scene_tree->node.y) + decoration_titlebar_height();
+            static_cast<int>(toplevel->scene_tree->node.y) + decoration_titlebar_height(toplevel->maximized);
         toplevel->restore_box.width = geo.width;
         toplevel->restore_box.height = geo.height;
 
@@ -214,14 +249,16 @@ void set_toplevel_maximized(BiomeToplevel *toplevel, bool maximized) {
         }
         toplevel->maximized = true;
         wlr_scene_node_set_position(&toplevel->scene_tree->node,
-            target.x - decoration_border_width(), target.y - decoration_titlebar_height());
+            target.x - decoration_border_width(toplevel->maximized),
+            target.y - decoration_titlebar_height(toplevel->maximized));
         toplevel_set_size(toplevel, target.x, target.y, target.width, target.height);
         toplevel_sync_position(toplevel, target.x, target.y);
     } else {
         toplevel->maximized = false;
         wlr_box restore = toplevel->restore_box;
         wlr_scene_node_set_position(&toplevel->scene_tree->node,
-            restore.x - decoration_border_width(), restore.y - decoration_titlebar_height());
+            restore.x - decoration_border_width(toplevel->maximized),
+            restore.y - decoration_titlebar_height(toplevel->maximized));
         toplevel_set_size(toplevel, restore.x, restore.y, restore.width, restore.height);
         toplevel_sync_position(toplevel, restore.x, restore.y);
     }

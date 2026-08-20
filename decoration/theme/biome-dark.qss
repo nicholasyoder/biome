@@ -7,8 +7,9 @@ QWidget#biomeTitlebar {
     background: rgb(30, 30, 30);
     border-top-left-radius: 3px;
     border-top-right-radius: 3px;
-    /*min-height: 28px;
-    max-height: 28px;*/
+    border-left: 1px solid rgb(0,100,0);
+    border-right: 1px solid rgb(0,100,0);
+    border-top: 1px solid rgb(0,100,0);
 }
 
 biome_decoration--DecorationFrame#biomeFrame[focused="false"] QWidget#biomeTitlebar {
@@ -19,6 +20,7 @@ QLabel#biomeTitle {
     background: transparent;
     color: rgb(235, 235, 235);
     font-size: 10pt;
+    margin: 2px 4px;
 }
 
 biome_decoration--DecorationFrame#biomeFrame[focused="false"] QLabel#biomeTitle {
@@ -29,20 +31,51 @@ biome_decoration--DecorationBorder {
     background: rgb(30, 30, 30);
 }
 
-biome_decoration--DecorationFrame#biomeFrame[focused="false"] biome_decoration--DecorationBorder {
-    background: rgb(89, 89, 89);
+QWidget#biomeBorderLeft {
+    min-width: 3px;
+    max-width: 3px;
+    border-left: 1px solid rgb(0,100,0);
 }
 
-QWidget#biomeBorderLeft, QWidget#biomeBorderRight {
-    min-width: 2px;
-    max-width: 2px;
+QWidget#biomeBorderRight {
+    min-width: 3px;
+    border-right: 1px solid rgb(0,100,0);
 }
 
 QWidget#biomeBorderBottom {
-    min-height: 2px;
-    max-height: 2px;
+    min-height: 3px;
+    max-height: 3px;
     border-bottom-left-radius: 3px;
     border-bottom-right-radius: 3px;
+    border-left: 1px solid rgb(0,100,0);
+    border-right: 1px solid rgb(0,100,0);
+    border-bottom: 1px solid rgb(0,100,0);
+}
+
+/* A maximized window already fills the output edge-to-edge, so rounded
+   corners would just clip a triangle of transparent nothing at each corner,
+   and there's no benefit to a visible grab border since edge-resize isn't
+   meaningful once the window fills the screen. */
+biome_decoration--DecorationFrame#biomeFrame[biomeMaximized="true"] {
+    qproperty-cornerRadius: 0;
+}
+
+biome_decoration--DecorationFrame#biomeFrame[biomeMaximized="true"] QWidget#biomeTitlebar {
+    border-top-left-radius: 0px;
+    border-top-right-radius: 0px;
+}
+
+biome_decoration--DecorationFrame#biomeFrame[biomeMaximized="true"] QWidget#biomeBorderLeft,
+biome_decoration--DecorationFrame#biomeFrame[biomeMaximized="true"] QWidget#biomeBorderRight {
+    min-width: 0px;
+    max-width: 0px;
+}
+
+biome_decoration--DecorationFrame#biomeFrame[biomeMaximized="true"] QWidget#biomeBorderBottom {
+    min-height: 0px;
+    max-height: 0px;
+    border-bottom-left-radius: 0px;
+    border-bottom-right-radius: 0px;
 }
 
 biome_decoration--DecorationButton {

@@ -72,16 +72,18 @@ void begin_interactive(BiomeToplevel *toplevel, BiomeCursorMode mode, uint32_t e
         wlr_box geo_box;
         toplevel_get_geometry(toplevel, &geo_box);
 
-        double border_x = (toplevel->scene_tree->node.x + decoration_border_width() + geo_box.x) +
+        double border_x = (toplevel->scene_tree->node.x + decoration_border_width(toplevel->maximized) + geo_box.x) +
             ((edges & WLR_EDGE_RIGHT) ? geo_box.width : 0);
-        double border_y = (toplevel->scene_tree->node.y + decoration_titlebar_height() + geo_box.y) +
+        double border_y = (toplevel->scene_tree->node.y + decoration_titlebar_height(toplevel->maximized) + geo_box.y) +
             ((edges & WLR_EDGE_BOTTOM) ? geo_box.height : 0);
         server->grab_x = server->cursor->x - border_x;
         server->grab_y = server->cursor->y - border_y;
 
         server->grab_geobox = geo_box;
-        server->grab_geobox.x += static_cast<int>(toplevel->scene_tree->node.x) + decoration_border_width();
-        server->grab_geobox.y += static_cast<int>(toplevel->scene_tree->node.y) + decoration_titlebar_height();
+        server->grab_geobox.x +=
+            static_cast<int>(toplevel->scene_tree->node.x) + decoration_border_width(toplevel->maximized);
+        server->grab_geobox.y +=
+            static_cast<int>(toplevel->scene_tree->node.y) + decoration_titlebar_height(toplevel->maximized);
 
         server->resize_edges = edges;
     }
@@ -96,7 +98,8 @@ static void process_cursor_move(BiomeServer *server, uint32_t time) {
     wlr_scene_node_set_position(&toplevel->scene_tree->node, x, y);
     // The X server has no notion of our border - tell it about the visible
     // content position, not the container's.
-    toplevel_sync_position(toplevel, x + decoration_border_width(), y + decoration_titlebar_height());
+    toplevel_sync_position(
+        toplevel, x + decoration_border_width(toplevel->maximized), y + decoration_titlebar_height(toplevel->maximized));
 }
 
 static void process_cursor_resize(BiomeServer *server, uint32_t time) {
@@ -143,8 +146,8 @@ static void process_cursor_resize(BiomeServer *server, uint32_t time) {
     wlr_box geo_box;
     toplevel_get_geometry(toplevel, &geo_box);
     wlr_scene_node_set_position(&toplevel->scene_tree->node,
-        new_left - geo_box.x - decoration_border_width(),
-        new_top - geo_box.y - decoration_titlebar_height());
+        new_left - geo_box.x - decoration_border_width(toplevel->maximized),
+        new_top - geo_box.y - decoration_titlebar_height(toplevel->maximized));
 
     int new_width = new_right - new_left;
     int new_height = new_bottom - new_top;

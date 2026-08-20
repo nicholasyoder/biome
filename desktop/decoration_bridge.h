@@ -25,8 +25,23 @@ void decoration_bridge_init(BiomeServer *server);
 // so the offset arithmetic sprinkled through move/resize/place/maximize
 // doesn't have to spell out biome_decoration::decoration_frame()->... at
 // every use.
-int decoration_border_width();
-int decoration_titlebar_height();
+//
+// maximized selects which QSS [maximized=...] state to read the metric
+// from, since a theme is free to size the maximized border/titlebar
+// differently (decoration/theme/biome-dark.qss). This matters because these
+// wrap a single shared, mutable widget instance (decoration_frame()) - the
+// caller must say which state's metrics it wants, rather than getting back
+// whatever state some unrelated toplevel's last render happened to leave it
+// in. Pass the toplevel's own `maximized` flag (or, when computing the
+// geometry for a state transition that hasn't been committed yet, the state
+// being transitioned to).
+int decoration_border_width(bool maximized);
+int decoration_titlebar_height(bool maximized);
+// Right border width / bottom border height - kept separate from the two
+// above since border strips are independently QSS-sized (not assumed
+// symmetric). See DecorationFrame::rightBorderWidth()/bottomBorderHeight().
+int decoration_border_right_width(bool maximized);
+int decoration_border_bottom_height(bool maximized);
 
 // Creates the (initially empty) decoration_buffer scene node as a child of
 // toplevel->scene_tree (the container), positioned at its origin. Filled in

@@ -28,8 +28,11 @@ struct RenderedFrame {
 // called, and a QApplication to already exist.
 //
 // hovered_region/pressed_region select which button (if any) gets a live
-// QSS :hover/:pressed state - Region::None for neither.
+// QSS :hover/:pressed state - Region::None for neither. maximized drives the
+// #biomeFrame[biomeMaximized=...] QSS state (see DecorationFrame::
+// setMaximizedState()), letting a theme style a maximized window
+// differently (e.g. no corner radius, thinner/no side borders).
 RenderedFrame render_decoration(int content_width, int content_height,
-    bool focused, const char *title, Region hovered_region, Region pressed_region);
+    bool focused, bool maximized, const char *title, Region hovered_region, Region pressed_region);
 
 } // namespace biome_decoration

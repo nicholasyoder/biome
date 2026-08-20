@@ -122,6 +122,15 @@ public:
     // kBorderWidth/kTitlebarHeight globals.
     int borderWidth() const { return content_spacer_->x(); }
     int titlebarHeight() const { return content_spacer_->y(); }
+    // Same idea as borderWidth()/titlebarHeight() above, but for the right/
+    // bottom edges - border_left_/border_right_/border_bottom_ are
+    // independently QSS-sized (biome-dark.qss's min-width/min-height per
+    // object name), so these can't just be assumed equal to borderWidth()/
+    // titlebarHeight(). Derived from the frame's own total size minus
+    // content_spacer_'s box rather than querying border_right_/border_bottom_
+    // directly, so it stays correct regardless of layout spacing/margins.
+    int rightBorderWidth() const { return width() - content_spacer_->x() - content_spacer_->width(); }
+    int bottomBorderHeight() const { return height() - content_spacer_->y() - content_spacer_->height(); }
 
     // Resizes the frame to fit the given client content size and resizes
     // content_spacer_ to match - the QLayout tree built in the constructor
@@ -136,9 +145,21 @@ public:
     // tree's actual laid-out geometry (calls layoutFor() internally, so it
     // mutates this persistent instance the same way rendering already
     // does).
-    Region hitTest(int local_x, int local_y, int content_width, int content_height);
+    // maximized selects which QSS [biomeMaximized=...] state to hit-test against
+    // (see setMaximizedState()) - a theme that zeroes a border's width/
+    // height under [biomeMaximized="true"] naturally stops matching that edge
+    // here too, since childAt() won't find a zero-size widget.
+    Region hitTest(int local_x, int local_y, int content_width, int content_height, bool maximized);
 
     void setFocusedState(bool focused);
+    // Drives the #biomeFrame[biomeMaximized=...] QSS state - lets a theme style a
+    // maximized window differently (e.g. no corner radius, thinner/no side
+    // borders) via decoration/theme/biome-dark.qss alone, no C++ change
+    // needed per theme. Also read back by borderWidth()/titlebarHeight()/
+    // rightBorderWidth()/bottomBorderHeight() above, so callers must set
+    // this before querying those if they care which state's metrics they get
+    // - see desktop/decoration_bridge.cpp's accessor wrappers.
+    void setMaximizedState(bool maximized);
     void setTitle(const QString &title);
 
     // Drives real QSS :hover/:pressed pseudo-states on whichever button (if
