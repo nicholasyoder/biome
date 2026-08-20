@@ -115,7 +115,8 @@ void render_toplevel_decoration(BiomeToplevel *toplevel) {
         : toplevel->xwayland_surface->title;
 
     biome_decoration::RenderedFrame frame = biome_decoration::render_decoration(width, height,
-        toplevel->focused, toplevel->maximized, title, toplevel->hovered_region, toplevel->pressed_region);
+        toplevel->focused, toplevel->maximized, title, toplevel->icon,
+        toplevel->hovered_region, toplevel->pressed_region);
     wlr_buffer *buffer = create_decoration_buffer(std::move(frame));
     if (buffer == nullptr) {
         return;
@@ -158,7 +159,7 @@ void update_switcher_overlay(BiomeServer *server) {
         } else {
             label = "(untitled)";
         }
-        entries.push_back({label});
+        entries.push_back({label, pos->icon});
     }
 
     // server->toplevels is MRU-ordered (focus_toplevel keeps the head as

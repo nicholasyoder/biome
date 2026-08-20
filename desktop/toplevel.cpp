@@ -3,6 +3,7 @@
 #include "desktop/toplevel.h"
 
 #include "core/cursor.h"
+#include "desktop/app_icon.h"
 #include "desktop/decoration_bridge.h"
 #include "desktop/workspace.h"
 
@@ -301,6 +302,24 @@ void set_toplevel_minimized(BiomeToplevel *toplevel, bool minimized) {
 void toplevel_map(wl_listener *listener, void *data) {
     (void)data;
     BiomeToplevel *toplevel = wl_container_of(listener, toplevel, map);
+
+    if (!toplevel->icon_resolved) {
+        // app_id/WM_CLASS are expected to already be set by this point - a
+        // well-behaved client sets them before its first map, the same
+        // assumption place_new_toplevel/toplevel_get_geometry etc. already
+        // make about a toplevel's other properties being ready here.
+        if (toplevel->type == BiomeToplevelType::Xdg) {
+            const char *app_id = toplevel->xdg_toplevel->app_id;
+            toplevel->icon = resolve_app_id_icon(app_id != nullptr ? app_id : "");
+        } else {
+            const char *wm_class = toplevel->xwayland_surface->class_;
+            xcb_ewmh_connection_t *ewmh =
+                toplevel->server->ewmh_ready ? &toplevel->server->ewmh : nullptr;
+            toplevel->icon = resolve_xwayland_icon(
+                ewmh, toplevel->xwayland_surface->window_id, wm_class != nullptr ? wm_class : "");
+        }
+        toplevel->icon_resolved = true;
+    }
 
     place_new_toplevel(toplevel);
     render_toplevel_decoration(toplevel);

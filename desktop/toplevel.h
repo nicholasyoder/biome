@@ -11,6 +11,7 @@
 
 #include "core/server.h"
 #include "decoration/layout.h" // biome_decoration::Region
+#include "decoration/renderer.h" // biome_decoration::IconImage
 
 enum class BiomeToplevelType {
     Xdg,
@@ -57,6 +58,16 @@ struct BiomeToplevel {
     // decoration/renderer.h. Region::None for neither.
     biome_decoration::Region hovered_region = biome_decoration::Region::None;
     biome_decoration::Region pressed_region = biome_decoration::Region::None;
+
+    // Resolved once, in toplevel_map (desktop/toplevel.cpp) - see
+    // desktop/app_icon.h. icon.size == 0 means either not-yet-resolved or
+    // genuinely no icon found; icon_resolved distinguishes the two so
+    // toplevel_map doesn't redo the (relatively expensive) resolution on a
+    // toplevel that legitimately has none. No live re-resolution if
+    // app_id/WM_CLASS changes after map - same scope boundary as there
+    // being no app_id-change listener at all today.
+    biome_decoration::IconImage icon;
+    bool icon_resolved = false;
 
     wlr_xdg_toplevel *xdg_toplevel = nullptr;         // type == Xdg
     wlr_xwayland_surface *xwayland_surface = nullptr; // type == Xwayland

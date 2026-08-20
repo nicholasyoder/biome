@@ -13,6 +13,7 @@
 #pragma once
 
 #include "layout.h" // Region
+#include "renderer.h" // IconImage
 
 #include <QLabel>
 #include <QString>
@@ -143,6 +144,12 @@ public:
     // - see desktop/decoration_bridge.cpp's accessor wrappers.
     void setMaximizedState(bool maximized);
     void setTitle(const QString &title);
+    // Sets (or, for an empty IconImage, hides) the titlebar icon slot -
+    // icon_button_ is a QToolButton rather than a QLabel specifically so its
+    // rendered size stays QSS-controllable via qproperty-iconSize, the same
+    // mechanism the min/max/close buttons already use for their (static,
+    // theme-supplied) glyphs.
+    void setIcon(const IconImage &icon);
 
     // Drives real QSS :hover/:pressed pseudo-states on whichever button (if
     // any) matches - region is one of ButtonMinimize/ButtonMaximize/
@@ -153,6 +160,11 @@ public:
 private:
     QWidget *titlebar_ = nullptr;
     QLabel *title_label_ = nullptr;
+    // A window's own icon (see IconImage) - not a DecorationButton (that
+    // class is specifically for the min/max/close glyphs, which are static
+    // theme assets driven by a Region), just a plain QToolButton so QSS's
+    // qproperty-iconSize still applies to it.
+    QToolButton *icon_button_ = nullptr;
     DecorationButton *button_minimize_ = nullptr;
     DecorationButton *button_maximize_ = nullptr;
     DecorationButton *button_close_ = nullptr;

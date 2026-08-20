@@ -13,6 +13,7 @@
 #include "core/output.h"
 #include "core/server.h"
 #include "decoration/theme.h"
+#include "desktop/app_icon.h"
 #include "desktop/decoration_bridge.h"
 #include "desktop/xdg_shell.h"
 #include "desktop/xwayland_shell.h"
@@ -57,6 +58,7 @@ int main(int argc, char *argv[]) {
 
     BiomeServer server;
     biome_decoration::load_decoration_theme();
+    init_icon_theme();
     // The Wayland display is managed by libwayland. It handles accepting
     // clients from the Unix socket, managing Wayland globals, and so on.
     server.display = wl_display_create();
@@ -143,6 +145,9 @@ int main(int argc, char *argv[]) {
     // Once wl_display_run returns, we destroy all clients then shut down
     // the server.
     wl_display_destroy_clients(server.display);
+    if (server.ewmh_ready) {
+        xcb_ewmh_connection_wipe(&server.ewmh);
+    }
     if (server.xwayland) {
         wlr_xwayland_destroy(server.xwayland);
     }

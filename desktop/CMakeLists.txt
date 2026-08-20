@@ -1,4 +1,12 @@
+find_package(PkgConfig REQUIRED)
+# Not a transitive Requires of wlroots-0.18's own .pc, despite wlr/xwayland.h
+# pulling in <xcb/xcb_ewmh.h> - needed explicitly for _NET_WM_ICON lookup
+# (app_icon.cpp).
+pkg_check_modules(XCB_EWMH REQUIRED IMPORTED_TARGET xcb-ewmh)
+
 add_library(biome_desktop STATIC
+    app_icon.h
+    app_icon.cpp
     toplevel.h
     toplevel.cpp
     workspace.h
@@ -25,4 +33,5 @@ target_link_libraries(biome_desktop PUBLIC
     biome_decoration
     PkgConfig::WLROOTS
     PkgConfig::WAYLAND_SERVER
+    PkgConfig::XCB_EWMH
 )

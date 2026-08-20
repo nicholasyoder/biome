@@ -281,4 +281,14 @@ static void server_xwayland_ready(wl_listener *listener, void *data) {
             image->width * 4, image->width, image->height,
             static_cast<int32_t>(image->hotspot_x), static_cast<int32_t>(image->hotspot_y));
     }
+
+    // Atom-initialize the EWMH connection used for _NET_WM_ICON lookup
+    // (desktop/app_icon.h) - the underlying xcb connection is only valid
+    // from this event onward, per wlr_xwayland_get_xwm_connection()'s own
+    // doc comment.
+    xcb_connection_t *conn = wlr_xwayland_get_xwm_connection(server->xwayland);
+    if (conn != nullptr) {
+        xcb_intern_atom_cookie_t *cookies = xcb_ewmh_init_atoms(conn, &server->ewmh);
+        server->ewmh_ready = xcb_ewmh_init_atoms_replies(&server->ewmh, cookies, nullptr) != 0;
+    }
 }

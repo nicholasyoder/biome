@@ -6,7 +6,9 @@
 #include <QCoreApplication>
 #include <QEnterEvent>
 #include <QEvent>
+#include <QImage>
 #include <QLayout>
+#include <QPixmap>
 #include <QSizePolicy>
 #include <QStyle>
 
@@ -73,6 +75,21 @@ DecorationFrame::DecorationFrame(QWidget *parent) : QFrame(parent) {
     // minimum-size computation below - the label should elide/clip within
     // whatever space the buttons/borders leave it, never grow the frame.
     title_label_->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+    // Centers within the label's own (stretched-to-fill) rect - since the
+    // icon sits to its left and the buttons to its right in unequal widths
+    // (see titlebar_layout below), that rect isn't itself centered in the
+    // full titlebar, so this reads as close to but not exactly centered;
+    // accepted as fine rather than adding matched-width spacers to correct
+    // it.
+    title_label_->setAlignment(Qt::AlignCenter);
+
+    icon_button_ = new QToolButton(titlebar_);
+    icon_button_->setObjectName("biomeTitleIcon");
+    icon_button_->setFocusPolicy(Qt::NoFocus);
+    icon_button_->setAttribute(Qt::WA_StyledBackground, true);
+    // Hidden until setIcon() below is given a real IconImage - a window with
+    // no resolvable icon shows no gap for it at all, not an empty slot.
+    icon_button_->hide();
 
     button_minimize_ = new DecorationButton(Region::ButtonMinimize, titlebar_);
     button_maximize_ = new DecorationButton(Region::ButtonMaximize, titlebar_);
@@ -82,6 +99,7 @@ DecorationFrame::DecorationFrame(QWidget *parent) : QFrame(parent) {
     auto *titlebar_layout = new QHBoxLayout(titlebar_);
     titlebar_layout->setContentsMargins(0, 0, 0, 0);
     titlebar_layout->setSpacing(0);
+    titlebar_layout->addWidget(icon_button_, 0, Qt::AlignVCenter);
     titlebar_layout->addWidget(title_label_, /*stretch=*/1, Qt::AlignVCenter);
     titlebar_layout->addWidget(button_minimize_, 0, Qt::AlignVCenter);
     titlebar_layout->addWidget(button_maximize_, 0, Qt::AlignVCenter);
@@ -193,7 +211,10 @@ Region DecorationFrame::hitTest(
     if (hit == button_close_) {
         return Region::ButtonClose;
     }
-    if (hit == titlebar_ || hit == title_label_) {
+    if (hit == titlebar_ || hit == title_label_ || hit == icon_button_) {
+        // The icon isn't clickable (no context menu yet) - it's just part of
+        // the draggable titlebar, same as the title text and empty titlebar
+        // space, rather than a dead zone.
         return Region::Titlebar;
     }
     // content_spacer_ (the client's own surface, not part of the
@@ -262,6 +283,27 @@ void DecorationFrame::setTitle(const QString &title) {
     // as a hard line break and grows the titlebar to fit, so simplified()
     // collapses any whitespace/newlines to guarantee single-line text.
     title_label_->setText(title.simplified());
+}
+
+void DecorationFrame::setIcon(const IconImage &icon) {
+    bool has_icon = icon.size > 0 && !icon.pixels.empty();
+    if (has_icon) {
+        // QImage wraps icon.pixels' own memory (no copy) - fine here since
+        // QPixmap::fromImage() below copies out of it before this function
+        // returns, the only point at which that wrap needs to stay valid.
+        QImage image(icon.pixels.data(), icon.size, icon.size, QImage::Format_ARGB32_Premultiplied);
+        icon_button_->setIcon(QIcon(QPixmap::fromImage(image)));
+    }
+    if (has_icon == icon_button_->isHidden()) {
+        icon_button_->setVisible(has_icon);
+        // Showing/hiding a layout item is a box-model change like
+        // setMaximizedState()'s border toggling above, not just paint - same
+        // invalidate->resize(minimumSizeHint())->invalidate dance is needed
+        // since there's no running event loop to reflow this otherwise.
+        force_activate_layouts(this);
+        resize(minimumSizeHint());
+        force_activate_layouts(this);
+    }
 }
 
 void DecorationFrame::setHoveredRegion(Region region) {

@@ -8,9 +8,9 @@ biome_decoration--DecorationFrame#biomeFrame QWidget#biomeTitlebar {
     background: rgb(30, 30, 30);
     border-top-left-radius: 3px;
     border-top-right-radius: 3px;
-    border-left: 1px solid rgb(0,100,0);
-    border-right: 1px solid rgb(0,100,0);
-    border-top: 1px solid rgb(0,100,0);
+    border-left: 1px solid rgb(10,10,10);
+    border-right: 1px solid rgb(10,10,10);
+    border-top: 1px solid rgb(10,10,10);
 }
 
 /* Title QLabel */
@@ -30,21 +30,21 @@ biome_decoration--DecorationBorder {
 
 QWidget#biomeBorderLeft {
     min-width: 3px;
-    border-left: 1px solid rgb(0,100,0);
+    border-left: 1px solid rgb(10,10,10);
 }
 
 QWidget#biomeBorderRight {
     min-width: 3px;
-    border-right: 1px solid rgb(0,100,0);
+    border-right: 1px solid rgb(10,10,10);
 }
 
 QWidget#biomeBorderBottom {
     min-height: 3px;
     border-bottom-left-radius: 3px;
     border-bottom-right-radius: 3px;
-    border-left: 1px solid rgb(0,100,0);
-    border-right: 1px solid rgb(0,100,0);
-    border-bottom: 1px solid rgb(0,100,0);
+    border-left: 1px solid rgb(10,10,10);
+    border-right: 1px solid rgb(10,10,10);
+    border-bottom: 1px solid rgb(10,10,10);
 }
 
 biome_decoration--DecorationFrame#biomeFrame[biomeMaximized="true"] QWidget#biomeTitlebar {
@@ -64,6 +64,18 @@ biome_decoration--DecorationFrame#biomeFrame[biomeMaximized="true"] QWidget#biom
     border: none;
     border-bottom-left-radius: 0px;
     border-bottom-right-radius: 0px;
+}
+
+/* Titlebar window icon - a QToolButton (not a themed DecorationButton) so
+   qproperty-iconSize controls its rendered size the same way it does for
+   the min/max/close glyphs below, even though its actual icon comes from
+   the window at runtime rather than a bundled theme asset. */
+QToolButton#biomeTitleIcon {
+    background: transparent;
+    border: none;
+    padding: 0px;
+    margin: 0px 4px;
+    qproperty-iconSize: 16px 16px;
 }
 
 biome_decoration--DecorationButton {
@@ -136,16 +148,31 @@ QFrame#biomeSwitcherPanel {
     qproperty-panelPadding: 10;
 }
 
-QLabel#biomeSwitcherRow {
+QWidget#biomeSwitcherRow {
     background: transparent;
-    color: rgb(200, 200, 200);
-    font-size: 10pt;
-    padding-left: 8px;
     min-height: 32px;
     max-height: 32px;
 }
 
-QLabel#biomeSwitcherRow[selected="true"] {
+QWidget#biomeSwitcherRow[selected="true"] {
     background: rgb(60, 60, 60);
+}
+
+QToolButton#biomeSwitcherRowIcon {
+    background: transparent;
+    border: none;
+    padding: 0px;
+    margin-left: 8px;
+    qproperty-iconSize: 20px 20px;
+}
+
+QLabel#biomeSwitcherRowText {
+    background: transparent;
+    color: rgb(200, 200, 200);
+    font-size: 10pt;
+    padding-left: 8px;
+}
+
+QWidget#biomeSwitcherRow[selected="true"] QLabel#biomeSwitcherRowText {
     color: white;
 }

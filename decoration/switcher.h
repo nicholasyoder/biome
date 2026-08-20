@@ -15,6 +15,7 @@ namespace biome_decoration {
 
 struct SwitcherEntry {
     std::string label; // title, falling back to app_id/class if empty
+    IconImage icon;    // empty (size == 0) hides the row's icon slot
 };
 
 // Renders the persistent, QSS-styled SwitcherPanel widget tree (biome-dark

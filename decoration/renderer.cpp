@@ -10,7 +10,8 @@
 namespace biome_decoration {
 
 RenderedFrame render_decoration(int content_width, int content_height,
-        bool focused, bool maximized, const char *title, Region hovered_region, Region pressed_region) {
+        bool focused, bool maximized, const char *title, const IconImage &icon,
+        Region hovered_region, Region pressed_region) {
     RenderedFrame frame;
     if (content_width <= 0 || content_height <= 0) {
         return frame;
@@ -21,6 +22,7 @@ RenderedFrame render_decoration(int content_width, int content_height,
     widget->layoutFor(content_width, content_height);
     widget->setFocusedState(focused);
     widget->setTitle(QString::fromUtf8(title != nullptr ? title : ""));
+    widget->setIcon(icon);
     widget->setHoveredRegion(hovered_region);
     widget->setPressedRegion(pressed_region);
 

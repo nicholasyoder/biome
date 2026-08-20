@@ -45,6 +45,13 @@ struct BiomeServer {
     wl_listener new_xwayland_surface = {};
     wl_listener xwayland_ready = {};
 
+    // Atom-initialized once xwayland_ready fires (desktop/xwayland_shell.cpp)
+    // - needed for _NET_WM_ICON lookup (desktop/app_icon.h). ewmh_ready
+    // guards against using this before that init has actually run (or after
+    // it failed), since xcb_ewmh_connection_t has no other "valid" sentinel.
+    xcb_ewmh_connection_t ewmh = {};
+    bool ewmh_ready = false;
+
     wlr_cursor *cursor = nullptr;
     wlr_xcursor_manager *cursor_mgr = nullptr;
     wl_listener cursor_motion = {};
