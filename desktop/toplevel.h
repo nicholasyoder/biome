@@ -37,6 +37,20 @@ struct BiomeToplevel {
     bool maximized = false;
     wlr_box restore_box = {};
 
+    // Set by set_toplevel_maximized for xdg-shell toplevels only: applying
+    // the scene node's new position right away would put it ahead of the
+    // client's own matching commit (xdg-shell resizes asynchronously - the
+    // client applies its new size on its own schedule), showing the old,
+    // wrong-sized buffer at the new position for a frame or more. Deferred
+    // until xdg_toplevel_commit sees the buffer's size actually change, at
+    // which point position and content land together. Same idea as
+    // process_cursor_resize's deferred left/top-edge reposition. Xwayland
+    // has no such gap (toplevel_set_size configures x/y/width/height
+    // together) so this is left unset for it.
+    bool maximize_reposition_pending = false;
+    int maximize_pending_x = 0, maximize_pending_y = 0;
+    int maximize_pending_old_width = 0, maximize_pending_old_height = 0;
+
     // Set by set_toplevel_minimized. No taskbar exists under Biome yet
     // (Phase 4), so the only way to restore a minimized window right now is
     // the graphical Alt-Tab switcher.

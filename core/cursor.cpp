@@ -93,8 +93,59 @@ static void process_cursor_move(BiomeServer *server, uint32_t time) {
     (void)time;
     // Move the grabbed toplevel to the new position.
     BiomeToplevel *toplevel = server->grabbed_toplevel;
+    if (toplevel->maximized) {
+        // The titlebar press that started this grab left the maximized
+        // state untouched (see handle_decoration_click) so that a plain
+        // click-and-release doesn't unmaximize. Now that the pointer has
+        // actually moved, restore the window under the cursor instead of
+        // snapping it back to wherever it sat before being maximized:
+        // capture what fraction of the maximized frame the cursor was
+        // holding, then re-anchor the grab to that same fraction of the
+        // just-restored frame, so the window appears to shrink under the
+        // pointer - standard "drag titlebar to restore" WM convention.
+        wlr_box old_geo;
+        toplevel_get_geometry(toplevel, &old_geo);
+        double old_frame_w =
+            old_geo.width + decoration_border_width(true) + decoration_border_right_width(true);
+        double old_frame_h =
+            old_geo.height + decoration_titlebar_height(true) + decoration_border_bottom_height(true);
+        double fraction_x = (server->cursor->x - toplevel->scene_tree->node.x) / old_frame_w;
+        double fraction_y = (server->cursor->y - toplevel->scene_tree->node.y) / old_frame_h;
+
+        // toplevel->restore_box is the pre-maximize size set_toplevel_maximized
+        // is about to apply - use it rather than toplevel_get_geometry() right
+        // after restoring: for xdg-shell toplevels the client applies its new
+        // size asynchronously (see process_cursor_resize's comment on this),
+        // so the surface geometry doesn't reflect the restored size yet by the
+        // time set_toplevel_maximized() returns, which previously made the
+        // "new" frame look identical to the old (maximized) one and put the
+        // restored window back at its pre-maximize corner instead of under
+        // the cursor.
+        wlr_box restore_box = toplevel->restore_box;
+
+        set_toplevel_maximized(toplevel, false);
+
+        double new_frame_w =
+            restore_box.width + decoration_border_width(false) + decoration_border_right_width(false);
+        double new_frame_h =
+            restore_box.height + decoration_titlebar_height(false) + decoration_border_bottom_height(false);
+        server->grab_x = fraction_x * new_frame_w;
+        server->grab_y = fraction_y * new_frame_h;
+    }
     int x = static_cast<int>(server->cursor->x - server->grab_x);
     int y = static_cast<int>(server->cursor->y - server->grab_y);
+    if (toplevel->maximize_reposition_pending) {
+        // set_toplevel_maximized() above just requested the restore but
+        // (being xdg-shell) hasn't heard back yet - moving the frame now
+        // would show its still-maximized-size buffer following the cursor
+        // instead of the restored size. Keep tracking the latest cursor-
+        // relative target without moving anything; xdg_toplevel_commit
+        // applies it in one step once the matching buffer actually lands,
+        // same flash this whole block exists to avoid.
+        toplevel->maximize_pending_x = x;
+        toplevel->maximize_pending_y = y;
+        return;
+    }
     wlr_scene_node_set_position(&toplevel->scene_tree->node, x, y);
     // The X server has no notion of our border - tell it about the visible
     // content position, not the container's.

@@ -76,6 +76,22 @@ static void xdg_toplevel_commit(wl_listener *listener, void *data) {
         wlr_scene_node_set_position(&toplevel->scene_tree->node, x, y);
     }
 
+    if (toplevel->maximize_reposition_pending) {
+        // Same idea as the resize case above: wait for a commit whose size
+        // actually differs from what it was before set_toplevel_maximized
+        // requested the change, so the frame doesn't jump to its new
+        // maximized/restored position while still showing the old-sized
+        // buffer inside - see maximize_reposition_pending's declaration.
+        wlr_box geo;
+        toplevel_get_geometry(toplevel, &geo);
+        if (geo.width != toplevel->maximize_pending_old_width ||
+                geo.height != toplevel->maximize_pending_old_height) {
+            wlr_scene_node_set_position(&toplevel->scene_tree->node,
+                toplevel->maximize_pending_x, toplevel->maximize_pending_y);
+            toplevel->maximize_reposition_pending = false;
+        }
+    }
+
     // The client may have resized itself, or changed its title, outside of
     // an interactive grab - keep the decoration in sync.
     render_toplevel_decoration(toplevel);

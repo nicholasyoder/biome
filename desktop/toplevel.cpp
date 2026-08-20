@@ -234,35 +234,43 @@ void set_toplevel_maximized(BiomeToplevel *toplevel, bool maximized) {
         return;
     }
 
+    wlr_box old_geo;
+    toplevel_get_geometry(toplevel, &old_geo);
+
+    wlr_box target;
     if (maximized) {
-        wlr_box geo;
-        toplevel_get_geometry(toplevel, &geo);
         toplevel->restore_box.x =
             static_cast<int>(toplevel->scene_tree->node.x) + decoration_border_width(toplevel->maximized);
         toplevel->restore_box.y =
             static_cast<int>(toplevel->scene_tree->node.y) + decoration_titlebar_height(toplevel->maximized);
-        toplevel->restore_box.width = geo.width;
-        toplevel->restore_box.height = geo.height;
+        toplevel->restore_box.width = old_geo.width;
+        toplevel->restore_box.height = old_geo.height;
 
-        wlr_box target = maximize_target_box(toplevel);
+        target = maximize_target_box(toplevel);
         if (wlr_box_empty(&target)) {
             return;
         }
         toplevel->maximized = true;
-        wlr_scene_node_set_position(&toplevel->scene_tree->node,
-            target.x - decoration_border_width(toplevel->maximized),
-            target.y - decoration_titlebar_height(toplevel->maximized));
-        toplevel_set_size(toplevel, target.x, target.y, target.width, target.height);
-        toplevel_sync_position(toplevel, target.x, target.y);
     } else {
+        target = toplevel->restore_box;
         toplevel->maximized = false;
-        wlr_box restore = toplevel->restore_box;
-        wlr_scene_node_set_position(&toplevel->scene_tree->node,
-            restore.x - decoration_border_width(toplevel->maximized),
-            restore.y - decoration_titlebar_height(toplevel->maximized));
-        toplevel_set_size(toplevel, restore.x, restore.y, restore.width, restore.height);
-        toplevel_sync_position(toplevel, restore.x, restore.y);
     }
+
+    int node_x = target.x - decoration_border_width(toplevel->maximized);
+    int node_y = target.y - decoration_titlebar_height(toplevel->maximized);
+    if (toplevel->type == BiomeToplevelType::Xdg) {
+        // See maximize_reposition_pending's declaration - picked up by
+        // xdg_toplevel_commit once the resized buffer actually lands.
+        toplevel->maximize_reposition_pending = true;
+        toplevel->maximize_pending_x = node_x;
+        toplevel->maximize_pending_y = node_y;
+        toplevel->maximize_pending_old_width = old_geo.width;
+        toplevel->maximize_pending_old_height = old_geo.height;
+    } else {
+        wlr_scene_node_set_position(&toplevel->scene_tree->node, node_x, node_y);
+    }
+    toplevel_set_size(toplevel, target.x, target.y, target.width, target.height);
+    toplevel_sync_position(toplevel, target.x, target.y);
 
     if (toplevel->type == BiomeToplevelType::Xdg) {
         wlr_xdg_toplevel_set_maximized(toplevel->xdg_toplevel, maximized);

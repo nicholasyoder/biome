@@ -296,11 +296,11 @@ void handle_decoration_click(BiomeToplevel *toplevel, biome_decoration::Region r
     using biome_decoration::Region;
     switch (region) {
     case Region::Titlebar:
-        // Grabbing the titlebar of a maximized window un-maximizes it
-        // first, then starts the move as normal - standard WM convention.
-        if (toplevel->maximized) {
-            set_toplevel_maximized(toplevel, false);
-        }
+        // Always start a move grab. If the window is maximized, a plain
+        // click-and-release must NOT change its maximized state (only
+        // double-click toggles that - see server_cursor_button); actually
+        // dragging it restores-under-cursor on the first real motion
+        // instead, in process_cursor_move.
         begin_interactive(toplevel, BiomeCursorMode::Move, 0, false);
         break;
     case Region::ResizeN:

@@ -168,40 +168,11 @@ Region DecorationFrame::hitTest(
         return Region::None;
     }
 
-    // Corners take priority over the plain edges/buttons below - a WM
-    // convention that gives diagonal resize a large-enough hit target near
-    // the frame's corners instead of it being a single-pixel coincidence of
-    // two edges (and, same as before this used real widget geometry, can
-    // still win over a button that happens to overlap a corner zone).
-    bool near_left = local_x < kResizeCornerSize;
-    bool near_right = local_x >= w - kResizeCornerSize;
-    bool near_top = local_y < kResizeCornerSize;
-    bool near_bottom = local_y >= h - kResizeCornerSize;
-    if (near_top && near_left) {
-        return Region::ResizeNW;
-    }
-    if (near_top && near_right) {
-        return Region::ResizeNE;
-    }
-    if (near_bottom && near_left) {
-        return Region::ResizeSW;
-    }
-    if (near_bottom && near_right) {
-        return Region::ResizeSE;
-    }
-
-    // Everywhere else, ask the real widget tree what's actually there
-    // instead of re-deriving it from geometry math.
+    // Buttons win over every resize check below, even if a theme gives them
+    // little/no margin and they end up sitting inside a corner or edge hit
+    // zone - a click is only ever a resize when it's outside the button's
+    // actual widget geometry.
     QWidget *hit = childAt(local_x, local_y);
-    if (hit == border_bottom_) {
-        return Region::ResizeS;
-    }
-    if (hit == border_left_) {
-        return Region::ResizeW;
-    }
-    if (hit == border_right_) {
-        return Region::ResizeE;
-    }
     if (hit == button_minimize_) {
         return Region::ButtonMinimize;
     }
@@ -211,6 +182,65 @@ Region DecorationFrame::hitTest(
     if (hit == button_close_) {
         return Region::ButtonClose;
     }
+
+    // No resizing at all while maximized - a maximized window must be
+    // demaximized first (standard WM convention). This can't be left to
+    // border_left_/border_right_/border_bottom_ collapsing to 0 size under
+    // this theme's [biomeMaximized="true"] QSS (see biome-dark.qss): that's
+    // this theme's choice, not a guarantee every theme makes, so it's
+    // enforced explicitly here instead.
+    if (!maximized) {
+        // Corners take priority over the plain edges below - a WM
+        // convention that gives diagonal resize a large-enough hit target
+        // near the frame's corners instead of it being a single-pixel
+        // coincidence of two edges.
+        bool near_left = local_x < kResizeCornerSize;
+        bool near_right = local_x >= w - kResizeCornerSize;
+        bool near_top = local_y < kResizeCornerSize;
+        bool near_bottom = local_y >= h - kResizeCornerSize;
+        if (near_top && near_left) {
+            return Region::ResizeNW;
+        }
+        if (near_top && near_right) {
+            return Region::ResizeNE;
+        }
+        if (near_bottom && near_left) {
+            return Region::ResizeSW;
+        }
+        if (near_bottom && near_right) {
+            return Region::ResizeSE;
+        }
+
+        // The titlebar row has no border_left_/border_right_ of its own
+        // (those only flank the middle content row - see the constructor),
+        // so unlike the childAt() checks below, its top edge and sides need
+        // the same geometry-based margin the corners above use rather than
+        // a widget to ask.
+        if (local_y < titlebarHeight()) {
+            if (near_top) {
+                return Region::ResizeN;
+            }
+            if (near_left) {
+                return Region::ResizeW;
+            }
+            if (near_right) {
+                return Region::ResizeE;
+            }
+        }
+
+        // Everywhere else, ask the real widget tree what's actually there
+        // instead of re-deriving it from geometry math.
+        if (hit == border_bottom_) {
+            return Region::ResizeS;
+        }
+        if (hit == border_left_) {
+            return Region::ResizeW;
+        }
+        if (hit == border_right_) {
+            return Region::ResizeE;
+        }
+    }
+
     if (hit == titlebar_ || hit == title_label_ || hit == icon_button_) {
         // The icon isn't clickable (no context menu yet) - it's just part of
         // the draggable titlebar, same as the title text and empty titlebar
