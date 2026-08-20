@@ -108,10 +108,6 @@ static void process_cursor_resize(BiomeServer *server, uint32_t time) {
     // we could be resizing from any corner or edge. This not only resizes
     // the toplevel on one or two axes, but can also move the toplevel if you
     // resize from the top or left edges (or top-left corner).
-    //
-    // Note that some shortcuts are taken here. In a more fleshed-out
-    // compositor, you'd wait for the client to prepare a buffer at the new
-    // size, then commit any movement that was prepared.
     BiomeToplevel *toplevel = server->grabbed_toplevel;
     double border_x = server->cursor->x - server->grab_x;
     double border_y = server->cursor->y - server->grab_y;
@@ -145,12 +141,27 @@ static void process_cursor_resize(BiomeServer *server, uint32_t time) {
 
     wlr_box geo_box;
     toplevel_get_geometry(toplevel, &geo_box);
-    wlr_scene_node_set_position(&toplevel->scene_tree->node,
-        new_left - geo_box.x - decoration_border_width(toplevel->maximized),
-        new_top - geo_box.y - decoration_titlebar_height(toplevel->maximized));
 
     int new_width = new_right - new_left;
     int new_height = new_bottom - new_top;
+
+    if (toplevel->type != BiomeToplevelType::Xdg) {
+        // Xwayland surfaces own their absolute position - X11 has no
+        // equivalent to xdg-shell's async commit to defer to (see
+        // xdg_toplevel_commit for that case), so position and size are
+        // still sent together immediately, same as before.
+        wlr_scene_node_set_position(&toplevel->scene_tree->node,
+            new_left - geo_box.x - decoration_border_width(toplevel->maximized),
+            new_top - geo_box.y - decoration_titlebar_height(toplevel->maximized));
+    }
+    // For xdg-shell, moving the window now - ahead of the client's own
+    // matching commit - would show the *old*, not-yet-resized buffer at the
+    // *new* position (the client applies this size on its own schedule via
+    // a normal wl_surface.commit, not synchronously with this request).
+    // That's a visible wobble on whichever edge is being dragged.
+    // xdg_toplevel_commit repositions once the buffer that actually matches
+    // this size lands, so position and content always change together;
+    // only the size request goes out here.
     toplevel_set_size(toplevel, new_left - geo_box.x, new_top - geo_box.y, new_width, new_height);
     render_toplevel_decoration(toplevel);
 }

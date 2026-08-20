@@ -48,6 +48,34 @@ static void xdg_toplevel_commit(wl_listener *listener, void *data) {
         }
         return;
     }
+
+    // If this commit lands mid-resize-grab and the drag is moving the
+    // left/top edge, this is the buffer that actually matches the size we
+    // last requested (or the closest the client got to it) - reposition now,
+    // anchored off the fixed opposite edge captured in grab_geobox at grab
+    // start, so the window's position and this new content size land on
+    // screen together in this same scene update. See cursor.cpp's
+    // process_cursor_resize for why the eager position update was removed
+    // for xdg-shell toplevels - without this, position would race ahead of
+    // (or behind) whatever buffer is actually on screen.
+    BiomeServer *server = toplevel->server;
+    if (server->cursor_mode == BiomeCursorMode::Resize && server->grabbed_toplevel == toplevel &&
+            (server->resize_edges & (WLR_EDGE_LEFT | WLR_EDGE_TOP))) {
+        wlr_box geo;
+        toplevel_get_geometry(toplevel, &geo);
+        int x = static_cast<int>(toplevel->scene_tree->node.x);
+        int y = static_cast<int>(toplevel->scene_tree->node.y);
+        if (server->resize_edges & WLR_EDGE_LEFT) {
+            int content_right = server->grab_geobox.x + server->grab_geobox.width;
+            x = content_right - geo.width - geo.x - decoration_border_width(toplevel->maximized);
+        }
+        if (server->resize_edges & WLR_EDGE_TOP) {
+            int content_bottom = server->grab_geobox.y + server->grab_geobox.height;
+            y = content_bottom - geo.height - geo.y - decoration_titlebar_height(toplevel->maximized);
+        }
+        wlr_scene_node_set_position(&toplevel->scene_tree->node, x, y);
+    }
+
     // The client may have resized itself, or changed its title, outside of
     // an interactive grab - keep the decoration in sync.
     render_toplevel_decoration(toplevel);

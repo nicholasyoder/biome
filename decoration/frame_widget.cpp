@@ -127,6 +127,14 @@ DecorationFrame::DecorationFrame(QWidget *parent) : QFrame(parent) {
 }
 
 void DecorationFrame::layoutFor(int content_width, int content_height) {
+    // Resizing (and hover/press re-renders, which call this with an
+    // unchanged content size every time) is the hot path for this widget -
+    // skip the repolish/layout/resize dance entirely when the frame is
+    // already sized for this content, rather than redoing it on every mouse
+    // motion event regardless of whether anything actually changed.
+    if (content_spacer_->width() == content_width && content_spacer_->height() == content_height) {
+        return;
+    }
     content_spacer_->setFixedSize(content_width, content_height);
     // Invalidate first: setFixedSize() normally flags stale layout caches
     // via a posted QEvent::LayoutRequest, which never arrives since Biome
@@ -208,6 +216,9 @@ Region DecorationFrame::hitTest(
 }
 
 void DecorationFrame::setFocusedState(bool focused) {
+    if (property("focused").toBool() == focused) {
+        return;
+    }
     setProperty("focused", focused);
     // Descendant selectors keyed off #biomeFrame[focused="..."] (the title
     // label, the buttons' glyph color) need their own repolish - Qt's
@@ -225,6 +236,9 @@ void DecorationFrame::setMaximizedState(bool maximized) {
     // true) on a QWidget-derived instance left property("maximized")
     // reading back false, no error, no warning - every [maximized=...] QSS
     // selector would have silently never matched.
+    if (property("biomeMaximized").toBool() == maximized) {
+        return;
+    }
     setProperty("biomeMaximized", maximized);
     // Same rationale as setFocusedState() above - descendant selectors keyed
     // off #biomeFrame[biomeMaximized="..."] need their own repolish since an
