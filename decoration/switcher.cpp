@@ -29,13 +29,9 @@ namespace {
 // frame_widget.h's DecorationFrame.
 class SwitcherPanel : public QFrame {
     Q_OBJECT
-    Q_PROPERTY(int panelPadding READ panelPadding WRITE setPanelPadding)
 
 public:
     explicit SwitcherPanel(QWidget *parent = nullptr);
-
-    int panelPadding() const { return panel_padding_; }
-    void setPanelPadding(int value);
 
     // Adds/removes icon buttons to match entries.size(), sets each one's
     // "selected" dynamic property and icon, and sets the title label to the
@@ -55,7 +51,6 @@ private:
     QLabel *title_label_ = nullptr;
     std::vector<QToolButton *> icons_;
     std::string full_title_;
-    int panel_padding_ = 0;
 };
 
 SwitcherPanel::SwitcherPanel(QWidget *parent) : QFrame(parent) {
@@ -75,11 +70,6 @@ SwitcherPanel::SwitcherPanel(QWidget *parent) : QFrame(parent) {
     // frame_widget.cpp's title_label_).
     title_label_->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Fixed);
     layout_->addWidget(title_label_);
-}
-
-void SwitcherPanel::setPanelPadding(int value) {
-    panel_padding_ = value;
-    layout_->setContentsMargins(value, value, value, value);
 }
 
 void SwitcherPanel::setEntries(const std::vector<SwitcherEntry> &entries, int selected_index) {
