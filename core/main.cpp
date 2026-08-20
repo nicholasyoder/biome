@@ -50,10 +50,18 @@ int main(int argc, char *argv[]) {
     // rendering is driven synchronously from this event loop, not a Qt one.
     // Uses its own fixed argc/argv rather than Biome's real ones, since
     // Biome's "-s"/"-h" flags are unrelated to Qt's own CLI arguments.
-    qputenv("QT_QPA_PLATFORM", "offscreen");
-    static int qt_argc = 1;
+    // Passed as a "-platform" argument rather than a QT_QPA_PLATFORM
+    // qputenv(): qputenv is a real setenv() on Biome's own process, which
+    // every client Biome starts (and everything *those* spawn, e.g. a
+    // terminal's shell and whatever the user runs from it) inherits -
+    // forcing every real Qt app in the session onto the offscreen platform
+    // too, silently breaking all of them. The "-platform" argument only
+    // selects the platform for this one QApplication instance.
+    static int qt_argc = 3;
     static char qt_arg0[] = "biome";
-    static char *qt_argv[] = {qt_arg0, nullptr};
+    static char qt_arg1[] = "-platform";
+    static char qt_arg2[] = "offscreen";
+    static char *qt_argv[] = {qt_arg0, qt_arg1, qt_arg2, nullptr};
     QApplication qt_app(qt_argc, qt_argv);
 
     BiomeServer server;
