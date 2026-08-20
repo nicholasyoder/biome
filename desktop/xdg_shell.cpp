@@ -27,6 +27,16 @@ void xdg_shell_init(BiomeServer *server) {
     server->new_xdg_toplevel_decoration.notify = server_new_xdg_toplevel_decoration;
     wl_signal_add(&server->xdg_decoration_manager->events.new_toplevel_decoration,
         &server->new_xdg_toplevel_decoration);
+
+    // GTK3 clients (which never adopted xdg-decoration above) look for this
+    // older KDE protocol instead to learn Biome wants server-side
+    // decorations - see kde_decoration_manager's declaration in server.h.
+    // No per-client negotiation needed: the default mode alone is enough to
+    // tell every client that binds it, and new clients get it too (wlroots
+    // sends default_mode on bind).
+    server->kde_decoration_manager = wlr_server_decoration_manager_create(server->display);
+    wlr_server_decoration_manager_set_default_mode(
+        server->kde_decoration_manager, WLR_SERVER_DECORATION_MANAGER_MODE_SERVER);
 }
 
 static void xdg_toplevel_commit(wl_listener *listener, void *data) {
@@ -67,11 +77,11 @@ static void xdg_toplevel_commit(wl_listener *listener, void *data) {
         int y = static_cast<int>(toplevel->scene_tree->node.y);
         if (server->resize_edges & WLR_EDGE_LEFT) {
             int content_right = server->grab_geobox.x + server->grab_geobox.width;
-            x = content_right - geo.width - geo.x - decoration_border_width(toplevel->maximized);
+            x = content_right - geo.width - geo.x - decoration_border_width(toplevel, toplevel->maximized);
         }
         if (server->resize_edges & WLR_EDGE_TOP) {
             int content_bottom = server->grab_geobox.y + server->grab_geobox.height;
-            y = content_bottom - geo.height - geo.y - decoration_titlebar_height(toplevel->maximized);
+            y = content_bottom - geo.height - geo.y - decoration_titlebar_height(toplevel, toplevel->maximized);
         }
         wlr_scene_node_set_position(&toplevel->scene_tree->node, x, y);
     }
@@ -206,7 +216,7 @@ static void server_new_xdg_toplevel(wl_listener *listener, void *data) {
         wlr_scene_xdg_surface_create(toplevel->scene_tree, xdg_toplevel->base);
     toplevel->content_tree->node.data = toplevel;
     wlr_scene_node_set_position(&toplevel->content_tree->node,
-        decoration_border_width(toplevel->maximized), decoration_titlebar_height(toplevel->maximized));
+        decoration_border_width(toplevel, toplevel->maximized), decoration_titlebar_height(toplevel, toplevel->maximized));
     xdg_toplevel->base->data = toplevel->content_tree;
 
     // Listen to the various events it can emit

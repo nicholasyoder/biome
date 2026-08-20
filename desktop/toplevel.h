@@ -146,6 +146,18 @@ void close_toplevel(BiomeToplevel *toplevel);
 
 void toplevel_get_geometry(BiomeToplevel *toplevel, wlr_box *box);
 
+// False for an Xwayland surface that set _MOTIF_WM_HINTS asking for no
+// border/title - e.g. a GTK3 app already drawing its own CSD titlebar,
+// which is exactly what GDK does when it enables CSD (this is the same
+// hint xfwm4 has long had only partial support for, producing the same
+// double-decoration bug this exists to avoid). Always true for xdg-shell
+// toplevels, since Biome forces server-side mode there unconditionally
+// (see xdg_shell.cpp) and xdg-decoration has no equivalent "please don't"
+// request. A live query rather than a cached flag - wlroots may not have
+// parsed the property yet when a toplevel is first created, so callers
+// always see the current value with no extra listener needed.
+bool toplevel_decorated(const BiomeToplevel *toplevel);
+
 // content_tree->node.data is set to the owning BiomeToplevel for both xdg
 // and Xwayland (mirroring base->data / xsurface->data), so these can
 // recover a BiomeToplevel from a bare protocol object - used for looking up

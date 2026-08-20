@@ -72,18 +72,18 @@ void begin_interactive(BiomeToplevel *toplevel, BiomeCursorMode mode, uint32_t e
         wlr_box geo_box;
         toplevel_get_geometry(toplevel, &geo_box);
 
-        double border_x = (toplevel->scene_tree->node.x + decoration_border_width(toplevel->maximized) + geo_box.x) +
+        double border_x = (toplevel->scene_tree->node.x + decoration_border_width(toplevel, toplevel->maximized) + geo_box.x) +
             ((edges & WLR_EDGE_RIGHT) ? geo_box.width : 0);
-        double border_y = (toplevel->scene_tree->node.y + decoration_titlebar_height(toplevel->maximized) + geo_box.y) +
+        double border_y = (toplevel->scene_tree->node.y + decoration_titlebar_height(toplevel, toplevel->maximized) + geo_box.y) +
             ((edges & WLR_EDGE_BOTTOM) ? geo_box.height : 0);
         server->grab_x = server->cursor->x - border_x;
         server->grab_y = server->cursor->y - border_y;
 
         server->grab_geobox = geo_box;
         server->grab_geobox.x +=
-            static_cast<int>(toplevel->scene_tree->node.x) + decoration_border_width(toplevel->maximized);
+            static_cast<int>(toplevel->scene_tree->node.x) + decoration_border_width(toplevel, toplevel->maximized);
         server->grab_geobox.y +=
-            static_cast<int>(toplevel->scene_tree->node.y) + decoration_titlebar_height(toplevel->maximized);
+            static_cast<int>(toplevel->scene_tree->node.y) + decoration_titlebar_height(toplevel, toplevel->maximized);
 
         server->resize_edges = edges;
     }
@@ -106,9 +106,9 @@ static void process_cursor_move(BiomeServer *server, uint32_t time) {
         wlr_box old_geo;
         toplevel_get_geometry(toplevel, &old_geo);
         double old_frame_w =
-            old_geo.width + decoration_border_width(true) + decoration_border_right_width(true);
+            old_geo.width + decoration_border_width(toplevel, true) + decoration_border_right_width(toplevel, true);
         double old_frame_h =
-            old_geo.height + decoration_titlebar_height(true) + decoration_border_bottom_height(true);
+            old_geo.height + decoration_titlebar_height(toplevel, true) + decoration_border_bottom_height(toplevel, true);
         double fraction_x = (server->cursor->x - toplevel->scene_tree->node.x) / old_frame_w;
         double fraction_y = (server->cursor->y - toplevel->scene_tree->node.y) / old_frame_h;
 
@@ -126,9 +126,9 @@ static void process_cursor_move(BiomeServer *server, uint32_t time) {
         set_toplevel_maximized(toplevel, false);
 
         double new_frame_w =
-            restore_box.width + decoration_border_width(false) + decoration_border_right_width(false);
+            restore_box.width + decoration_border_width(toplevel, false) + decoration_border_right_width(toplevel, false);
         double new_frame_h =
-            restore_box.height + decoration_titlebar_height(false) + decoration_border_bottom_height(false);
+            restore_box.height + decoration_titlebar_height(toplevel, false) + decoration_border_bottom_height(toplevel, false);
         server->grab_x = fraction_x * new_frame_w;
         server->grab_y = fraction_y * new_frame_h;
     }
@@ -150,7 +150,7 @@ static void process_cursor_move(BiomeServer *server, uint32_t time) {
     // The X server has no notion of our border - tell it about the visible
     // content position, not the container's.
     toplevel_sync_position(
-        toplevel, x + decoration_border_width(toplevel->maximized), y + decoration_titlebar_height(toplevel->maximized));
+        toplevel, x + decoration_border_width(toplevel, toplevel->maximized), y + decoration_titlebar_height(toplevel, toplevel->maximized));
 }
 
 static void process_cursor_resize(BiomeServer *server, uint32_t time) {
@@ -202,8 +202,8 @@ static void process_cursor_resize(BiomeServer *server, uint32_t time) {
         // xdg_toplevel_commit for that case), so position and size are
         // still sent together immediately, same as before.
         wlr_scene_node_set_position(&toplevel->scene_tree->node,
-            new_left - geo_box.x - decoration_border_width(toplevel->maximized),
-            new_top - geo_box.y - decoration_titlebar_height(toplevel->maximized));
+            new_left - geo_box.x - decoration_border_width(toplevel, toplevel->maximized),
+            new_top - geo_box.y - decoration_titlebar_height(toplevel, toplevel->maximized));
     }
     // For xdg-shell, moving the window now - ahead of the client's own
     // matching commit - would show the *old*, not-yet-resized buffer at the

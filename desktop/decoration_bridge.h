@@ -43,6 +43,26 @@ int decoration_titlebar_height(bool maximized);
 int decoration_border_right_width(bool maximized);
 int decoration_border_bottom_height(bool maximized);
 
+// Same as the four above, but scoped to a specific toplevel: returns 0 if
+// that toplevel opted out of Biome's decoration entirely (see
+// toplevel_decorated in desktop/toplevel.h - currently only possible for an
+// Xwayland client). maximized is still taken explicitly rather than read
+// off toplevel->maximized, since some callers need the metrics for a
+// maximize state transition that hasn't been committed to toplevel->
+// maximized yet (e.g. maximize_target_box's target-state inset).
+inline int decoration_border_width(const BiomeToplevel *toplevel, bool maximized) {
+    return toplevel_decorated(toplevel) ? decoration_border_width(maximized) : 0;
+}
+inline int decoration_titlebar_height(const BiomeToplevel *toplevel, bool maximized) {
+    return toplevel_decorated(toplevel) ? decoration_titlebar_height(maximized) : 0;
+}
+inline int decoration_border_right_width(const BiomeToplevel *toplevel, bool maximized) {
+    return toplevel_decorated(toplevel) ? decoration_border_right_width(maximized) : 0;
+}
+inline int decoration_border_bottom_height(const BiomeToplevel *toplevel, bool maximized) {
+    return toplevel_decorated(toplevel) ? decoration_border_bottom_height(maximized) : 0;
+}
+
 // Creates the (initially empty) decoration_buffer scene node as a child of
 // toplevel->scene_tree (the container), positioned at its origin. Filled in
 // by render_toplevel_decoration once geometry is known.

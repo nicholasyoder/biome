@@ -105,6 +105,18 @@ void render_toplevel_decoration(BiomeToplevel *toplevel) {
     if (toplevel == nullptr || toplevel->decoration_buffer == nullptr || !toplevel->placed) {
         return;
     }
+    if (!toplevel_decorated(toplevel)) {
+        // The client asked for no decoration (see toplevel_decorated) -
+        // don't paint a frame at all, rather than painting one sized by the
+        // theme's normal (non-zero) metrics and relying on zeroed offsets
+        // elsewhere to hide it. Clears any previously-set buffer too, in
+        // case this is a re-render after the client's hint changed.
+        wlr_scene_buffer_set_buffer(toplevel->decoration_buffer, nullptr);
+        if (toplevel->content_tree != nullptr) {
+            wlr_scene_node_set_position(&toplevel->content_tree->node, 0, 0);
+        }
+        return;
+    }
     wlr_box geo;
     toplevel_get_geometry(toplevel, &geo);
     int width = geo.width > 0 ? geo.width : 0;
