@@ -47,16 +47,13 @@ int main(int argc, char *argv[]) {
 
     // Offscreen QApplication for the decoration/ Qt renderer - no real
     // display needed, and Biome never calls exec(): QPainter/QImage
-    // rendering is driven synchronously from this event loop, not a Qt one.
-    // Uses its own fixed argc/argv rather than Biome's real ones, since
-    // Biome's "-s"/"-h" flags are unrelated to Qt's own CLI arguments.
-    // Passed as a "-platform" argument rather than a QT_QPA_PLATFORM
-    // qputenv(): qputenv is a real setenv() on Biome's own process, which
-    // every client Biome starts (and everything *those* spawn, e.g. a
-    // terminal's shell and whatever the user runs from it) inherits -
-    // forcing every real Qt app in the session onto the offscreen platform
-    // too, silently breaking all of them. The "-platform" argument only
-    // selects the platform for this one QApplication instance.
+    // rendering is driven synchronously from this event loop instead. Its
+    // own fixed argc/argv keep Biome's "-s"/"-h" flags separate from Qt's.
+    // The offscreen platform is passed as a "-platform" argument rather than
+    // via qputenv(QT_QPA_PLATFORM): qputenv is a real setenv() on Biome's own
+    // process, which every client Biome spawns (and everything those spawn)
+    // would inherit, forcing every real Qt app in the session onto the
+    // offscreen platform too. "-platform" only affects this QApplication.
     static int qt_argc = 3;
     static char qt_arg0[] = "biome";
     static char qt_arg1[] = "-platform";
@@ -67,23 +64,16 @@ int main(int argc, char *argv[]) {
     BiomeServer server;
     biome_decoration::load_decoration_theme();
     init_icon_theme();
-    // The Wayland display is managed by libwayland. It handles accepting
-    // clients from the Unix socket, managing Wayland globals, and so on.
     server.display = wl_display_create();
-    // The backend is a wlroots feature which abstracts the underlying input
-    // and output hardware. The autocreate option will choose the most
-    // suitable backend based on the current environment, such as opening an
-    // X11 window if an X11 server is running.
+    // Autocreate picks the most suitable backend for the environment (e.g.
+    // an X11 window if an X11 server is running).
     server.backend = wlr_backend_autocreate(wl_display_get_event_loop(server.display), &server.session);
     if (server.backend == nullptr) {
         wlr_log(WLR_ERROR, "failed to create wlr_backend");
         return 1;
     }
 
-    // Autocreates a renderer, either Pixman, GLES2 or Vulkan for us. The
-    // user can also specify a renderer using the WLR_RENDERER env var. The
-    // renderer is responsible for defining the various pixel formats it
-    // supports for shared memory, this configures that for clients.
+    // Pixman, GLES2, or Vulkan, per WLR_RENDERER or autodetection.
     server.renderer = wlr_renderer_autocreate(server.backend);
     if (server.renderer == nullptr) {
         wlr_log(WLR_ERROR, "failed to create wlr_renderer");
@@ -92,23 +82,16 @@ int main(int argc, char *argv[]) {
 
     wlr_renderer_init_wl_display(server.renderer, server.display);
 
-    // Autocreates an allocator for us. The allocator is the bridge between
-    // the renderer and the backend. It handles the buffer creation,
-    // allowing wlroots to render onto the screen.
+    // The bridge between renderer and backend, handling buffer creation.
     server.allocator = wlr_allocator_autocreate(server.backend, server.renderer);
     if (server.allocator == nullptr) {
         wlr_log(WLR_ERROR, "failed to create wlr_allocator");
         return 1;
     }
 
-    // This creates some hands-off wlroots interfaces. The compositor is
-    // necessary for clients to allocate surfaces, the subcompositor allows
-    // to assign the role of subsurfaces to surfaces and the data device
-    // manager handles the clipboard. Each of these wlroots interfaces has
-    // room for you to dig your fingers in and play with their behavior if
-    // you want. Note that the clients cannot set the selection directly
-    // without compositor approval, see the handling of the
-    // request_set_selection event below.
+    // compositor: lets clients allocate surfaces. subcompositor: assigns the
+    // subsurface role. data_device_manager: clipboard (see
+    // seat_request_set_selection in core/input.cpp).
     wlr_compositor *compositor = wlr_compositor_create(server.display, 5, server.renderer);
     wlr_subcompositor_create(server.display);
     wlr_data_device_manager_create(server.display);
@@ -120,38 +103,27 @@ int main(int argc, char *argv[]) {
     input_init(&server);
     xwayland_init(&server, compositor);
 
-    // Add a Unix socket to the Wayland display.
     const char *socket = wl_display_add_socket_auto(server.display);
     if (!socket) {
         wlr_backend_destroy(server.backend);
         return 1;
     }
 
-    // Start the backend. This will enumerate outputs and inputs, become the
-    // DRM master, etc.
     if (!wlr_backend_start(server.backend)) {
         wlr_backend_destroy(server.backend);
         wl_display_destroy(server.display);
         return 1;
     }
 
-    // Set the WAYLAND_DISPLAY environment variable to our socket and run
-    // the startup command if requested.
     setenv("WAYLAND_DISPLAY", socket, true);
     if (startup_cmd) {
         if (fork() == 0) {
             execl("/bin/sh", "/bin/sh", "-c", startup_cmd, (void *)nullptr);
         }
     }
-    // Run the Wayland event loop. This does not return until you exit the
-    // compositor. Starting the backend rigged up all of the necessary event
-    // loop configuration to listen to libinput events, DRM events, generate
-    // frame events at the refresh rate, and so on.
     wlr_log(WLR_INFO, "Running Biome on WAYLAND_DISPLAY=%s", socket);
     wl_display_run(server.display);
 
-    // Once wl_display_run returns, we destroy all clients then shut down
-    // the server.
     wl_display_destroy_clients(server.display);
     if (server.ewmh_ready) {
         xcb_ewmh_connection_wipe(&server.ewmh);

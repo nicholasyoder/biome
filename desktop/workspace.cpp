@@ -39,9 +39,8 @@ void switch_workspace(BiomeServer *server, int index) {
     wl_list_for_each(pos, &server->toplevels, link) {
         update_toplevel_visibility(pos);
     }
-    // The pointer may be sitting over a surface that just got hidden;
-    // clear its focus so stale events don't reach it. It'll be re-resolved
-    // on the next motion event.
+    // The pointer may be sitting over a surface that just got hidden; clear
+    // its focus so stale events don't reach it, re-resolved on next motion.
     wlr_seat_pointer_clear_focus(server->seat);
     focus_topmost_on_active_workspace(server);
 }

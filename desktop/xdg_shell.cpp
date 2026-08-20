@@ -14,8 +14,6 @@ static void server_new_xdg_popup(wl_listener *listener, void *data);
 static void server_new_xdg_toplevel_decoration(wl_listener *listener, void *data);
 
 void xdg_shell_init(BiomeServer *server) {
-    // Set up xdg-shell version 3. The xdg-shell is a Wayland protocol which
-    // is used for application windows.
     wl_list_init(&server->toplevels);
     server->xdg_shell = wlr_xdg_shell_create(server->display, 3);
     server->new_xdg_toplevel.notify = server_new_xdg_toplevel;
@@ -29,11 +27,9 @@ void xdg_shell_init(BiomeServer *server) {
         &server->new_xdg_toplevel_decoration);
 
     // GTK3 clients (which never adopted xdg-decoration above) look for this
-    // older KDE protocol instead to learn Biome wants server-side
-    // decorations - see kde_decoration_manager's declaration in server.h.
-    // No per-client negotiation needed: the default mode alone is enough to
-    // tell every client that binds it, and new clients get it too (wlroots
-    // sends default_mode on bind).
+    // older KDE protocol instead - see kde_decoration_manager's declaration
+    // in server.h. No per-client negotiation needed: wlroots sends
+    // default_mode to every client that binds it.
     server->kde_decoration_manager = wlr_server_decoration_manager_create(server->display);
     wlr_server_decoration_manager_set_default_mode(
         server->kde_decoration_manager, WLR_SERVER_DECORATION_MANAGER_MODE_SERVER);
@@ -41,14 +37,12 @@ void xdg_shell_init(BiomeServer *server) {
 
 static void xdg_toplevel_commit(wl_listener *listener, void *data) {
     (void)data;
-    // Called when a new surface state is committed.
     BiomeToplevel *toplevel = wl_container_of(listener, toplevel, commit);
 
     if (toplevel->xdg_toplevel->base->initial_commit) {
-        // When an xdg_surface performs an initial commit, the compositor
-        // must reply with a configure so the client can map the surface.
-        // Biome configures the xdg_toplevel with 0,0 size to let the client
-        // pick the dimensions itself.
+        // The compositor must reply to an initial commit with a configure
+        // so the client can map the surface. 0,0 lets the client pick its
+        // own size.
         wlr_xdg_toplevel_set_size(toplevel->xdg_toplevel, 0, 0);
         if (toplevel->pending_decoration != nullptr) {
             wl_list_remove(&toplevel->pending_decoration_destroy.link);
@@ -60,14 +54,11 @@ static void xdg_toplevel_commit(wl_listener *listener, void *data) {
     }
 
     // If this commit lands mid-resize-grab and the drag is moving the
-    // left/top edge, this is the buffer that actually matches the size we
-    // last requested (or the closest the client got to it) - reposition now,
-    // anchored off the fixed opposite edge captured in grab_geobox at grab
-    // start, so the window's position and this new content size land on
-    // screen together in this same scene update. See cursor.cpp's
-    // process_cursor_resize for why the eager position update was removed
-    // for xdg-shell toplevels - without this, position would race ahead of
-    // (or behind) whatever buffer is actually on screen.
+    // left/top edge, this is the buffer matching the size last requested -
+    // reposition now, anchored off the fixed opposite edge captured in
+    // grab_geobox at grab start, so position and content land together. See
+    // cursor.cpp's process_cursor_resize for why the eager position update
+    // was removed for xdg-shell toplevels.
     BiomeServer *server = toplevel->server;
     if (server->cursor_mode == BiomeCursorMode::Resize && server->grabbed_toplevel == toplevel &&
             (server->resize_edges & (WLR_EDGE_LEFT | WLR_EDGE_TOP))) {
@@ -88,10 +79,8 @@ static void xdg_toplevel_commit(wl_listener *listener, void *data) {
 
     if (toplevel->maximize_reposition_pending) {
         // Same idea as the resize case above: wait for a commit whose size
-        // actually differs from what it was before set_toplevel_maximized
-        // requested the change, so the frame doesn't jump to its new
-        // maximized/restored position while still showing the old-sized
-        // buffer inside - see maximize_reposition_pending's declaration.
+        // actually differs from before set_toplevel_maximized requested the
+        // change - see maximize_reposition_pending's declaration.
         wlr_box geo;
         toplevel_get_geometry(toplevel, &geo);
         if (geo.width != toplevel->maximize_pending_old_width ||
@@ -115,7 +104,6 @@ static void xdg_toplevel_set_title(wl_listener *listener, void *data) {
 
 static void xdg_toplevel_destroy(wl_listener *listener, void *data) {
     (void)data;
-    // Called when the xdg_toplevel is destroyed.
     BiomeToplevel *toplevel = wl_container_of(listener, toplevel, destroy);
 
     wl_list_remove(&toplevel->map.link);
@@ -129,43 +117,34 @@ static void xdg_toplevel_destroy(wl_listener *listener, void *data) {
     wl_list_remove(&toplevel->request_fullscreen.link);
     wl_list_remove(&toplevel->request_minimize.link);
     if (toplevel->pending_decoration != nullptr) {
-        // The toplevel is being destroyed before ever reaching its initial
-        // commit (e.g. a client that creates a decoration object then
-        // disconnects) - drop the listener registered on the decoration's
-        // own destroy signal before this toplevel (and that listener along
-        // with it) is freed below.
+        // Being destroyed before ever reaching its initial commit (e.g. a
+        // client that creates a decoration object then disconnects) - drop
+        // the listener before this toplevel is freed below.
         wl_list_remove(&toplevel->pending_decoration_destroy.link);
     }
 
-    // scene_tree is a plain wlr_scene_tree_create() we allocated ourselves
-    // (to hold the decoration), not one tied to the xdg_surface's own
-    // lifecycle - we have to destroy it explicitly. This recursively
-    // destroys content_tree and the decoration buffer too.
+    // scene_tree isn't tied to the xdg_surface's own lifecycle, so it has to
+    // be destroyed explicitly - recursively destroys content_tree and the
+    // decoration buffer too.
     wlr_scene_node_destroy(&toplevel->scene_tree->node);
 
     clear_decoration_tracking(toplevel->server, toplevel);
     free(toplevel);
 }
 
+// A client requests this to begin an interactive resize, typically from its
+// own CSD.
 static void xdg_toplevel_request_resize(wl_listener *listener, void *data) {
-    // This event is raised when a client would like to begin an interactive
-    // resize, typically because the user clicked on their client-side
-    // decorations. Note that a more sophisticated compositor should check
-    // the provided serial against a list of button press serials sent to
-    // this client, to prevent the client from requesting this whenever they
-    // want.
     auto *event = static_cast<wlr_xdg_toplevel_resize_event *>(data);
     BiomeToplevel *toplevel = wl_container_of(listener, toplevel, request_resize);
     begin_interactive(toplevel, BiomeCursorMode::Resize, event->edges, true);
 }
 
+// Maximize and unmaximize both go through this one signal, distinguished by
+// requested.maximized. Ignored before the initial commit, letting the
+// client finish its initial setup.
 static void xdg_toplevel_request_maximize(wl_listener *listener, void *data) {
     (void)data;
-    // This event is raised when a client would like to maximize (or
-    // unmaximize - both go through this one signal, distinguished by
-    // requested.maximized) itself, typically its own titlebar's maximize
-    // button for a CSD client. If the request was sent before an initial
-    // commit, don't do anything and let the client finish its initial setup.
     BiomeToplevel *toplevel = wl_container_of(listener, toplevel, request_maximize);
     if (!toplevel->xdg_toplevel->base->initialized) {
         return;
@@ -180,29 +159,27 @@ static void xdg_toplevel_request_maximize(wl_listener *listener, void *data) {
     }
 }
 
+// Just as with request_maximize, a configure reply is required here.
 static void xdg_toplevel_request_fullscreen(wl_listener *listener, void *data) {
     (void)data;
-    // Just as with request_maximize, we must send a configure here.
     BiomeToplevel *toplevel = wl_container_of(listener, toplevel, request_fullscreen);
     if (toplevel->xdg_toplevel->base->initialized) {
         wlr_xdg_surface_schedule_configure(toplevel->xdg_toplevel->base);
     }
 }
 
+// Unlike maximize/fullscreen, xdg-shell has no configure state for
+// minimized and thus no acknowledgment requirement - just act on it.
 static void xdg_toplevel_request_minimize(wl_listener *listener, void *data) {
     (void)data;
-    // Unlike maximize/fullscreen, xdg-shell has no configure state for
-    // minimized and thus no acknowledgment requirement - just act on it.
     BiomeToplevel *toplevel = wl_container_of(listener, toplevel, request_minimize);
     set_toplevel_minimized(toplevel, toplevel->xdg_toplevel->requested.minimized);
 }
 
 static void server_new_xdg_toplevel(wl_listener *listener, void *data) {
-    // This event is raised when a client creates a new toplevel (application window).
     BiomeServer *server = wl_container_of(listener, server, new_xdg_toplevel);
     auto *xdg_toplevel = static_cast<wlr_xdg_toplevel *>(data);
 
-    // Allocate a BiomeToplevel for this surface
     auto *toplevel = static_cast<BiomeToplevel *>(calloc(1, sizeof(BiomeToplevel)));
     toplevel->server = server;
     toplevel->type = BiomeToplevelType::Xdg;
@@ -219,7 +196,6 @@ static void server_new_xdg_toplevel(wl_listener *listener, void *data) {
         decoration_border_width(toplevel, toplevel->maximized), decoration_titlebar_height(toplevel, toplevel->maximized));
     xdg_toplevel->base->data = toplevel->content_tree;
 
-    // Listen to the various events it can emit
     toplevel->map.notify = toplevel_map;
     wl_signal_add(&xdg_toplevel->base->surface->events.map, &toplevel->map);
     toplevel->unmap.notify = toplevel_unmap;
@@ -246,22 +222,17 @@ static void server_new_xdg_toplevel(wl_listener *listener, void *data) {
 
 static void xdg_popup_commit(wl_listener *listener, void *data) {
     (void)data;
-    // Called when a new surface state is committed.
     BiomePopup *popup = wl_container_of(listener, popup, commit);
 
     if (popup->xdg_popup->base->initial_commit) {
-        // When an xdg_surface performs an initial commit, the compositor
-        // must reply with a configure so the client can map the surface.
-        // Biome sends an empty configure. A more sophisticated compositor
-        // might change an xdg_popup's geometry to ensure it's not
-        // positioned off-screen, for example.
+        // The compositor must reply to an initial commit with a configure so
+        // the client can map the surface; Biome sends an empty one.
         wlr_xdg_surface_schedule_configure(popup->xdg_popup->base);
     }
 }
 
 static void xdg_popup_destroy(wl_listener *listener, void *data) {
     (void)data;
-    // Called when the xdg_popup is destroyed.
     BiomePopup *popup = wl_container_of(listener, popup, destroy);
 
     wl_list_remove(&popup->commit.link);
@@ -272,17 +243,13 @@ static void xdg_popup_destroy(wl_listener *listener, void *data) {
 
 static void server_new_xdg_popup(wl_listener *listener, void *data) {
     (void)listener;
-    // This event is raised when a client creates a new popup.
     auto *xdg_popup = static_cast<wlr_xdg_popup *>(data);
 
     auto *popup = static_cast<BiomePopup *>(calloc(1, sizeof(BiomePopup)));
     popup->xdg_popup = xdg_popup;
 
-    // We must add xdg popups to the scene graph so they get rendered. The
-    // wlroots scene graph provides a helper for this, but to use it we must
-    // provide the proper parent scene node of the xdg popup. To enable
-    // this, we always set the user data field of xdg_surfaces to the
-    // corresponding scene node.
+    // Adding a popup to the scene graph needs its parent scene node, which
+    // is why every xdg_surface's user data is set to its scene node.
     wlr_xdg_surface *parent = wlr_xdg_surface_try_from_wlr_surface(xdg_popup->parent);
     assert(parent != nullptr);
     auto *parent_tree = static_cast<wlr_scene_tree *>(parent->data);
@@ -302,26 +269,23 @@ static void pending_decoration_destroy_handler(wl_listener *listener, void *data
     toplevel->pending_decoration = nullptr;
 }
 
+// A client created an xdg_toplevel_decoration object asking for server- or
+// client-side decorations. Biome always draws its own (decoration/), so the
+// request is irrelevant - always force server-side. This is what resolves
+// the CSD-double-decoration rough edge: a CSD-capable client (foot, GTK
+// apps) that honors this won't draw its own frame on top of Biome's.
 static void server_new_xdg_toplevel_decoration(wl_listener *listener, void *data) {
     (void)listener;
-    // A client created an xdg_toplevel_decoration object, whether to ask
-    // for server-side or client-side decorations. Biome always draws its
-    // own (decoration/), so the client's request is irrelevant - always
-    // force server-side and skip client-side entirely. This is what
-    // resolves the CSD-double-decoration rough edge: a CSD-capable client
-    // (foot, GTK apps) that honors this now won't draw its own frame on
-    // top of Biome's.
     auto *decoration = static_cast<wlr_xdg_toplevel_decoration_v1 *>(data);
     if (decoration->toplevel->base->initialized) {
         wlr_xdg_toplevel_decoration_v1_set_mode(decoration, WLR_XDG_TOPLEVEL_DECORATION_V1_MODE_SERVER_SIDE);
         return;
     }
     // Not initialized yet - the common case, since clients create their
-    // decoration object before their first surface commit. Setting the
-    // mode now would hit wlroots' "configure scheduled for an
-    // uninitialized xdg_surface" guard and get silently dropped. Defer to
-    // xdg_toplevel_commit's initial_commit handling instead, which is
-    // guaranteed to run after initialization.
+    // decoration object before their first surface commit. Setting the mode
+    // now would hit wlroots' "configure scheduled for an uninitialized
+    // xdg_surface" guard and get silently dropped, so defer to
+    // xdg_toplevel_commit's initial_commit handling instead.
     BiomeToplevel *toplevel = toplevel_from_xdg(decoration->toplevel);
     if (toplevel == nullptr) {
         return;

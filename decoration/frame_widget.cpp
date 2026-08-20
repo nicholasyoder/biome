@@ -36,10 +36,9 @@ void force_activate_layouts(QWidget *root) {
 }
 
 namespace {
-// How many pixels near a corner count as a diagonal resize handle rather
-// than a plain edge - pure WM click-precision convention, not a rendered
-// decoration element, so there's no QSS/widget equivalent to source it
-// from (unlike border/titlebar/button metrics below).
+// Pixels near a corner that count as a diagonal resize handle rather than a
+// plain edge - a click-precision convention, not a themed value, so it has
+// no QSS equivalent.
 constexpr int kResizeCornerSize = 8;
 } // namespace
 
@@ -70,31 +69,23 @@ DecorationFrame::DecorationFrame(QWidget *parent) : QFrame(parent) {
 
     title_label_ = new QLabel(titlebar_);
     title_label_->setObjectName("biomeTitle");
-    // Ignored (not the QLabel default of Preferred) on the horizontal axis
-    // so a long title's natural font-metric width never enters the layout's
-    // minimum-size computation below - the label should elide/clip within
-    // whatever space the buttons/borders leave it, never grow the frame.
+    // Ignored on the horizontal axis so a long title never grows the frame -
+    // it should elide/clip within whatever space the buttons/borders leave.
     title_label_->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
-    // Centers within the label's own (stretched-to-fill) rect - since the
-    // icon sits to its left and the buttons to its right in unequal widths
-    // (see titlebar_layout below), that rect isn't itself centered in the
-    // full titlebar, so this reads as close to but not exactly centered;
-    // accepted as fine rather than adding matched-width spacers to correct
-    // it.
+    // Centered within its own rect, which isn't itself centered in the full
+    // titlebar (icon/buttons flank it at unequal widths) - close enough,
+    // not worth matched-width spacers to fix.
     title_label_->setAlignment(Qt::AlignCenter);
 
     icon_button_ = new QToolButton(titlebar_);
     icon_button_->setObjectName("biomeTitleIcon");
     icon_button_->setFocusPolicy(Qt::NoFocus);
     icon_button_->setAttribute(Qt::WA_StyledBackground, true);
-    // Hidden until setIcon() below is given a real IconImage - a window with
-    // no resolvable icon shows no gap for it at all, not an empty slot.
-    icon_button_->hide();
+    icon_button_->hide(); // no gap shown until setIcon() gives it a real icon
 
     button_minimize_ = new DecorationButton(Region::ButtonMinimize, titlebar_);
     button_maximize_ = new DecorationButton(Region::ButtonMaximize, titlebar_);
     button_close_ = new DecorationButton(Region::ButtonClose, titlebar_);
-
 
     auto *titlebar_layout = new QHBoxLayout(titlebar_);
     titlebar_layout->setContentsMargins(0, 0, 0, 0);
@@ -112,8 +103,8 @@ DecorationFrame::DecorationFrame(QWidget *parent) : QFrame(parent) {
     content_spacer_ = new QWidget(this);
     content_spacer_->setObjectName("biomeContent");
 
-    // middle_row: the left/right border strips flank content_spacer_, which
-    // layoutFor() below sizes to exactly the client's content area
+    // middle_row: left/right border strips flank content_spacer_, sized by
+    // layoutFor() below to exactly the client's content area.
     auto *middle_row = new QHBoxLayout();
     middle_row->setContentsMargins(0, 0, 0, 0);
     middle_row->setSpacing(0);
@@ -130,30 +121,23 @@ DecorationFrame::DecorationFrame(QWidget *parent) : QFrame(parent) {
 }
 
 void DecorationFrame::layoutFor(int content_width, int content_height) {
-    // Resizing (and hover/press re-renders, which call this with an
-    // unchanged content size every time) is the hot path for this widget -
-    // skip the repolish/layout/resize dance entirely when the frame is
-    // already sized for this content, rather than redoing it on every mouse
-    // motion event regardless of whether anything actually changed.
+    // Hot path (every resize and hover/press re-render calls this, often
+    // with an unchanged size) - skip the repolish/layout/resize dance when
+    // the frame is already sized for this content.
     if (content_spacer_->width() == content_width && content_spacer_->height() == content_height) {
         return;
     }
 
     content_spacer_->setFixedSize(content_width, content_height);
-    // Invalidate first: setFixedSize() normally flags stale layout caches
-    // via a posted QEvent::LayoutRequest, which never arrives since Biome
-    // has no running Qt event loop to pump it. Without this, minimumSizeHint()
-    // below could read a stale cached size from decoration_frame()'s
-    // *previous* caller - this widget is shared across every toplevel's
-    // render, so "previous" often means a different window's content size.
+    // setFixedSize() normally invalidates the layout via a posted
+    // QEvent::LayoutRequest, which never arrives since Biome has no running
+    // Qt event loop - force it instead, or minimumSizeHint() below could read
+    // a stale size left by this shared widget's previous render.
     force_activate_layouts(this);
-    // minimumSizeHint() is the frame's true required size now that it's
-    // fresh. Resizing to it explicitly (vs. leaving it to the second
-    // force_activate_layouts() call below) matters because QLayout::
-    // activate() on a top-level widget only ever grows it, never shrinks.
+    // QLayout::activate() on a top-level widget only ever grows it, never
+    // shrinks - resize to the true minimum explicitly before the final
+    // re-activate positions every child against it.
     resize(minimumSizeHint());
-    // Re-activate now that the frame is at its correct final size, so every
-    // child is positioned/sized against that instead of the stale one above.
     force_activate_layouts(this);
 }
 
@@ -169,9 +153,7 @@ Region DecorationFrame::hitTest(
     }
 
     // Buttons win over every resize check below, even if a theme gives them
-    // little/no margin and they end up sitting inside a corner or edge hit
-    // zone - a click is only ever a resize when it's outside the button's
-    // actual widget geometry.
+    // little/no margin and they sit inside a corner or edge hit zone.
     QWidget *hit = childAt(local_x, local_y);
     if (hit == button_minimize_) {
         return Region::ButtonMinimize;
@@ -183,17 +165,13 @@ Region DecorationFrame::hitTest(
         return Region::ButtonClose;
     }
 
-    // No resizing at all while maximized - a maximized window must be
-    // demaximized first (standard WM convention). This can't be left to
-    // border_left_/border_right_/border_bottom_ collapsing to 0 size under
-    // this theme's [biomeMaximized="true"] QSS (see biome-dark.qss): that's
-    // this theme's choice, not a guarantee every theme makes, so it's
-    // enforced explicitly here instead.
+    // No resizing while maximized (standard WM convention) - enforced
+    // explicitly rather than relying on this theme's [biomeMaximized="true"]
+    // QSS collapsing the border strips to 0 size, since that's this theme's
+    // choice, not a guarantee every theme makes.
     if (!maximized) {
-        // Corners take priority over the plain edges below - a WM
-        // convention that gives diagonal resize a large-enough hit target
-        // near the frame's corners instead of it being a single-pixel
-        // coincidence of two edges.
+        // Corners take priority over the plain edges below, giving diagonal
+        // resize a real hit target near each corner.
         bool near_left = local_x < kResizeCornerSize;
         bool near_right = local_x >= w - kResizeCornerSize;
         bool near_top = local_y < kResizeCornerSize;
@@ -212,10 +190,8 @@ Region DecorationFrame::hitTest(
         }
 
         // The titlebar row has no border_left_/border_right_ of its own
-        // (those only flank the middle content row - see the constructor),
-        // so unlike the childAt() checks below, its top edge and sides need
-        // the same geometry-based margin the corners above use rather than
-        // a widget to ask.
+        // (those only flank the middle content row), so its edges need the
+        // same geometry-based margin the corners above use.
         if (local_y < titlebarHeight()) {
             if (near_top) {
                 return Region::ResizeN;
@@ -228,8 +204,7 @@ Region DecorationFrame::hitTest(
             }
         }
 
-        // Everywhere else, ask the real widget tree what's actually there
-        // instead of re-deriving it from geometry math.
+        // Everywhere else, ask the widget tree instead of geometry math.
         if (hit == border_bottom_) {
             return Region::ResizeS;
         }
@@ -242,14 +217,11 @@ Region DecorationFrame::hitTest(
     }
 
     if (hit == titlebar_ || hit == title_label_ || hit == icon_button_) {
-        // The icon isn't clickable (no context menu yet) - it's just part of
-        // the draggable titlebar, same as the title text and empty titlebar
-        // space, rather than a dead zone.
+        // The icon isn't clickable yet (no context menu) - it's just part of
+        // the draggable titlebar, like the title text.
         return Region::Titlebar;
     }
-    // content_spacer_ (the client's own surface, not part of the
-    // decoration), or nothing - both mean "not our region".
-    return Region::None;
+    return Region::None; // content_spacer_ (the client's surface), or nothing
 }
 
 void DecorationFrame::setFocusedState(bool focused) {
@@ -257,79 +229,58 @@ void DecorationFrame::setFocusedState(bool focused) {
         return;
     }
     setProperty("focused", focused);
-    // Descendant selectors keyed off #biomeFrame[focused="..."] (the title
-    // label, the buttons' glyph color) need their own repolish - Qt's
-    // stylesheet rule cache is per-widget and isn't invalidated just because
-    // an ancestor's dynamic property changed.
+    // Descendant selectors keyed off #biomeFrame[focused="..."] need their
+    // own repolish - Qt's per-widget stylesheet cache isn't invalidated just
+    // because an ancestor's dynamic property changed.
     repolish_tree(this);
 }
 
 void DecorationFrame::setMaximizedState(bool maximized) {
-    // Deliberately NOT "maximized" - QWidget already declares a real,
-    // read-only Q_PROPERTY of exactly that name (bool maximized READ
-    // isMaximized, see qwidget.h), and QObject::setProperty() silently
-    // no-ops (returns false, value left untouched) when a static property
-    // has no WRITE function. Verified directly: setProperty("maximized",
-    // true) on a QWidget-derived instance left property("maximized")
-    // reading back false, no error, no warning - every [maximized=...] QSS
-    // selector would have silently never matched.
+    // Named "biomeMaximized", not "maximized": QWidget already declares a
+    // read-only Q_PROPERTY called "maximized" (bool maximized READ
+    // isMaximized), and setProperty() silently no-ops on a static property
+    // with no WRITE function - every [maximized=...] QSS selector would
+    // never have matched.
     if (property("biomeMaximized").toBool() == maximized) {
         return;
     }
     setProperty("biomeMaximized", maximized);
-    // Same rationale as setFocusedState() above - descendant selectors keyed
-    // off #biomeFrame[biomeMaximized="..."] need their own repolish since an
-    // ancestor's dynamic property change alone doesn't invalidate a child's
-    // cached stylesheet rules.
-    repolish_tree(this);
-    // Unlike setFocusedState()'s QSS rules (colors only), [biomeMaximized=...]
-    // rules can change border strips' min-/max-width/height - real box-model
-    // geometry, not just paint. polish() (inside repolish_tree() above)
-    // updates each border widget's minimum/maximumSize from the new
-    // stylesheet, but the *layout* that actually resizes them to match only
-    // reflows via a posted QEvent::LayoutRequest - which never arrives, same
-    // "no running Qt event loop" issue layoutFor() already works around (see
-    // its own comment). Without this, borderWidth()/rightBorderWidth()/
-    // bottomBorderHeight()/hitTest() would keep reading the *previous*
-    // state's stale sizes right after this call.
-    //
-    // A plain force_activate_layouts() alone isn't enough here either -
-    // verified directly. Shrinking a border to 0 shrinks the *frame's*
-    // minimumSizeHint, but activate() on a top-level widget only ever grows
-    // it to fit a bigger hint, never shrinks it to a smaller one (same
-    // caveat layoutFor() documents above), so the frame was staying at its
-    // previous, larger size and silently handing the freed-up space to
-    // whichever sibling widget - the titlebar in practice - happened to be
-    // the QLayout's only non-fixed-size item, instead of actually shrinking.
-    // The explicit resize(minimumSizeHint()) below (identical to layoutFor())
-    // forces that shrink before the final re-activate.
+    repolish_tree(this); // same rationale as setFocusedState() above
+    // Unlike setFocusedState()'s color-only rules, [biomeMaximized=...] rules
+    // can change border strips' min-/max-width/height - real geometry, not
+    // just paint. repolish_tree() updates each border's minimum/maximumSize,
+    // but the layout that actually resizes them to match only reflows via a
+    // posted QEvent::LayoutRequest, which never arrives (no running Qt event
+    // loop - see layoutFor()). A plain force_activate_layouts() alone isn't
+    // enough either: activate() on a top-level widget only ever grows it, so
+    // shrinking a border would just hand the freed space to the titlebar
+    // instead of shrinking the frame. The explicit resize(minimumSizeHint())
+    // below forces that shrink before the final re-activate.
     force_activate_layouts(this);
     resize(minimumSizeHint());
     force_activate_layouts(this);
 }
 
 void DecorationFrame::setTitle(const QString &title) {
-    // A client's title is untrusted text - QLabel renders an embedded '\n'
-    // as a hard line break and grows the titlebar to fit, so simplified()
-    // collapses any whitespace/newlines to guarantee single-line text.
+    // A client's title is untrusted text - simplified() collapses any
+    // embedded newlines, which QLabel would otherwise render as a hard line
+    // break, growing the titlebar to fit.
     title_label_->setText(title.simplified());
 }
 
 void DecorationFrame::setIcon(const IconImage &icon) {
     bool has_icon = icon.size > 0 && !icon.pixels.empty();
     if (has_icon) {
-        // QImage wraps icon.pixels' own memory (no copy) - fine here since
-        // QPixmap::fromImage() below copies out of it before this function
-        // returns, the only point at which that wrap needs to stay valid.
+        // QImage wraps icon.pixels' own memory (no copy) - fine since
+        // QPixmap::fromImage() below copies out of it before this returns.
         QImage image(icon.pixels.data(), icon.size, icon.size, QImage::Format_ARGB32_Premultiplied);
         icon_button_->setIcon(QIcon(QPixmap::fromImage(image)));
     }
     if (has_icon == icon_button_->isHidden()) {
         icon_button_->setVisible(has_icon);
-        // Showing/hiding a layout item is a box-model change like
-        // setMaximizedState()'s border toggling above, not just paint - same
-        // invalidate->resize(minimumSizeHint())->invalidate dance is needed
-        // since there's no running event loop to reflow this otherwise.
+        // Same invalidate/resize/invalidate dance as setMaximizedState()'s
+        // border toggling - showing/hiding a layout item is a box-model
+        // change, not just paint.
         force_activate_layouts(this);
         resize(minimumSizeHint());
         force_activate_layouts(this);

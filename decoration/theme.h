@@ -15,14 +15,12 @@
 
 namespace biome_decoration {
 
-// Reads the embedded biome-dark.qss (see this file's header above) and
-// applies it to root, then repolishes root's whole subtree so every rule -
-// including qproperty-* values - takes effect immediately. Needed because
-// Biome never QWidget::show()s these widgets through a real event loop, so
-// Qt's normal on-first-show auto-polish never runs (see frame_widget.h's
-// repolish_tree()). Shared by load_decoration_theme() below, for its
-// DecorationFrame, and switcher.cpp's SwitcherPanel - two separate
-// top-level widget trees painted by the same stylesheet.
+// Reads the embedded biome-dark.qss and applies it to root, then repolishes
+// root's whole subtree so every rule takes effect immediately - Qt's normal
+// on-first-show auto-polish never runs since Biome never QWidget::show()s
+// these widgets (see frame_widget.h's repolish_tree()). Shared by
+// load_decoration_theme() below, for its DecorationFrame, and switcher.cpp's
+// SwitcherPanel.
 void apply_decoration_stylesheet(QWidget *root);
 
 // Builds/styles the persistent DecorationFrame widget tree decoration/

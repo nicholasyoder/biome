@@ -13,10 +13,6 @@ static void seat_request_cursor(wl_listener *listener, void *data);
 static void seat_request_set_selection(wl_listener *listener, void *data);
 
 void input_init(BiomeServer *server) {
-    // Configures a seat, which is a single "seat" at which a user sits and
-    // operates the computer. This conceptually includes up to one keyboard,
-    // pointer, touch, and drawing tablet device. We also rig up a listener
-    // to let us know when new input devices are available on the backend.
     wl_list_init(&server->keyboards);
     server->new_input.notify = server_new_input;
     wl_signal_add(&server->backend->events.new_input, &server->new_input);
@@ -29,15 +25,11 @@ void input_init(BiomeServer *server) {
 
 static void keyboard_handle_modifiers(wl_listener *listener, void *data) {
     (void)data;
-    // This event is raised when a modifier key, such as shift or alt, is
-    // pressed. We simply communicate this to the client.
     BiomeKeyboard *keyboard = wl_container_of(listener, keyboard, modifiers);
-    // A seat can only have one keyboard, but this is a limitation of the
-    // Wayland protocol - not wlroots. We assign all connected keyboards to
-    // the same seat. You can swap out the underlying wlr_keyboard like this
-    // and wlr_seat handles this transparently.
+    // A seat can only have one active keyboard - a Wayland protocol
+    // limitation, not wlroots - so every connected keyboard is assigned to
+    // the same seat, swapping out the underlying wlr_keyboard transparently.
     wlr_seat_set_keyboard(keyboard->server->seat, keyboard->wlr);
-    // Send modifiers to the client.
     wlr_seat_keyboard_notify_modifiers(keyboard->server->seat,
         &keyboard->wlr->modifiers);
 
@@ -51,21 +43,16 @@ static void keyboard_handle_modifiers(wl_listener *listener, void *data) {
     }
 }
 
+// Compositor keybindings, handled here instead of passed to the client.
+// Assumes Alt is held down.
 static bool handle_keybinding(BiomeServer *server, xkb_keysym_t sym, uint32_t modifiers) {
-    // Here we handle compositor keybindings. This is when the compositor is
-    // processing keys, rather than passing them on to the client for its
-    // own processing.
-    //
-    // This function assumes Alt is held down.
     bool ctrl = modifiers & WLR_MODIFIER_CTRL;
     bool shift = modifiers & WLR_MODIFIER_SHIFT;
 
     // Ctrl-Alt-F1..F12: hand VT switching back to the session/kernel. Taking
-    // over a KMS/DRM session puts the console in graphics mode, which stops
-    // the kernel from handling these itself - the compositor has to notice
-    // them and call wlr_session_change_vt(), same as every other wlroots
-    // compositor. No-op (but still swallowed) on nested backends, which have
-    // no session and nothing to switch away from.
+    // over a KMS/DRM session puts the console in graphics mode, so the
+    // compositor has to notice these and call wlr_session_change_vt() itself.
+    // No-op (but still swallowed) on nested backends, which have no session.
     if (sym >= XKB_KEY_XF86Switch_VT_1 && sym <= XKB_KEY_XF86Switch_VT_12) {
         if (server->session != nullptr) {
             unsigned vt = static_cast<unsigned>(sym - XKB_KEY_XF86Switch_VT_1 + 1);
@@ -137,15 +124,12 @@ static bool handle_keybinding(BiomeServer *server, xkb_keysym_t sym, uint32_t mo
 }
 
 static void keyboard_handle_key(wl_listener *listener, void *data) {
-    // This event is raised when a key is pressed or released.
     BiomeKeyboard *keyboard = wl_container_of(listener, keyboard, key);
     BiomeServer *server = keyboard->server;
     auto *event = static_cast<wlr_keyboard_key_event *>(data);
     wlr_seat *seat = server->seat;
 
-    // Translate libinput keycode -> xkbcommon
-    uint32_t keycode = event->keycode + 8;
-    // Get a list of keysyms based on the keymap for this keyboard
+    uint32_t keycode = event->keycode + 8; // libinput keycode -> xkbcommon
     const xkb_keysym_t *syms;
     int nsyms = xkb_state_key_get_syms(
         keyboard->wlr->xkb_state, keycode, &syms);
@@ -154,15 +138,12 @@ static void keyboard_handle_key(wl_listener *listener, void *data) {
     uint32_t modifiers = wlr_keyboard_get_modifiers(keyboard->wlr);
     if ((modifiers & WLR_MODIFIER_ALT) &&
             event->state == WL_KEYBOARD_KEY_STATE_PRESSED) {
-        // If alt is held down and this button was _pressed_, we attempt to
-        // process it as a compositor keybinding.
         for (int i = 0; i < nsyms; i++) {
             handled = handle_keybinding(server, syms[i], modifiers);
         }
     }
 
     if (!handled) {
-        // Otherwise, we pass it along to the client.
         wlr_seat_set_keyboard(seat, keyboard->wlr);
         wlr_seat_keyboard_notify_key(seat, event->time_msec,
             event->keycode, event->state);
@@ -171,9 +152,6 @@ static void keyboard_handle_key(wl_listener *listener, void *data) {
 
 static void keyboard_handle_destroy(wl_listener *listener, void *data) {
     (void)data;
-    // This event is raised by the keyboard base wlr_input_device to signal
-    // the destruction of the wlr_keyboard. It will no longer receive events
-    // and should be destroyed.
     BiomeKeyboard *keyboard = wl_container_of(listener, keyboard, destroy);
     wl_list_remove(&keyboard->modifiers.link);
     wl_list_remove(&keyboard->key.link);
@@ -189,8 +167,7 @@ static void server_new_keyboard(BiomeServer *server, wlr_input_device *device) {
     keyboard->server = server;
     keyboard->wlr = wlr_keyboard;
 
-    // We need to prepare an XKB keymap and assign it to the keyboard. This
-    // assumes the defaults (e.g. layout = "us").
+    // Default XKB keymap (e.g. layout = "us").
     xkb_context *context = xkb_context_new(XKB_CONTEXT_NO_FLAGS);
     xkb_keymap *keymap = xkb_keymap_new_from_names(context, nullptr,
         XKB_KEYMAP_COMPILE_NO_FLAGS);
@@ -200,7 +177,6 @@ static void server_new_keyboard(BiomeServer *server, wlr_input_device *device) {
     xkb_context_unref(context);
     wlr_keyboard_set_repeat_info(wlr_keyboard, 25, 600);
 
-    // Here we set up listeners for keyboard events.
     keyboard->modifiers.notify = keyboard_handle_modifiers;
     wl_signal_add(&wlr_keyboard->events.modifiers, &keyboard->modifiers);
     keyboard->key.notify = keyboard_handle_key;
@@ -209,22 +185,14 @@ static void server_new_keyboard(BiomeServer *server, wlr_input_device *device) {
     wl_signal_add(&device->events.destroy, &keyboard->destroy);
 
     wlr_seat_set_keyboard(server->seat, keyboard->wlr);
-
-    // And add the keyboard to our list of keyboards
     wl_list_insert(&server->keyboards, &keyboard->link);
 }
 
 static void server_new_pointer(BiomeServer *server, wlr_input_device *device) {
-    // We don't do anything special with pointers. All of our pointer
-    // handling is proxied through wlr_cursor. On another compositor, you
-    // might take this opportunity to do libinput configuration on the
-    // device to set acceleration, etc.
     wlr_cursor_attach_input_device(server->cursor, device);
 }
 
 static void server_new_input(wl_listener *listener, void *data) {
-    // This event is raised by the backend when a new input device becomes
-    // available.
     BiomeServer *server = wl_container_of(listener, server, new_input);
     auto *device = static_cast<wlr_input_device *>(data);
     switch (device->type) {
@@ -237,9 +205,8 @@ static void server_new_input(wl_listener *listener, void *data) {
     default:
         break;
     }
-    // We need to let the wlr_seat know what our capabilities are, which is
-    // communicated to the client. In Biome we always have a cursor, even if
-    // there are no pointer devices, so we always include that capability.
+    // Biome always has a cursor, even with no pointer devices, so the
+    // pointer capability is always advertised.
     uint32_t caps = WL_SEAT_CAPABILITY_POINTER;
     if (!wl_list_empty(&server->keyboards)) {
         caps |= WL_SEAT_CAPABILITY_KEYBOARD;
@@ -249,26 +216,17 @@ static void server_new_input(wl_listener *listener, void *data) {
 
 static void seat_request_cursor(wl_listener *listener, void *data) {
     BiomeServer *server = wl_container_of(listener, server, request_cursor);
-    // This event is raised by the seat when a client provides a cursor image
     auto *event = static_cast<wlr_seat_pointer_request_set_cursor_event *>(data);
     wlr_seat_client *focused_client = server->seat->pointer_state.focused_client;
-    // This can be sent by any client, so we check to make sure this one
-    // actually has pointer focus first.
+    // Any client can send this, so only honor it from the one that actually
+    // has pointer focus.
     if (focused_client == event->seat_client) {
-        // Once we've vetted the client, we can tell the cursor to use the
-        // provided surface as the cursor image. It will set the hardware
-        // cursor on the output that it's currently on and continue to do so
-        // as the cursor moves between outputs.
         wlr_cursor_set_surface(server->cursor, event->surface,
             event->hotspot_x, event->hotspot_y);
     }
 }
 
 static void seat_request_set_selection(wl_listener *listener, void *data) {
-    // This event is raised by the seat when a client wants to set the
-    // selection, usually when the user copies something. wlroots allows
-    // compositors to ignore such requests if they so choose, but in Biome
-    // we always honor them.
     BiomeServer *server = wl_container_of(listener, server, request_set_selection);
     auto *event = static_cast<wlr_seat_request_set_selection_event *>(data);
     wlr_seat_set_selection(server->seat, event->source, event->serial);

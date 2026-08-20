@@ -83,9 +83,8 @@ void set_toplevel_focused(BiomeToplevel *toplevel, bool focused) {
     render_toplevel_decoration(toplevel);
 }
 
+// Keyboard focus only (and, for Xwayland, the X11 stacking order with it).
 void focus_toplevel(BiomeToplevel *toplevel, wlr_surface *surface) {
-    // Note: this function only deals with keyboard focus (and, for
-    // Xwayland, the X11 stacking order that goes along with it).
     if (toplevel == nullptr) {
         return;
     }
@@ -93,13 +92,9 @@ void focus_toplevel(BiomeToplevel *toplevel, wlr_surface *surface) {
     wlr_seat *seat = server->seat;
     wlr_surface *prev_surface = seat->keyboard_state.focused_surface;
     if (prev_surface == surface) {
-        // Don't re-focus an already focused surface.
         return;
     }
     if (prev_surface) {
-        // Deactivate the previously focused surface. This lets the client
-        // know it no longer has focus and the client will repaint
-        // accordingly, e.g. stop displaying a caret.
         wlr_xdg_toplevel *prev_xdg_toplevel =
             wlr_xdg_toplevel_try_from_wlr_surface(prev_surface);
         if (prev_xdg_toplevel != nullptr) {
@@ -115,25 +110,19 @@ void focus_toplevel(BiomeToplevel *toplevel, wlr_surface *surface) {
         }
     }
     wlr_keyboard *keyboard = wlr_seat_get_keyboard(seat);
-    // Move the toplevel to the front
     wlr_scene_node_raise_to_top(&toplevel->scene_tree->node);
     wl_list_remove(&toplevel->link);
     wl_list_insert(&server->toplevels, &toplevel->link);
-    // Activate the new surface
     if (toplevel->type == BiomeToplevelType::Xdg) {
         wlr_xdg_toplevel_set_activated(toplevel->xdg_toplevel, true);
     } else {
         wlr_xwayland_surface_activate(toplevel->xwayland_surface, true);
         // wlr_scene_node_raise_to_top only reorders our own render tree;
         // Xwayland windows also need their X11 stacking order raised, since
-        // X11 clients (e.g. submenus) may position themselves relative to
-        // sibling stacking order.
+        // X11 clients (e.g. submenus) may position relative to it.
         wlr_xwayland_surface_restack(toplevel->xwayland_surface, nullptr, XCB_STACK_MODE_ABOVE);
     }
     set_toplevel_focused(toplevel, true);
-    // Tell the seat to have the keyboard enter this surface. wlroots will
-    // keep track of this and automatically send key events to the
-    // appropriate clients without additional work on your part.
     if (keyboard != nullptr) {
         wlr_seat_keyboard_notify_enter(seat, surface,
             keyboard->keycodes, keyboard->num_keycodes, &keyboard->modifiers);
@@ -152,9 +141,8 @@ void place_new_toplevel(BiomeToplevel *toplevel) {
         ? toplevel_from_xdg(toplevel->xdg_toplevel->parent)
         : toplevel_from_xwayland(toplevel->xwayland_surface->parent);
 
-    // (vis_x, vis_y): desired top-left of the *visible content*, i.e.
-    // ignoring our border - toplevel_sync_position and the scene node
-    // position (which also needs the border subtracted) are derived from
+    // (vis_x, vis_y): desired top-left of the visible content, ignoring our
+    // border - the scene node position (border subtracted) is derived from
     // this below.
     int vis_x, vis_y;
 
@@ -181,7 +169,7 @@ void place_new_toplevel(BiomeToplevel *toplevel) {
         toplevel->workspace = server->active_workspace;
     }
 
-    // A freshly-placed toplevel is never already maximized.
+    // A freshly placed toplevel is never already maximized.
     wlr_scene_node_set_position(&toplevel->scene_tree->node,
         vis_x - decoration_border_width(toplevel, false), vis_y - decoration_titlebar_height(toplevel, false));
     toplevel_sync_position(toplevel, vis_x, vis_y);
@@ -191,12 +179,9 @@ void place_new_toplevel(BiomeToplevel *toplevel) {
 
 // The output the toplevel is currently (mostly) on, by its visible
 // content's top-left corner - falls back to the full output layout extents
-// (all outputs combined) if that point isn't on any output, same fallback
-// place_new_toplevel uses for centering.
+// if that point isn't on any output. Called before toplevel->maximized
+// flips to true, so it still reflects the window's current on-screen frame.
 static wlr_box maximize_target_box(BiomeToplevel *toplevel) {
-    // Called before toplevel->maximized flips to true (see set_toplevel_
-    // maximized below), so toplevel->maximized here still reflects the
-    // window's current (non-maximized) on-screen frame.
     BiomeServer *server = toplevel->server;
     double vis_x = toplevel->scene_tree->node.x + decoration_border_width(toplevel, toplevel->maximized);
     double vis_y = toplevel->scene_tree->node.y + decoration_titlebar_height(toplevel, toplevel->maximized);
@@ -209,20 +194,15 @@ static wlr_box maximize_target_box(BiomeToplevel *toplevel) {
     }
 
     // box is the whole output - inset it by the decorated frame's border/
-    // titlebar so the box this returns is the *content* area a maximized
-    // window should fill, matching what toplevel_set_size()/set_toplevel_
-    // maximized() below expect (they add the border/titlebar back on to get
-    // the outer frame position). Left as the raw output box, the frame ends
-    // up larger than the monitor - border/titlebar pushed off-screen on the
-    // top-left, overflowing past the edge on the bottom-right - which is why
-    // maximize used to look like it lost its border entirely.
+    // titlebar so this returns the content area a maximized window should
+    // fill (toplevel_set_size()/set_toplevel_maximized() add the border/
+    // titlebar back to get the outer frame position). Left as the raw
+    // output box, the frame would end up larger than the monitor.
     //
-    // Unlike vis_x/vis_y above, this queries the *maximized* metrics
-    // (hardcoded true, not toplevel->maximized) - a theme is free to size a
-    // maximized window's border differently (decoration/theme/
-    // biome-dark.qss's [maximized="true"] rules), and it's that state's
-    // metrics the inset needs to reserve room for, not the window's current
-    // (about-to-be-replaced) ones.
+    // Unlike vis_x/vis_y above, this hardcodes the *maximized* metrics
+    // (true, not toplevel->maximized) - a theme can size a maximized
+    // window's border differently, and it's that state's metrics the inset
+    // needs to reserve room for.
     int left = decoration_border_width(toplevel, true);
     int top = decoration_titlebar_height(toplevel, true);
     int right = decoration_border_right_width(toplevel, true);
@@ -266,8 +246,8 @@ void set_toplevel_maximized(BiomeToplevel *toplevel, bool maximized) {
     int node_x = target.x - decoration_border_width(toplevel, toplevel->maximized);
     int node_y = target.y - decoration_titlebar_height(toplevel, toplevel->maximized);
     if (toplevel->type == BiomeToplevelType::Xdg) {
-        // See maximize_reposition_pending's declaration - picked up by
-        // xdg_toplevel_commit once the resized buffer actually lands.
+        // Picked up by xdg_toplevel_commit once the resized buffer lands -
+        // see maximize_reposition_pending's declaration.
         toplevel->maximize_reposition_pending = true;
         toplevel->maximize_pending_x = node_x;
         toplevel->maximize_pending_y = node_y;
@@ -304,9 +284,9 @@ void set_toplevel_minimized(BiomeToplevel *toplevel, bool minimized) {
         focus_toplevel(toplevel, toplevel_surface(toplevel));
     }
 
-    // xdg-shell has no "minimized" configure state to ack (unlike
-    // maximize/fullscreen - minimize is a one-way client request with
-    // nothing for the compositor to reply with). Xwayland does track it.
+    // xdg-shell has no "minimized" configure state to ack, unlike
+    // maximize/fullscreen - it's a one-way client request. Xwayland does
+    // track it.
     if (toplevel->type == BiomeToplevelType::Xwayland) {
         wlr_xwayland_surface_set_minimized(toplevel->xwayland_surface, minimized);
     }
@@ -319,10 +299,7 @@ void toplevel_map(wl_listener *listener, void *data) {
     BiomeToplevel *toplevel = wl_container_of(listener, toplevel, map);
 
     if (!toplevel->icon_resolved) {
-        // app_id/WM_CLASS are expected to already be set by this point - a
-        // well-behaved client sets them before its first map, the same
-        // assumption place_new_toplevel/toplevel_get_geometry etc. already
-        // make about a toplevel's other properties being ready here.
+        // A well-behaved client sets app_id/WM_CLASS before its first map.
         if (toplevel->type == BiomeToplevelType::Xdg) {
             const char *app_id = toplevel->xdg_toplevel->app_id;
             toplevel->icon = resolve_app_id_icon(app_id != nullptr ? app_id : "");
@@ -344,10 +321,8 @@ void toplevel_map(wl_listener *listener, void *data) {
 
 void toplevel_unmap(wl_listener *listener, void *data) {
     (void)data;
-    // Called when the surface is unmapped, and should no longer be shown.
     BiomeToplevel *toplevel = wl_container_of(listener, toplevel, unmap);
 
-    // Reset the cursor mode if the grabbed toplevel was unmapped.
     if (toplevel == toplevel->server->grabbed_toplevel) {
         reset_cursor_mode(toplevel->server);
     }
@@ -356,15 +331,10 @@ void toplevel_unmap(wl_listener *listener, void *data) {
 }
 
 // Shared between xdg-shell and Xwayland: both signal this with irrelevant
-// (or no) event data, so the handler is identical either way.
+// (or no) event data, so the handler is identical either way. A client
+// requests this to begin an interactive move, typically from its own CSD.
 void toplevel_request_move(wl_listener *listener, void *data) {
     (void)data;
-    // This event is raised when a client would like to begin an interactive
-    // move, typically because the user clicked on their client-side
-    // decorations. Note that a more sophisticated compositor should check
-    // the provided serial against a list of button press serials sent to
-    // this client, to prevent the client from requesting this whenever they
-    // want.
     BiomeToplevel *toplevel = wl_container_of(listener, toplevel, request_move);
     begin_interactive(toplevel, BiomeCursorMode::Move, 0, true);
 }
@@ -372,9 +342,6 @@ void toplevel_request_move(wl_listener *listener, void *data) {
 BiomeToplevel *desktop_toplevel_at(
         BiomeServer *server, double lx, double ly,
         wlr_surface **surface, double *sx, double *sy) {
-    // This returns the topmost node in the scene at the given layout
-    // coords. We only care about surface nodes as we are specifically
-    // looking for a surface in the surface tree of a BiomeToplevel.
     wlr_scene_node *node = wlr_scene_node_at(
         &server->scene->tree.node, lx, ly, sx, sy);
     if (node == nullptr || node->type != WLR_SCENE_NODE_BUFFER) {
@@ -387,11 +354,10 @@ BiomeToplevel *desktop_toplevel_at(
     }
 
     *surface = scene_surface->surface;
-    // Find the node corresponding to the BiomeToplevel at the root of this
-    // surface tree, it is the only one for which we set the data field.
-    // (Override-redirect Xwayland surfaces never set this, so clicking one
-    // yields toplevel == nullptr - pointer events still reach it via
-    // *surface above, it just isn't managed by us.)
+    // Find the BiomeToplevel at the root of this surface tree - the only
+    // node with its data field set. (Override-redirect Xwayland surfaces
+    // never set this, so clicking one yields toplevel == nullptr; pointer
+    // events still reach it via *surface, it just isn't managed by us.)
     wlr_scene_tree *tree = node->parent;
     while (tree != nullptr && tree->node.data == nullptr) {
         tree = tree->node.parent;

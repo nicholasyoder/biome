@@ -6,16 +6,11 @@
 #include <QIODevice>
 #include <QString>
 
-// Q_INIT_RESOURCE must be called from outside any C++ namespace - it
-// expands to a call to the qrc compiler's global ::qInitResources_theme().
-// Without this, the embedded resource never registers: Qt resources
-// compiled into a *static* library get dropped by the linker unless
-// something forces a reference to their translation unit, since nothing
-// else in biome_decoration calls anything from it. (Verified directly:
-// QFile(":/biome/decoration/biome-dark.qss").exists() was false without
-// this call, silently leaving every decoration widget completely
-// unstyled - transparent background/border, no button hover/press - since
-// setStyleSheet() was applying an empty string.)
+// Q_INIT_RESOURCE must be called from outside any C++ namespace - it expands
+// to a call to the qrc compiler's global ::qInitResources_theme(). Without
+// this, the embedded resource never registers: Qt resources compiled into a
+// *static* library get dropped by the linker unless something forces a
+// reference to their translation unit.
 static void ensure_decoration_resources_registered() {
     Q_INIT_RESOURCE(theme);
 }
@@ -47,13 +42,11 @@ void load_decoration_theme() {
     g_frame = new DecorationFrame();
     apply_decoration_stylesheet(g_frame);
 
-    // Gives the widget tree a valid initial layout (border/titlebar strips
-    // positioned) before any real toplevel exists - without this,
-    // borderWidth()/titlebarHeight() (core/main.cpp) would read
+    // Gives the widget tree a valid initial layout before any real toplevel
+    // exists - without this, borderWidth()/titlebarHeight() would read
     // content_spacer_'s pre-layout (0, 0) position if queried before the
-    // first render_decoration() call. render_decoration() re-runs
-    // layoutFor() with the real content size on every actual repaint, so
-    // this initial size is otherwise arbitrary.
+    // first render_decoration() call, which re-runs layoutFor() with the
+    // real content size on every repaint.
     g_frame->layoutFor(200, 200);
 }
 

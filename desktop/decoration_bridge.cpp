@@ -13,9 +13,8 @@
 #include <vector>
 
 void decoration_bridge_init(BiomeServer *server) {
-    // Alt-Tab switcher overlay - created once, hidden until update_switcher_
-    // overlay has something to show. A direct child of the scene root (not
-    // any toplevel's) since it isn't owned by a specific window.
+    // Alt-Tab switcher overlay - a direct child of the scene root (not any
+    // toplevel's) since it isn't owned by a specific window.
     server->switcher_buffer = wlr_scene_buffer_create(&server->scene->tree, nullptr);
     wlr_scene_node_set_enabled(&server->switcher_buffer->node, false);
 }
@@ -40,9 +39,8 @@ int decoration_border_bottom_height(bool maximized) {
     return biome_decoration::decoration_frame()->bottomBorderHeight();
 }
 
-// --- Decoration buffer: wraps a decoration/renderer.h RenderedFrame in a
-// minimal software wlr_buffer, so it can be handed to
-// wlr_scene_buffer_set_buffer like any other buffer-backed scene node. ---
+// --- Decoration buffer: wraps a RenderedFrame in a minimal software
+// wlr_buffer so it can be handed to wlr_scene_buffer_set_buffer. ---
 
 struct BiomeDecorationBuffer {
     wlr_buffer base = {};
@@ -69,9 +67,8 @@ static void decoration_buffer_end_data_ptr_access(wlr_buffer *buf) {
     (void)buf;
 }
 
-// wlr_buffer_impl is a plain field-order aggregate (destroy, get_dmabuf,
-// get_shm, begin_data_ptr_access, end_data_ptr_access) - see
-// wlr/interfaces/wlr_buffer.h. This buffer is CPU-only pixel data, so
+// Field order: destroy, get_dmabuf, get_shm, begin_data_ptr_access,
+// end_data_ptr_access. This buffer is CPU-only pixel data, so
 // get_dmabuf/get_shm stay null.
 static const wlr_buffer_impl kDecorationBufferImpl = {
     decoration_buffer_destroy,
@@ -82,9 +79,8 @@ static const wlr_buffer_impl kDecorationBufferImpl = {
 };
 
 // Takes ownership of frame's pixels and wraps them in a new wlr_buffer
-// (refcount 1, per wlr_buffer_init's contract - the caller must drop it
-// once done, e.g. right after handing it to wlr_scene_buffer_set_buffer).
-// Returns nullptr for an empty frame (zero content size).
+// (refcount 1 - the caller must drop it once done, e.g. right after handing
+// it to wlr_scene_buffer_set_buffer). Returns nullptr for an empty frame.
 static wlr_buffer *create_decoration_buffer(biome_decoration::RenderedFrame &&frame) {
     if (frame.width <= 0 || frame.height <= 0) {
         return nullptr;
@@ -106,11 +102,8 @@ void render_toplevel_decoration(BiomeToplevel *toplevel) {
         return;
     }
     if (!toplevel_decorated(toplevel)) {
-        // The client asked for no decoration (see toplevel_decorated) -
-        // don't paint a frame at all, rather than painting one sized by the
-        // theme's normal (non-zero) metrics and relying on zeroed offsets
-        // elsewhere to hide it. Clears any previously-set buffer too, in
-        // case this is a re-render after the client's hint changed.
+        // The client asked for no decoration - clear any previously-set
+        // buffer too, in case this is a re-render after the hint changed.
         wlr_scene_buffer_set_buffer(toplevel->decoration_buffer, nullptr);
         if (toplevel->content_tree != nullptr) {
             wlr_scene_node_set_position(&toplevel->content_tree->node, 0, 0);
@@ -136,10 +129,9 @@ void render_toplevel_decoration(BiomeToplevel *toplevel) {
     wlr_scene_buffer_set_buffer(toplevel->decoration_buffer, buffer);
     wlr_buffer_drop(buffer);
 
-    // Re-syncs content_tree to this same render's border/titlebar metrics,
-    // rather than trusting the one-time snapshot taken at creation - those
-    // metrics come from shared, mutable global state (decoration_frame()),
-    // not something guaranteed stable between then and now.
+    // Re-syncs content_tree to this render's border/titlebar metrics rather
+    // than trusting the snapshot taken at creation - those come from shared,
+    // mutable global state (decoration_frame()).
     if (toplevel->content_tree != nullptr) {
         wlr_scene_node_set_position(&toplevel->content_tree->node,
             decoration_border_width(toplevel->maximized), decoration_titlebar_height(toplevel->maximized));
@@ -175,8 +167,7 @@ void update_switcher_overlay(BiomeServer *server) {
     }
 
     // server->toplevels is MRU-ordered (focus_toplevel keeps the head as
-    // the most-recently-focused), so the currently-focused window - the one
-    // Tab just landed on - is always entry 0.
+    // most-recently-focused), so the window Tab just landed on is entry 0.
     biome_decoration::RenderedFrame frame = biome_decoration::render_switcher(entries, 0);
     wlr_buffer *buffer = create_decoration_buffer(std::move(frame));
     if (buffer == nullptr) {
@@ -308,11 +299,9 @@ void handle_decoration_click(BiomeToplevel *toplevel, biome_decoration::Region r
     using biome_decoration::Region;
     switch (region) {
     case Region::Titlebar:
-        // Always start a move grab. If the window is maximized, a plain
-        // click-and-release must NOT change its maximized state (only
-        // double-click toggles that - see server_cursor_button); actually
-        // dragging it restores-under-cursor on the first real motion
-        // instead, in process_cursor_move.
+        // A plain click-and-release must NOT unmaximize (only double-click
+        // does - see server_cursor_button); dragging restores-under-cursor
+        // on the first real motion instead, in process_cursor_move.
         begin_interactive(toplevel, BiomeCursorMode::Move, 0, false);
         break;
     case Region::ResizeN:

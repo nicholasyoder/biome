@@ -27,10 +27,10 @@ void xwayland_init(BiomeServer *server, wlr_compositor *compositor) {
 
 // --- Xwayland: managed toplevels -------------------------------------
 
+// The wlr_surface backing this X11 window now exists - hook up map/unmap
+// (shared with xdg-shell) and create its scene node.
 static void xwayland_toplevel_associate(wl_listener *listener, void *data) {
     (void)data;
-    // The wlr_surface backing this X11 window now exists - hook up map/
-    // unmap (shared with xdg-shell) and create its scene node.
     BiomeToplevel *toplevel = wl_container_of(listener, toplevel, associate);
     wlr_xwayland_surface *xsurface = toplevel->xwayland_surface;
 
@@ -38,10 +38,8 @@ static void xwayland_toplevel_associate(wl_listener *listener, void *data) {
         wlr_scene_subsurface_tree_create(toplevel->scene_tree, xsurface->surface);
     toplevel->content_tree->node.data = toplevel;
     // Not necessarily a fresh toplevel - an Xwayland surface can dissociate
-    // and re-associate while staying mapped/maximized (content_tree gets
-    // torn down and recreated, but toplevel->maximized isn't touched), so
-    // this has to use the toplevel's actual current state rather than
-    // assuming false.
+    // and re-associate while staying mapped/maximized, so this has to use
+    // the toplevel's actual current state rather than assuming false.
     wlr_scene_node_set_position(&toplevel->content_tree->node,
         decoration_border_width(toplevel, toplevel->maximized), decoration_titlebar_height(toplevel, toplevel->maximized));
     xsurface->data = toplevel->content_tree;
@@ -52,18 +50,17 @@ static void xwayland_toplevel_associate(wl_listener *listener, void *data) {
     wl_signal_add(&xsurface->surface->events.unmap, &toplevel->unmap);
 }
 
+// The wlr_surface is going away, but the X11 window wrapper may persist
+// (re-associated later) - wlroots destroys the scene node tied to the
+// surface itself, this just drops our listeners.
 static void xwayland_toplevel_dissociate(wl_listener *listener, void *data) {
     (void)data;
-    // The wlr_surface is going away (but the X11 window wrapper itself may
-    // persist, e.g. it could be re-associated later). wlroots destroys the
-    // scene node tied to the surface itself, we just drop our listeners.
     BiomeToplevel *toplevel = wl_container_of(listener, toplevel, dissociate);
     wl_list_remove(&toplevel->map.link);
     wl_list_remove(&toplevel->unmap.link);
     toplevel->xwayland_surface->data = nullptr;
-    // content_tree's node is destroyed by wlroots along with the surface
-    // it wraps; scene_tree (the container, and its decoration) persists in
-    // case this surface re-associates later.
+    // scene_tree (the container, and its decoration) persists in case this
+    // surface re-associates later.
     toplevel->content_tree = nullptr;
 }
 
@@ -88,9 +85,8 @@ static void xwayland_toplevel_destroy(wl_listener *listener, void *data) {
     wl_list_remove(&toplevel->request_minimize.link);
     wl_list_remove(&toplevel->request_configure.link);
 
-    // scene_tree (the container + decoration) was created up front in
-    // server_new_xwayland_surface and outlives any single associate/
-    // dissociate cycle, so we own destroying it.
+    // scene_tree was created up front in server_new_xwayland_surface and
+    // outlives any single associate/dissociate cycle, so it's destroyed here.
     wlr_scene_node_destroy(&toplevel->scene_tree->node);
 
     clear_decoration_tracking(toplevel->server, toplevel);
@@ -103,11 +99,11 @@ static void xwayland_toplevel_request_resize(wl_listener *listener, void *data) 
     begin_interactive(toplevel, BiomeCursorMode::Resize, event->edges, true);
 }
 
+// X11 tracks maximize as two independent axes (_NET_WM_STATE_MAXIMIZED_
+// VERT/HORZ); Biome doesn't offer a partial-axis maximize, so treat
+// "maximized" as both being requested together.
 static void xwayland_toplevel_request_maximize(wl_listener *listener, void *data) {
     (void)data;
-    // X11 tracks maximize as two independent axes (_NET_WM_STATE_MAXIMIZED_
-    // VERT/HORZ); Biome doesn't offer a partial-axis maximize, so treat
-    // "maximized" as both being requested together.
     BiomeToplevel *toplevel = wl_container_of(listener, toplevel, request_maximize);
     bool requested = toplevel->xwayland_surface->maximized_vert &&
         toplevel->xwayland_surface->maximized_horz;
@@ -126,11 +122,10 @@ static void xwayland_toplevel_request_minimize(wl_listener *listener, void *data
     set_toplevel_minimized(toplevel, event->minimize);
 }
 
+// X11 clients can ask to move/resize themselves outside of an interactive
+// grab (e.g. a terminal resizing to fit its font) - honored as-is, keeping
+// the scene node in sync.
 static void xwayland_toplevel_request_configure(wl_listener *listener, void *data) {
-    // X11 clients can ask to move/resize themselves outside of an
-    // interactive grab (e.g. a terminal resizing to fit its font). Biome
-    // doesn't second-guess these, it just honors them and keeps the scene
-    // node in sync.
     BiomeToplevel *toplevel = wl_container_of(listener, toplevel, request_configure);
     auto *event = static_cast<wlr_xwayland_surface_configure_event *>(data);
 
@@ -241,8 +236,9 @@ static void server_new_xwayland_surface(wl_listener *listener, void *data) {
     toplevel->type = BiomeToplevelType::Xwayland;
     toplevel->xwayland_surface = xsurface;
 
-    // Created up front (unlike content_tree, which comes and goes with
-    // associate/dissociate) so the decoration survives re-association.
+    // scene_tree is created up front (unlike content_tree, which comes and
+    // goes with associate/dissociate) so the decoration survives
+    // re-association.
     toplevel->scene_tree = wlr_scene_tree_create(&server->scene->tree);
     toplevel->scene_tree->node.data = toplevel;
     create_toplevel_decoration(toplevel);
@@ -269,10 +265,10 @@ static void server_new_xwayland_surface(wl_listener *listener, void *data) {
     wl_signal_add(&xsurface->events.request_configure, &toplevel->request_configure);
 }
 
+// Give Xwayland a cursor image as soon as it's up - without this, X11
+// clients show no cursor at all until they set their own.
 static void server_xwayland_ready(wl_listener *listener, void *data) {
     (void)data;
-    // Give Xwayland a cursor image as soon as it's up - without this, X11
-    // clients show no cursor at all until they set their own.
     BiomeServer *server = wl_container_of(listener, server, xwayland_ready);
     wlr_xcursor *xcursor = wlr_xcursor_manager_get_xcursor(server->cursor_mgr, "default", 1.0f);
     if (xcursor != nullptr && xcursor->image_count > 0) {
@@ -284,8 +280,7 @@ static void server_xwayland_ready(wl_listener *listener, void *data) {
 
     // Atom-initialize the EWMH connection used for _NET_WM_ICON lookup
     // (desktop/app_icon.h) - the underlying xcb connection is only valid
-    // from this event onward, per wlr_xwayland_get_xwm_connection()'s own
-    // doc comment.
+    // from this event onward.
     xcb_connection_t *conn = wlr_xwayland_get_xwm_connection(server->xwayland);
     if (conn != nullptr) {
         xcb_intern_atom_cookie_t *cookies = xcb_ewmh_init_atoms(conn, &server->ewmh);

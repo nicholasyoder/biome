@@ -14,22 +14,10 @@ static void server_cursor_axis(wl_listener *listener, void *data);
 static void server_cursor_frame(wl_listener *listener, void *data);
 
 void cursor_init(BiomeServer *server) {
-    // Creates a cursor, which is a wlroots utility for tracking the cursor
-    // image shown on screen.
     server->cursor = wlr_cursor_create();
     wlr_cursor_attach_output_layout(server->cursor, server->output_layout);
-
-    // Creates an xcursor manager, another wlroots utility which loads up
-    // Xcursor themes to source cursor images from and makes sure that
-    // cursor images are available at all scale factors on the screen
-    // (necessary for HiDPI support).
     server->cursor_mgr = wlr_xcursor_manager_create(nullptr, 24);
 
-    // wlr_cursor *only* displays an image on screen. It does not move
-    // around when the pointer moves. However, we can attach input devices
-    // to it, and it will generate aggregate events for all of them. In
-    // these events, we can choose how we want to process them, forwarding
-    // them to clients and moving the cursor around.
     server->cursor_mode = BiomeCursorMode::Passthrough;
     server->cursor_motion.notify = server_cursor_motion;
     wl_signal_add(&server->cursor->events.motion, &server->cursor_motion);
@@ -44,16 +32,12 @@ void cursor_init(BiomeServer *server) {
 }
 
 void reset_cursor_mode(BiomeServer *server) {
-    // Reset the cursor mode to passthrough.
     server->cursor_mode = BiomeCursorMode::Passthrough;
     server->grabbed_toplevel = nullptr;
 }
 
 void begin_interactive(BiomeToplevel *toplevel, BiomeCursorMode mode, uint32_t edges,
         bool check_pointer_focus) {
-    // This function sets up an interactive move or resize operation, where
-    // the compositor stops propagating pointer events to clients and
-    // instead consumes them itself, to move or resize windows.
     BiomeServer *server = toplevel->server;
     if (check_pointer_focus) {
         wlr_surface *focused_surface = server->seat->pointer_state.focused_surface;
@@ -91,18 +75,15 @@ void begin_interactive(BiomeToplevel *toplevel, BiomeCursorMode mode, uint32_t e
 
 static void process_cursor_move(BiomeServer *server, uint32_t time) {
     (void)time;
-    // Move the grabbed toplevel to the new position.
     BiomeToplevel *toplevel = server->grabbed_toplevel;
     if (toplevel->maximized) {
-        // The titlebar press that started this grab left the maximized
-        // state untouched (see handle_decoration_click) so that a plain
-        // click-and-release doesn't unmaximize. Now that the pointer has
-        // actually moved, restore the window under the cursor instead of
-        // snapping it back to wherever it sat before being maximized:
-        // capture what fraction of the maximized frame the cursor was
-        // holding, then re-anchor the grab to that same fraction of the
-        // just-restored frame, so the window appears to shrink under the
-        // pointer - standard "drag titlebar to restore" WM convention.
+        // A titlebar press left the maximized state untouched (see
+        // handle_decoration_click) so a plain click-and-release doesn't
+        // unmaximize. Now that the pointer has actually moved, restore the
+        // window under the cursor: capture what fraction of the maximized
+        // frame the cursor was holding, then re-anchor the grab to that same
+        // fraction of the just-restored frame - standard "drag titlebar to
+        // restore" WM convention.
         wlr_box old_geo;
         toplevel_get_geometry(toplevel, &old_geo);
         double old_frame_w =
@@ -112,15 +93,11 @@ static void process_cursor_move(BiomeServer *server, uint32_t time) {
         double fraction_x = (server->cursor->x - toplevel->scene_tree->node.x) / old_frame_w;
         double fraction_y = (server->cursor->y - toplevel->scene_tree->node.y) / old_frame_h;
 
-        // toplevel->restore_box is the pre-maximize size set_toplevel_maximized
-        // is about to apply - use it rather than toplevel_get_geometry() right
-        // after restoring: for xdg-shell toplevels the client applies its new
-        // size asynchronously (see process_cursor_resize's comment on this),
-        // so the surface geometry doesn't reflect the restored size yet by the
-        // time set_toplevel_maximized() returns, which previously made the
-        // "new" frame look identical to the old (maximized) one and put the
-        // restored window back at its pre-maximize corner instead of under
-        // the cursor.
+        // Use restore_box (the pre-maximize size) rather than
+        // toplevel_get_geometry() right after restoring: for xdg-shell
+        // toplevels the client applies its new size asynchronously (see
+        // process_cursor_resize below), so the surface geometry doesn't
+        // reflect the restored size yet once set_toplevel_maximized() returns.
         wlr_box restore_box = toplevel->restore_box;
 
         set_toplevel_maximized(toplevel, false);
@@ -135,13 +112,11 @@ static void process_cursor_move(BiomeServer *server, uint32_t time) {
     int x = static_cast<int>(server->cursor->x - server->grab_x);
     int y = static_cast<int>(server->cursor->y - server->grab_y);
     if (toplevel->maximize_reposition_pending) {
-        // set_toplevel_maximized() above just requested the restore but
-        // (being xdg-shell) hasn't heard back yet - moving the frame now
-        // would show its still-maximized-size buffer following the cursor
-        // instead of the restored size. Keep tracking the latest cursor-
-        // relative target without moving anything; xdg_toplevel_commit
-        // applies it in one step once the matching buffer actually lands,
-        // same flash this whole block exists to avoid.
+        // set_toplevel_maximized() above requested the restore but (xdg-shell)
+        // hasn't heard back yet - moving the frame now would show its
+        // still-maximized-size buffer following the cursor. Track the target
+        // without moving anything; xdg_toplevel_commit applies it once the
+        // matching buffer lands.
         toplevel->maximize_pending_x = x;
         toplevel->maximize_pending_y = y;
         return;
@@ -155,10 +130,6 @@ static void process_cursor_move(BiomeServer *server, uint32_t time) {
 
 static void process_cursor_resize(BiomeServer *server, uint32_t time) {
     (void)time;
-    // Resizing the grabbed toplevel can be a little bit complicated, because
-    // we could be resizing from any corner or edge. This not only resizes
-    // the toplevel on one or two axes, but can also move the toplevel if you
-    // resize from the top or left edges (or top-left corner).
     BiomeToplevel *toplevel = server->grabbed_toplevel;
     double border_x = server->cursor->x - server->grab_x;
     double border_y = server->cursor->y - server->grab_y;
@@ -197,28 +168,23 @@ static void process_cursor_resize(BiomeServer *server, uint32_t time) {
     int new_height = new_bottom - new_top;
 
     if (toplevel->type != BiomeToplevelType::Xdg) {
-        // Xwayland surfaces own their absolute position - X11 has no
-        // equivalent to xdg-shell's async commit to defer to (see
-        // xdg_toplevel_commit for that case), so position and size are
-        // still sent together immediately, same as before.
+        // Xwayland surfaces own their absolute position and have no async
+        // commit to defer to (unlike xdg-shell below), so position and size
+        // are sent together immediately.
         wlr_scene_node_set_position(&toplevel->scene_tree->node,
             new_left - geo_box.x - decoration_border_width(toplevel, toplevel->maximized),
             new_top - geo_box.y - decoration_titlebar_height(toplevel, toplevel->maximized));
     }
     // For xdg-shell, moving the window now - ahead of the client's own
-    // matching commit - would show the *old*, not-yet-resized buffer at the
-    // *new* position (the client applies this size on its own schedule via
-    // a normal wl_surface.commit, not synchronously with this request).
-    // That's a visible wobble on whichever edge is being dragged.
-    // xdg_toplevel_commit repositions once the buffer that actually matches
-    // this size lands, so position and content always change together;
-    // only the size request goes out here.
+    // matching commit - would show the old, not-yet-resized buffer at the
+    // new position (the client applies its new size on its own schedule).
+    // xdg_toplevel_commit repositions once a buffer matching this size
+    // lands, so only the size request goes out here.
     toplevel_set_size(toplevel, new_left - geo_box.x, new_top - geo_box.y, new_width, new_height);
     render_toplevel_decoration(toplevel);
 }
 
 static void process_cursor_motion(BiomeServer *server, uint32_t time) {
-    // If the mode is non-passthrough, delegate to those functions.
     if (server->cursor_mode == BiomeCursorMode::Move) {
         process_cursor_move(server, time);
         return;
@@ -227,16 +193,14 @@ static void process_cursor_motion(BiomeServer *server, uint32_t time) {
         return;
     }
 
-    // Otherwise, find the toplevel under the pointer and send the event along.
     double sx, sy;
     wlr_seat *seat = server->seat;
     wlr_surface *surface = nullptr;
     BiomeToplevel *toplevel = desktop_toplevel_at(server,
         server->cursor->x, server->cursor->y, &surface, &sx, &sy);
     if (!toplevel) {
-        // No client surface under the cursor - either nothing at all, or
-        // our own decoration (border/titlebar/buttons). Either way, this is
-        // what makes the cursor image appear/update as it moves around,
+        // No client surface under the cursor - either nothing at all, or our
+        // own decoration. Update the cursor image and hover state either way,
         // including resize-direction hints over a window's edges.
         biome_decoration::Region region = biome_decoration::Region::None;
         BiomeToplevel *decoration_toplevel =
@@ -247,15 +211,6 @@ static void process_cursor_motion(BiomeServer *server, uint32_t time) {
         update_decoration_hover(server, nullptr, biome_decoration::Region::None);
     }
     if (surface) {
-        // Send pointer enter and motion events.
-        //
-        // The enter event gives the surface "pointer focus", which is
-        // distinct from keyboard focus. You get pointer focus by moving the
-        // pointer over a window.
-        //
-        // Note that wlroots will avoid sending duplicate enter/motion
-        // events if the surface already has pointer focus or if the client
-        // is already aware of the coordinates passed.
         wlr_seat_pointer_notify_enter(seat, surface, sx, sy);
         wlr_seat_pointer_notify_motion(seat, time, sx, sy);
     } else {
@@ -266,27 +221,18 @@ static void process_cursor_motion(BiomeServer *server, uint32_t time) {
 }
 
 void server_cursor_motion(wl_listener *listener, void *data) {
-    // This event is forwarded by the cursor when a pointer emits a
-    // _relative_ pointer motion event (i.e. a delta)
+    // Forwarded by the cursor for a _relative_ pointer motion event (a delta).
     BiomeServer *server = wl_container_of(listener, server, cursor_motion);
     auto *event = static_cast<wlr_pointer_motion_event *>(data);
-    // The cursor doesn't move unless we tell it to. The cursor
-    // automatically handles constraining the motion to the output layout,
-    // as well as any special configuration applied for the specific input
-    // device which generated the event. You can pass NULL for the device if
-    // you want to move the cursor around without any input.
     wlr_cursor_move(server->cursor, &event->pointer->base,
         event->delta_x, event->delta_y);
     process_cursor_motion(server, event->time_msec);
 }
 
 void server_cursor_motion_absolute(wl_listener *listener, void *data) {
-    // This event is forwarded by the cursor when a pointer emits an
-    // _absolute_ motion event, from 0..1 on each axis. This happens, for
-    // example, when wlroots is running under a Wayland window rather than
-    // KMS+DRM, and you move the mouse over the window. You could enter the
-    // window from any edge, so we have to warp the mouse there. There is
-    // also some hardware which emits these events.
+    // Forwarded by the cursor for an _absolute_ motion event (0..1 on each
+    // axis) - e.g. wlroots running nested in a Wayland/X11 window, where the
+    // mouse can enter from any edge, so the cursor has to be warped there.
     BiomeServer *server = wl_container_of(listener, server, cursor_motion_absolute);
     auto *event = static_cast<wlr_pointer_motion_absolute_event *>(data);
     wlr_cursor_warp_absolute(server->cursor, &event->pointer->base, event->x, event->y);
@@ -294,16 +240,13 @@ void server_cursor_motion_absolute(wl_listener *listener, void *data) {
 }
 
 void server_cursor_button(wl_listener *listener, void *data) {
-    // This event is forwarded by the cursor when a pointer emits a button event.
     BiomeServer *server = wl_container_of(listener, server, cursor_button);
     auto *event = static_cast<wlr_pointer_button_event *>(data);
-    // Notify the client with pointer focus that a button press has occurred
     wlr_seat_pointer_notify_button(server->seat,
         event->time_msec, event->button, event->state);
 
     if (event->state == WL_POINTER_BUTTON_STATE_RELEASED) {
         set_decoration_pressed(server, nullptr, biome_decoration::Region::None);
-        // If you released any buttons, we exit interactive move/resize mode.
         reset_cursor_mode(server);
         return;
     }
@@ -340,16 +283,13 @@ void server_cursor_button(wl_listener *listener, void *data) {
     wlr_surface *surface = nullptr;
     BiomeToplevel *toplevel = desktop_toplevel_at(server,
         server->cursor->x, server->cursor->y, &surface, &sx, &sy);
-    // Focus that client if the button was _pressed_
     focus_toplevel(toplevel, surface);
 }
 
 void server_cursor_axis(wl_listener *listener, void *data) {
-    // This event is forwarded by the cursor when a pointer emits an axis
-    // event, for example when you move the scroll wheel.
+    // Forwarded by the cursor for an axis event, e.g. a scroll wheel.
     BiomeServer *server = wl_container_of(listener, server, cursor_axis);
     auto *event = static_cast<wlr_pointer_axis_event *>(data);
-    // Notify the client with pointer focus of the axis event.
     wlr_seat_pointer_notify_axis(server->seat,
         event->time_msec, event->orientation, event->delta,
         event->delta_discrete, event->source, event->relative_direction);
@@ -357,11 +297,8 @@ void server_cursor_axis(wl_listener *listener, void *data) {
 
 void server_cursor_frame(wl_listener *listener, void *data) {
     (void)data;
-    // This event is forwarded by the cursor when a pointer emits an frame
-    // event. Frame events are sent after regular pointer events to group
-    // multiple events together. For instance, two axis events may happen at
-    // the same time, in which case a frame event won't be sent in between.
+    // Frame events group preceding pointer events sent in the same batch
+    // (e.g. simultaneous axis events).
     BiomeServer *server = wl_container_of(listener, server, cursor_frame);
-    // Notify the client with pointer focus of the frame event.
     wlr_seat_pointer_notify_frame(server->seat);
 }
