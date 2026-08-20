@@ -19,11 +19,11 @@ struct SwitcherEntry {
 };
 
 // Renders the persistent, QSS-styled SwitcherPanel widget tree (biome-dark
-// .qss's #biomeSwitcherPanel/#biomeSwitcherRow rules) - the same
-// build/resize/QWidget::render() pattern renderer.cpp uses for the window
-// frame, not a hand-painted overlay. selected_index is highlighted - the
-// caller is expected to keep it in sync with whichever entry is currently
-// focused (index 0, in Biome's MRU list).
+// .qss's #biomeSwitcherPanel/#biomeSwitcherIcon/#biomeSwitcherTitleLabel
+// rules) - the same build/resize/QWidget::render() pattern renderer.cpp uses
+// for the window frame, not a hand-painted overlay. A horizontal row of one
+// icon per entry, with the selected_index entry's icon highlighted and its
+// full title shown in a single label below the row.
 RenderedFrame render_switcher(const std::vector<SwitcherEntry> &entries, int selected_index);
 
 } // namespace biome_decoration

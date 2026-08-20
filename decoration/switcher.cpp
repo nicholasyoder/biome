@@ -22,9 +22,11 @@ namespace biome_decoration {
 namespace {
 
 // The real, QSS-styled Alt-Tab panel: a QFrame (#biomeSwitcherPanel) holding
-// one row per window (#biomeSwitcherRow), styled entirely through the
-// stylesheet. Built once and reused/resized on every render_switcher() call,
-// same pattern as frame_widget.h's DecorationFrame.
+// a horizontal row of one icon per window (#biomeSwitcherIcon) above a
+// single title label (#biomeSwitcherTitleLabel) for whichever entry is
+// currently selected, styled entirely through the stylesheet. Built once and
+// reused/resized on every render_switcher() call, same pattern as
+// frame_widget.h's DecorationFrame.
 class SwitcherPanel : public QFrame {
     Q_OBJECT
     Q_PROPERTY(int panelPadding READ panelPadding WRITE setPanelPadding)
@@ -35,113 +37,124 @@ public:
     int panelPadding() const { return panel_padding_; }
     void setPanelPadding(int value);
 
-    // Adds/removes rows to match entries.size(), sets each row's "selected"
-    // dynamic property, icon, and full, not-yet-elided text. Callers must
-    // force_activate_layouts() the panel afterwards, then call elideRows(),
-    // so each row's real laid-out width is known before eliding against it.
+    // Adds/removes icon buttons to match entries.size(), sets each one's
+    // "selected" dynamic property and icon, and sets the title label to the
+    // selected entry's full, not-yet-elided text. Callers must
+    // force_activate_layouts() the panel afterwards, then call
+    // elideTitle(), so the label's real laid-out width is known before
+    // eliding against it.
     void setEntries(const std::vector<SwitcherEntry> &entries, int selected_index);
 
-    // Elides each row's text to fit its actual laid-out width, avoiding a
+    // Elides the title label to fit its actual laid-out width, avoiding a
     // hand-duplicated pixel-padding constant to guess it upfront.
-    void elideRows();
+    void elideTitle();
 
 private:
-    // One row: a container (#biomeSwitcherRow, carries the "selected"
-    // background) holding an icon (#biomeSwitcherRowIcon, hidden when the
-    // entry has none) and the title text (#biomeSwitcherRowText).
-    struct Row {
-        QWidget *container = nullptr;
-        QToolButton *icon = nullptr;
-        QLabel *text = nullptr;
-    };
-
-    QVBoxLayout *rows_layout_ = nullptr;
-    std::vector<Row> rows_;
-    std::vector<std::string> full_labels_;
+    QVBoxLayout *layout_ = nullptr;
+    QHBoxLayout *icons_layout_ = nullptr;
+    QLabel *title_label_ = nullptr;
+    std::vector<QToolButton *> icons_;
+    std::string full_title_;
     int panel_padding_ = 0;
 };
 
 SwitcherPanel::SwitcherPanel(QWidget *parent) : QFrame(parent) {
     setObjectName("biomeSwitcherPanel");
-    rows_layout_ = new QVBoxLayout(this);
-    rows_layout_->setContentsMargins(0, 0, 0, 0);
-    rows_layout_->setSpacing(0);
+    layout_ = new QVBoxLayout(this);
+    layout_->setContentsMargins(0, 0, 0, 0);
+
+    icons_layout_ = new QHBoxLayout();
+    icons_layout_->setContentsMargins(0, 0, 0, 0);
+    layout_->addLayout(icons_layout_);
+
+    title_label_ = new QLabel(this);
+    title_label_->setObjectName("biomeSwitcherTitleLabel");
+    title_label_->setAlignment(Qt::AlignHCenter);
+    // Ignored horizontally so a long title never grows the panel - it
+    // should elide within the icon row's width (same reasoning as
+    // frame_widget.cpp's title_label_).
+    title_label_->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Fixed);
+    layout_->addWidget(title_label_);
 }
 
 void SwitcherPanel::setPanelPadding(int value) {
     panel_padding_ = value;
-    rows_layout_->setContentsMargins(value, value, value, value);
+    layout_->setContentsMargins(value, value, value, value);
 }
 
 void SwitcherPanel::setEntries(const std::vector<SwitcherEntry> &entries, int selected_index) {
-    while (rows_.size() < entries.size()) {
-        Row row;
-        row.container = new QWidget(this);
-        row.container->setObjectName("biomeSwitcherRow");
-        row.container->setAttribute(Qt::WA_StyledBackground, true);
-
-        row.icon = new QToolButton(row.container);
-        row.icon->setObjectName("biomeSwitcherRowIcon");
-        row.icon->setFocusPolicy(Qt::NoFocus);
-        row.icon->setAttribute(Qt::WA_StyledBackground, true);
-        row.icon->hide(); // shown below only for entries that have an icon
-
-        row.text = new QLabel(row.container);
-        row.text->setObjectName("biomeSwitcherRowText");
-        // Ignored on the horizontal axis so a long title never grows the
-        // panel - it should elide within the panel's fixed QSS width (same
-        // reasoning as frame_widget.cpp's title_label_).
-        row.text->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Fixed);
-
-        auto *row_layout = new QHBoxLayout(row.container);
-        row_layout->setContentsMargins(0, 0, 0, 0);
-        row_layout->setSpacing(0);
-        row_layout->addWidget(row.icon, 0, Qt::AlignVCenter);
-        row_layout->addWidget(row.text, /*stretch=*/1, Qt::AlignVCenter);
-
-        rows_layout_->addWidget(row.container);
-        rows_.push_back(row);
+    while (icons_.size() < entries.size()) {
+        auto *icon = new QToolButton(this);
+        icon->setObjectName("biomeSwitcherIcon");
+        icon->setFocusPolicy(Qt::NoFocus);
+        icon->setAttribute(Qt::WA_StyledBackground, true);
+        icons_layout_->addWidget(icon);
+        icons_.push_back(icon);
     }
-    while (rows_.size() > entries.size()) {
-        QWidget *container = rows_.back().container;
-        rows_.pop_back();
-        rows_layout_->removeWidget(container);
+    while (icons_.size() > entries.size()) {
+        QToolButton *icon = icons_.back();
+        icons_.pop_back();
+        icons_layout_->removeWidget(icon);
         // Biome never pumps a Qt event loop, so deleteLater() would just
-        // leak - plain delete is safe since nothing else references these
-        // rows (deletes the icon/text children along with it).
-        delete container;
+        // leak - plain delete is safe since nothing else references these.
+        delete icon;
     }
 
-    full_labels_.resize(entries.size());
     for (size_t i = 0; i < entries.size(); i++) {
-        const Row &row = rows_[i];
-        row.container->setProperty("selected", static_cast<int>(i) == selected_index);
-        full_labels_[i] = entries[i].label;
-        // Same untrusted-title concern as DecorationFrame::setTitle() -
-        // simplified() keeps an embedded newline from making a multi-line row.
-        row.text->setText(QString::fromUtf8(entries[i].label.c_str()).simplified());
+        QToolButton *icon = icons_[i];
+        icon->setProperty("selected", static_cast<int>(i) == selected_index);
 
-        const IconImage &icon = entries[i].icon;
-        bool has_icon = icon.size > 0 && !icon.pixels.empty();
+        const IconImage &icon_image = entries[i].icon;
+        bool has_icon = icon_image.size > 0 && !icon_image.pixels.empty();
         if (has_icon) {
-            QImage image(icon.pixels.data(), icon.size, icon.size, QImage::Format_ARGB32_Premultiplied);
-            row.icon->setIcon(QIcon(QPixmap::fromImage(image)));
+            QImage image(icon_image.pixels.data(), icon_image.size, icon_image.size,
+                QImage::Format_ARGB32_Premultiplied);
+            icon->setIcon(QIcon(QPixmap::fromImage(image)));
         }
-        row.icon->setVisible(has_icon);
+        icon->setVisible(has_icon);
     }
+
+    full_title_.clear();
+    if (selected_index >= 0 && static_cast<size_t>(selected_index) < entries.size()) {
+        full_title_ = entries[static_cast<size_t>(selected_index)].label;
+    }
+    // Same untrusted-title concern as DecorationFrame::setTitle() -
+    // simplified() keeps an embedded newline from making a multi-line label.
+    title_label_->setText(QString::fromUtf8(full_title_.c_str()).simplified());
 }
 
-void SwitcherPanel::elideRows() {
-    for (size_t i = 0; i < rows_.size(); i++) {
-        const Row &row = rows_[i];
-        QFontMetrics metrics(row.text->font());
-        QString full = QString::fromUtf8(full_labels_[i].c_str()).simplified();
-        QString elided = metrics.elidedText(full, Qt::ElideRight, row.text->contentsRect().width());
-        row.text->setText(elided);
-    }
+void SwitcherPanel::elideTitle() {
+    QFontMetrics metrics(title_label_->font());
+    QString full = QString::fromUtf8(full_title_.c_str()).simplified();
+    QString elided = metrics.elidedText(full, Qt::ElideRight, title_label_->contentsRect().width());
+    title_label_->setText(elided);
 }
 
-SwitcherPanel *g_panel = nullptr;
+// Transparent root that owns SwitcherPanel as a child, rather than rendering
+// the panel itself as the top-level widget. Qt only clips a styled widget's
+// own background/border to its QSS border-radius when it's painted as a
+// child - a styled widget rendered as the root of a QWidget::render() call
+// instead paints a flat rect and relies on masking the *native* window's
+// shape to get the rounded look on a real on-screen window, which never
+// happens here since nothing in Biome's decoration pipeline is ever shown.
+// Same reasoning as frame_widget.h's DecorationFrame staying transparent and
+// leaving its own corners to child widgets (biomeTitlebar/biomeBorderBottom).
+class SwitcherRoot : public QWidget {
+    Q_OBJECT
+
+public:
+    explicit SwitcherRoot(QWidget *parent = nullptr) : QWidget(parent) {
+        setObjectName("biomeSwitcherRoot");
+        auto *layout = new QVBoxLayout(this);
+        layout->setContentsMargins(0, 0, 0, 0);
+        panel = new SwitcherPanel(this);
+        layout->addWidget(panel);
+    }
+
+    SwitcherPanel *panel = nullptr;
+};
+
+SwitcherRoot *g_root = nullptr;
 
 } // namespace
 
@@ -151,22 +164,22 @@ RenderedFrame render_switcher(const std::vector<SwitcherEntry> &entries, int sel
         return frame;
     }
 
-    if (g_panel == nullptr) {
-        g_panel = new SwitcherPanel();
-        apply_decoration_stylesheet(g_panel);
+    if (g_root == nullptr) {
+        g_root = new SwitcherRoot();
+        apply_decoration_stylesheet(g_root);
     }
 
-    g_panel->setEntries(entries, selected_index);
-    repolish_tree(g_panel); // newly-added rows above need their QSS applied too
-    g_panel->resize(g_panel->minimumSizeHint());
-    force_activate_layouts(g_panel);
-    g_panel->elideRows();
+    g_root->panel->setEntries(entries, selected_index);
+    repolish_tree(g_root); // newly-added rows above need their QSS applied too
+    g_root->resize(g_root->minimumSizeHint());
+    force_activate_layouts(g_root);
+    g_root->panel->elideTitle();
 
-    int width = g_panel->width();
-    int height = g_panel->height();
+    int width = g_root->width();
+    int height = g_root->height();
     QImage image(width, height, QImage::Format_ARGB32_Premultiplied);
     image.fill(Qt::transparent);
-    g_panel->render(&image);
+    g_root->render(&image);
 
     frame.width = width;
     frame.height = height;

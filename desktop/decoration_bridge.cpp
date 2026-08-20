@@ -138,6 +138,28 @@ void render_toplevel_decoration(BiomeToplevel *toplevel) {
     }
 }
 
+namespace {
+
+biome_decoration::SwitcherEntry switcher_entry_for(BiomeToplevel *pos) {
+    const char *title = pos->type == BiomeToplevelType::Xdg
+        ? pos->xdg_toplevel->title
+        : pos->xwayland_surface->title;
+    const char *app_id = pos->type == BiomeToplevelType::Xdg
+        ? pos->xdg_toplevel->app_id
+        : pos->xwayland_surface->class_;
+    std::string label;
+    if (title != nullptr && title[0] != '\0') {
+        label = title;
+    } else if (app_id != nullptr && app_id[0] != '\0') {
+        label = app_id;
+    } else {
+        label = "(untitled)";
+    }
+    return {label, pos->icon};
+}
+
+} // namespace
+
 void update_switcher_overlay(BiomeServer *server) {
     if (!server->switcher_active || wl_list_length(&server->toplevels) < 2) {
         if (server->switcher_buffer != nullptr) {
@@ -146,29 +168,18 @@ void update_switcher_overlay(BiomeServer *server) {
         return;
     }
 
+    // Entries/selection come from the order frozen at the start of this
+    // Alt-hold (see handle_keybinding's Tab case), not server->toplevels
+    // directly - in live mode that list keeps getting reordered as each
+    // press commits a focus change, but the switcher's own display should
+    // stay put and only the highlighted index should move.
     std::vector<biome_decoration::SwitcherEntry> entries;
-    BiomeToplevel *pos;
-    wl_list_for_each(pos, &server->toplevels, link) {
-        const char *title = pos->type == BiomeToplevelType::Xdg
-            ? pos->xdg_toplevel->title
-            : pos->xwayland_surface->title;
-        const char *app_id = pos->type == BiomeToplevelType::Xdg
-            ? pos->xdg_toplevel->app_id
-            : pos->xwayland_surface->class_;
-        std::string label;
-        if (title != nullptr && title[0] != '\0') {
-            label = title;
-        } else if (app_id != nullptr && app_id[0] != '\0') {
-            label = app_id;
-        } else {
-            label = "(untitled)";
-        }
-        entries.push_back({label, pos->icon});
+    for (BiomeToplevel *pos : server->switcher_order) {
+        entries.push_back(switcher_entry_for(pos));
     }
 
-    // server->toplevels is MRU-ordered (focus_toplevel keeps the head as
-    // most-recently-focused), so the window Tab just landed on is entry 0.
-    biome_decoration::RenderedFrame frame = biome_decoration::render_switcher(entries, 0);
+    biome_decoration::RenderedFrame frame =
+        biome_decoration::render_switcher(entries, server->switcher_preview_index);
     wlr_buffer *buffer = create_decoration_buffer(std::move(frame));
     if (buffer == nullptr) {
         wlr_scene_node_set_enabled(&server->switcher_buffer->node, false);

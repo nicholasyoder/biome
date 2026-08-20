@@ -12,7 +12,16 @@
 
 #include "wlroots.hpp"
 
+#include <vector>
+
 struct BiomeToplevel;
+
+// Whether Alt-Tab commits the focus change on every Tab press (matching
+// Phase 2/3's original behavior) or only previews the selection and commits
+// once on Alt release. Hardcoded until Biome has a real config file to read
+// this from - see BiomeServer::switcher_order/switcher_preview_index below
+// for the state that mode requires.
+inline constexpr bool kSwitcherSwitchOnRelease = true;
 
 enum class BiomeCursorMode {
     Passthrough,
@@ -101,6 +110,14 @@ struct BiomeServer {
     // switcher_buffer is created once at startup and just hidden/shown.
     bool switcher_active = false;
     wlr_scene_buffer *switcher_buffer = nullptr;
+
+    // Only used when kSwitcherSwitchOnRelease is true: switcher_order is a
+    // snapshot of toplevels' MRU order taken on the first Tab press of a
+    // hold (server->toplevels itself isn't touched again until Alt release,
+    // since nothing commits mid-cycle), and switcher_preview_index is the
+    // currently-highlighted offset into it, advanced by later Tab presses.
+    std::vector<BiomeToplevel *> switcher_order;
+    int switcher_preview_index = 0;
 
     wlr_output_layout *output_layout = nullptr;
     wl_list outputs = {};

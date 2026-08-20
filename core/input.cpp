@@ -34,11 +34,21 @@ static void keyboard_handle_modifiers(wl_listener *listener, void *data) {
         &keyboard->wlr->modifiers);
 
     // Alt released while the switcher was up (started by a Tab press in
-    // handle_keybinding) - dismiss it. The actual focus change already
-    // happened per-Tab-press, same as before; this is purely visual.
+    // handle_keybinding) - dismiss it.
     BiomeServer *server = keyboard->server;
     if (server->switcher_active && !(wlr_keyboard_get_modifiers(keyboard->wlr) & WLR_MODIFIER_ALT)) {
+        // In switch-on-release mode the focus change was only ever
+        // previewed - commit it now, the same target handle_keybinding's
+        // Tab case would have focused immediately in live mode.
+        if (kSwitcherSwitchOnRelease && !server->switcher_order.empty()) {
+            BiomeToplevel *target = server->switcher_order[static_cast<size_t>(server->switcher_preview_index)];
+            if (target->minimized) {
+                set_toplevel_minimized(target, false);
+            }
+            focus_toplevel(target, toplevel_surface(target));
+        }
         server->switcher_active = false;
+        server->switcher_order.clear();
         update_switcher_overlay(server);
     }
 }
@@ -73,20 +83,36 @@ static bool handle_keybinding(BiomeServer *server, xkb_keysym_t sym, uint32_t mo
             return true;
         }
         bool reverse = shift || sym == XKB_KEY_ISO_Left_Tab;
-        BiomeToplevel *target;
-        if (reverse) {
-            // "Previously focused window" - the second entry in MRU order.
-            target = wl_container_of(server->toplevels.next->next, target, link);
-        } else {
-            // Rotate the least-recently-used window to the front.
-            target = wl_container_of(server->toplevels.prev, target, link);
+
+        // The switcher always shows a static snapshot of MRU order taken at
+        // the start of this Alt-hold, in both modes - server->toplevels
+        // itself isn't re-read again until the hold ends, so the on-screen
+        // list doesn't reshuffle underfoot as you cycle (in live mode,
+        // committing a target below does reorder the live list, but nothing
+        // reads it again until the next fresh hold). Only
+        // switcher_preview_index moves, wrapping over the snapshot.
+        if (!server->switcher_active) {
+            server->switcher_order.clear();
+            BiomeToplevel *pos;
+            wl_list_for_each(pos, &server->toplevels, link) {
+                server->switcher_order.push_back(pos);
+            }
+            server->switcher_preview_index = 0;
         }
-        if (target->minimized) {
-            // Cycling to a minimized window should bring it back, not just
-            // hand it invisible keyboard focus.
-            set_toplevel_minimized(target, false);
+        int count = static_cast<int>(server->switcher_order.size());
+        server->switcher_preview_index =
+            (server->switcher_preview_index + (reverse ? -1 : 1) + count) % count;
+
+        if constexpr (!kSwitcherSwitchOnRelease) {
+            BiomeToplevel *target =
+                server->switcher_order[static_cast<size_t>(server->switcher_preview_index)];
+            if (target->minimized) {
+                // Cycling to a minimized window should bring it back, not just
+                // hand it invisible keyboard focus.
+                set_toplevel_minimized(target, false);
+            }
+            focus_toplevel(target, toplevel_surface(target));
         }
-        focus_toplevel(target, toplevel_surface(target));
         server->switcher_active = true;
         update_switcher_overlay(server);
         return true;
