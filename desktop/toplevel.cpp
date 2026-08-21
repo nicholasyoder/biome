@@ -7,62 +7,7 @@
 #include "desktop/decoration_bridge.h"
 #include "desktop/workspace.h"
 
-#include <cstring>
 #include <xcb/xproto.h>
-
-namespace {
-
-// Apps whose window content already includes a full titlebar (min/max/close
-// + drag area) but never negotiate that via any decoration protocol -
-// primarily libadwaita/GNOME HeaderBar apps (org.gnome.baobab confirmed via
-// live testing). GTK *intends* to ask the compositor not to decorate these -
-// gtk_window_set_titlebar()'s own docs say GTK "will do its best to convince
-// the window manager not to put its own titlebar on the window" - but GTK4's
-// Wayland backend has what looks like a real bug that silently defeats it:
-// gdk_wayland_toplevel_set_decorated() (gdk/wayland/gdktoplevel-wayland.c,
-// checked against both the 4.18.6 installed here and current GTK main) opens
-// with `if (self->decorated == decorated) return;`, but self->decorated is
-// never initialized to GTK's documented TRUE default when the toplevel is
-// constructed - it starts at the struct's zero/FALSE value. A HeaderBar
-// window computes the desired value as TRUE && !client_decorated == FALSE,
-// which happens to equal that already-FALSE default, so the guard treats it
-// as a no-op and the decoration request never reaches the compositor at all
-// (a plain window computes TRUE, which does differ from FALSE, so its
-// request goes through fine - matches the asymmetry seen live: `foot` sent a
-// request, `org.gnome.baobab` sent none). Nothing Biome can do about that
-// upstream bug, so - same as every other wlroots compositor facing this
-// (sway's answer to the identical ask in swaywm/sway#3661 is a manual
-// `for_window [app_id=...] border csd` config rule) - this hand-maintained
-// list is the practical workaround.
-//
-// Kept deliberately minimal for now (one confirmed entry) rather than
-// pre-seeding with the wider libadwaita/GNOME Circle app ecosystem
-// (Nautilus, GNOME Text Editor, Settings, Console, Calculator, and similar
-// Adw.ApplicationWindow-with-HeaderBar apps almost certainly hit the same
-// GTK bug, but haven't been confirmed live) - add an entry as each is
-// actually hit, matching wlr_xdg_toplevel::app_id.
-//
-// TODO: this should eventually move out of a compiled-in array and into a
-// user-editable config file, so people hitting a new offender can add it
-// themselves without a rebuild - a bigger default list (seeded from the
-// libadwaita app category above) would make more sense once that exists.
-constexpr const char *kAlwaysClientSideDecoratedAppIds[] = {
-    "org.gnome.baobab",
-};
-
-bool app_id_always_client_side_decorated(const char *app_id) {
-    if (app_id == nullptr) {
-        return false;
-    }
-    for (const char *known : kAlwaysClientSideDecoratedAppIds) {
-        if (std::strcmp(app_id, known) == 0) {
-            return true;
-        }
-    }
-    return false;
-}
-
-} // namespace
 
 wlr_surface *toplevel_surface(BiomeToplevel *toplevel) {
     return toplevel->type == BiomeToplevelType::Xdg
@@ -91,10 +36,7 @@ void toplevel_get_geometry(BiomeToplevel *toplevel, wlr_box *box) {
 
 bool toplevel_decorated(const BiomeToplevel *toplevel) {
     if (toplevel->type == BiomeToplevelType::Xdg) {
-        if (toplevel->xdg_client_side_decorated) {
-            return false;
-        }
-        return !app_id_always_client_side_decorated(toplevel->xdg_toplevel->app_id);
+        return !toplevel->xdg_client_side_decorated;
     }
     return toplevel->xwayland_surface->decorations == WLR_XWAYLAND_SURFACE_DECORATIONS_ALL;
 }

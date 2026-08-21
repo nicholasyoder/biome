@@ -60,6 +60,14 @@ struct BiomeServer {
     wlr_server_decoration_manager *kde_decoration_manager = nullptr;
     wl_listener new_kde_decoration = {};
 
+    // KDE decoration objects created before their owning wl_surface has an
+    // xdg_toplevel role yet - GTK routinely creates the decoration object
+    // right after the wl_surface itself, before calling get_xdg_surface/
+    // get_toplevel. Holds BiomePendingKdeDecoration nodes (desktop/
+    // xdg_shell.cpp) until server_new_xdg_toplevel claims a match by
+    // surface - see claim_pending_kde_decoration.
+    wl_list pending_kde_decorations = {};
+
     wlr_xwayland *xwayland = nullptr;
     wl_listener new_xwayland_surface = {};
     wl_listener xwayland_ready = {};

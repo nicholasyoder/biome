@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 //
 // xdg-shell: toplevel + popup surface lifecycle, and decoration negotiation
-// for both xdg-decoration and the older KDE server-decoration protocol
-// (Biome always forces server-side mode on both - see
-// server_new_xdg_toplevel_decoration in xdg_shell.cpp).
+// for both xdg-decoration and the older KDE server-decoration protocol -
+// Biome honors whatever mode a client negotiates via either, and treats a
+// client that negotiates neither as client-side decorated (see
+// toplevel_decorated in desktop/toplevel.h).
 
 #pragma once
 

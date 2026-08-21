@@ -92,12 +92,14 @@ struct BiomeToplevel {
     wl_listener request_fullscreen = {};
     wl_listener request_minimize = {};
 
-    // xdg only: true once xdg-decoration negotiation has settled on
-    // CLIENT_SIDE - see toplevel_decorated. Defaults to false (Biome's own
-    // server-side frame) until a client's zxdg_toplevel_decoration_v1
-    // explicitly asks for client-side; a client that never creates one at
-    // all is assumed to want Biome's frame, same convention other wlroots
-    // compositors use.
+    // xdg only: true once decoration negotiation (either protocol) has
+    // settled on client-side - see toplevel_decorated. Explicitly set to
+    // true in xdg_toplevel_commit's initial_commit branch for a client that
+    // creates neither a zxdg_toplevel_decoration_v1 nor a KDE
+    // org_kde_kwin_server_decoration object at all - both protocols specify
+    // that absence of a decoration object means client-side decorated
+    // (verified against sway's handle_map, which does the same: `csd = !deco
+    // || ...`), so Biome must not draw its own frame over such a surface.
     bool xdg_client_side_decorated = false;
 
     // xdg only: the client's decoration negotiation object, if any - kept
@@ -160,11 +162,8 @@ void toplevel_get_geometry(BiomeToplevel *toplevel, wlr_box *box);
 // False for an Xwayland surface that set _MOTIF_WM_HINTS asking for no
 // border/title - e.g. a GTK3 app already drawing its own CSD titlebar. For
 // an xdg-shell toplevel, false once either negotiation protocol (xdg-
-// decoration or the legacy KDE one) settled on client-side (see
-// xdg_client_side_decorated) - e.g. Firefox, Chromium/Electron apps - or the
-// app_id is on toplevel.cpp's hand-maintained list of apps known to never
-// negotiate at all (libadwaita HeaderBar apps - see that list's comment for
-// why no protocol signal exists to detect these automatically). A live
+// decoration or the legacy KDE one) settled on client-side, or once neither
+// protocol was negotiated at all - see xdg_client_side_decorated. A live
 // query rather than a cached flag on the Xwayland side - wlroots may not
 // have parsed the property yet when a toplevel is first created.
 bool toplevel_decorated(const BiomeToplevel *toplevel);
