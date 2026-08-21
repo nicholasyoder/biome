@@ -322,12 +322,20 @@ void toplevel_map(wl_listener *listener, void *data) {
 void toplevel_unmap(wl_listener *listener, void *data) {
     (void)data;
     BiomeToplevel *toplevel = wl_container_of(listener, toplevel, unmap);
+    BiomeServer *server = toplevel->server;
 
-    if (toplevel == toplevel->server->grabbed_toplevel) {
-        reset_cursor_mode(toplevel->server);
+    if (toplevel == server->grabbed_toplevel) {
+        reset_cursor_mode(server);
     }
 
+    bool was_focused = server->seat->keyboard_state.focused_surface == toplevel_surface(toplevel);
+
     wl_list_remove(&toplevel->link);
+
+    if (was_focused) {
+        wlr_seat_pointer_clear_focus(server->seat);
+        focus_topmost_on_active_workspace(server);
+    }
 }
 
 // Shared between xdg-shell and Xwayland: both signal this with irrelevant
