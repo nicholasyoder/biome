@@ -246,8 +246,20 @@ void server_cursor_button(wl_listener *listener, void *data) {
         event->time_msec, event->button, event->state);
 
     if (event->state == WL_POINTER_BUTTON_STATE_RELEASED) {
+        // Commits an armed button's action (min/max/close) only if this
+        // release lands back on the same button that was pressed - armed
+        // state was only ever set from a BTN_LEFT press, so a release of
+        // some other button while BTN_LEFT is still held shouldn't commit.
+        if (event->button == BTN_LEFT) {
+            handle_decoration_release(server);
+        }
         set_decoration_pressed(server, nullptr, biome_decoration::Region::None);
         reset_cursor_mode(server);
+
+        // Covers the synchronous cases (e.g. Xwayland maximize, which
+        // repositions immediately) - see refresh_decoration_hover's comment
+        // for the async xdg-shell case this alone doesn't catch.
+        refresh_decoration_hover(server);
         return;
     }
 
@@ -273,7 +285,7 @@ void server_cursor_button(wl_listener *listener, void *data) {
             } else {
                 server->last_left_click_toplevel = decoration_toplevel;
                 server->last_left_click_time = event->time_msec;
-                handle_decoration_click(decoration_toplevel, region);
+                handle_decoration_press(decoration_toplevel, region);
             }
         }
         return;

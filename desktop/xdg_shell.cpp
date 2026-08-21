@@ -138,6 +138,10 @@ static void xdg_toplevel_commit(wl_listener *listener, void *data) {
             wlr_scene_node_set_position(&toplevel->scene_tree->node,
                 toplevel->maximize_pending_x, toplevel->maximize_pending_y);
             toplevel->maximize_reposition_pending = false;
+            // The decoration (and its buttons) just moved out from under a
+            // cursor that may not have moved since the click that requested
+            // this - see refresh_decoration_hover's comment.
+            refresh_decoration_hover(server);
         }
     }
 

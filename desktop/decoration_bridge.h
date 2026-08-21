@@ -81,6 +81,15 @@ void update_decoration_hover(BiomeServer *server, BiomeToplevel *toplevel,
 void set_decoration_pressed(BiomeServer *server, BiomeToplevel *toplevel,
     biome_decoration::Region region);
 
+// Re-hit-tests at the pointer's current position and syncs hover to match -
+// for whenever decoration geometry just changed under a stationary cursor
+// (so no motion event will arrive to trigger the usual update_decoration_hover
+// call in server_cursor_motion). Callers: the decoration button release
+// itself, and - the case that actually matters, since xdg-shell maximize/
+// restore only moves the scene node once the client's matching-size buffer
+// lands - wherever maximize_reposition_pending gets resolved.
+void refresh_decoration_hover(BiomeServer *server);
+
 // Called from both toplevel destroy handlers, before free(). Unlike
 // BiomeServer::last_left_click_toplevel (only ever compared, never
 // dereferenced), hovered_/pressed_decoration_toplevel ARE dereferenced when
@@ -92,10 +101,21 @@ void clear_decoration_tracking(BiomeServer *server, BiomeToplevel *toplevel);
 
 const char *resize_cursor_name(biome_decoration::Region region);
 
-// Dispatches a left-click hit-test result from decoration_toplevel_at (see
-// core/cursor.cpp's server_cursor_button) - the click has already focused/
-// raised toplevel by this point.
-void handle_decoration_click(BiomeToplevel *toplevel, biome_decoration::Region region);
+// Handles a left-button *press* over a decoration region (see core/
+// cursor.cpp's server_cursor_button) - the click has already focused/raised
+// toplevel by this point. Titlebar/resize regions act immediately (they
+// begin an interactive grab that has to start on press). Button regions
+// (min/max/close) do nothing here - real button semantics dictate they only
+// commit on a matching release, see handle_decoration_release below, so the
+// QSS :pressed state is actually visible and dragging off cancels the click.
+void handle_decoration_press(BiomeToplevel *toplevel, biome_decoration::Region region);
+
+// Handles a left-button *release*, called before the pressed-region tracking
+// (set_decoration_pressed) is cleared for this event. If a button was armed
+// by a preceding press (server->pressed_decoration_toplevel/pressed_region),
+// commits its action only when the release lands back on that same
+// toplevel/region - otherwise the press is silently cancelled.
+void handle_decoration_release(BiomeServer *server);
 
 // Shows/refreshes/hides the Alt-Tab switcher overlay to match
 // server->switcher_active and the current server->toplevels order. Called

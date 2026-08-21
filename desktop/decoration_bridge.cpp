@@ -282,6 +282,13 @@ void set_decoration_pressed(BiomeServer *server, BiomeToplevel *toplevel,
     server->pressed_decoration_toplevel = new_pressed;
 }
 
+void refresh_decoration_hover(BiomeServer *server) {
+    biome_decoration::Region region = biome_decoration::Region::None;
+    BiomeToplevel *toplevel = decoration_toplevel_at(
+        server, server->cursor->x, server->cursor->y, &region);
+    update_decoration_hover(server, toplevel, region);
+}
+
 void clear_decoration_tracking(BiomeServer *server, BiomeToplevel *toplevel) {
     if (server->hovered_decoration_toplevel == toplevel) {
         server->hovered_decoration_toplevel = nullptr;
@@ -306,7 +313,11 @@ const char *resize_cursor_name(biome_decoration::Region region) {
     }
 }
 
-void handle_decoration_click(BiomeToplevel *toplevel, biome_decoration::Region region) {
+// Actually performs the action for region on toplevel - the one place that
+// knows what each Region does. Called from both handle_decoration_press
+// (titlebar/resize, which act on press) and handle_decoration_release
+// (buttons, which act on a matching release) below.
+static void handle_decoration_click(BiomeToplevel *toplevel, biome_decoration::Region region) {
     using biome_decoration::Region;
     switch (region) {
     case Region::Titlebar:
@@ -350,5 +361,28 @@ void handle_decoration_click(BiomeToplevel *toplevel, biome_decoration::Region r
         break;
     case Region::None:
         break;
+    }
+}
+
+void handle_decoration_press(BiomeToplevel *toplevel, biome_decoration::Region region) {
+    if (is_button_region(region)) {
+        // Armed via set_decoration_pressed (called by the caller before
+        // this); the actual action fires on a matching release instead, see
+        // handle_decoration_release.
+        return;
+    }
+    handle_decoration_click(toplevel, region);
+}
+
+void handle_decoration_release(BiomeServer *server) {
+    BiomeToplevel *pressed = server->pressed_decoration_toplevel;
+    if (pressed == nullptr) {
+        return;
+    }
+    biome_decoration::Region release_region = biome_decoration::Region::None;
+    BiomeToplevel *released_over = decoration_toplevel_at(
+        server, server->cursor->x, server->cursor->y, &release_region);
+    if (released_over == pressed && release_region == pressed->pressed_region) {
+        handle_decoration_click(pressed, release_region);
     }
 }
