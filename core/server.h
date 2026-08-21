@@ -45,19 +45,20 @@ struct BiomeServer {
     wl_listener new_xdg_popup = {};
     wl_list toplevels = {};
 
-    // Biome always draws its own decoration (see decoration/), so this just
-    // forces server-side mode on every client that asks - no negotiation.
+    // Biome draws its own decoration (see decoration/) by default, but honors
+    // a client's own request for client-side decoration instead - see
+    // server_new_xdg_toplevel_decoration.
     wlr_xdg_decoration_manager_v1 *xdg_decoration_manager = nullptr;
     wl_listener new_xdg_toplevel_decoration = {};
 
     // GTK3 never implemented xdg-decoration above (only GTK4 did) - its only
-    // way to learn a compositor wants server-side decorations is this older
-    // KDE protocol. default_mode is set to Server right after creation (see
-    // xdg_shell_init) and needs no per-client negotiation, same "always
-    // server-side" stance as xdg_decoration_manager above. Without this,
-    // GTK3 clients fall back to drawing their own CSD titlebar on top of
-    // Biome's frame - the double-border bug this exists to fix.
+    // way to negotiate decoration mode is this older KDE protocol.
+    // default_mode (set right after creation in xdg_shell_init) is only the
+    // initial value handed to a client before it asks for anything itself -
+    // server_new_kde_decoration listens for a client's own request and
+    // honors it the same way the xdg-decoration path above does.
     wlr_server_decoration_manager *kde_decoration_manager = nullptr;
+    wl_listener new_kde_decoration = {};
 
     wlr_xwayland *xwayland = nullptr;
     wl_listener new_xwayland_surface = {};

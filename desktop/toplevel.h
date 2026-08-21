@@ -92,12 +92,32 @@ struct BiomeToplevel {
     wl_listener request_fullscreen = {};
     wl_listener request_minimize = {};
 
-    // xdg only: set by server_new_xdg_toplevel_decoration when a decoration
-    // object arrives before the toplevel's initial commit (the common case),
-    // applied once xdg_toplevel_commit reaches that commit - see the
-    // comment there for why it can't be applied immediately.
-    wlr_xdg_toplevel_decoration_v1 *pending_decoration = nullptr;
-    wl_listener pending_decoration_destroy = {};
+    // xdg only: true once xdg-decoration negotiation has settled on
+    // CLIENT_SIDE - see toplevel_decorated. Defaults to false (Biome's own
+    // server-side frame) until a client's zxdg_toplevel_decoration_v1
+    // explicitly asks for client-side; a client that never creates one at
+    // all is assumed to want Biome's frame, same convention other wlroots
+    // compositors use.
+    bool xdg_client_side_decorated = false;
+
+    // xdg only: the client's decoration negotiation object, if any - kept
+    // for its whole lifetime (not just up to the initial commit) so a
+    // request_mode fired after the window is already mapped is still
+    // honored. nullptr if the client hasn't created one (or it was
+    // destroyed) - see server_new_xdg_toplevel_decoration.
+    wlr_xdg_toplevel_decoration_v1 *decoration = nullptr;
+    wl_listener decoration_destroy = {};
+    wl_listener decoration_request_mode = {};
+
+    // xdg only: same idea as decoration/decoration_destroy/
+    // decoration_request_mode above, but for a client using the older KDE
+    // protocol instead (GTK3, which never adopted xdg-decoration) - see
+    // server_new_kde_decoration. A toplevel only ever uses one of the two
+    // protocols in practice, so both write the same
+    // xdg_client_side_decorated flag.
+    wlr_server_decoration *kde_decoration = nullptr;
+    wl_listener kde_decoration_destroy = {};
+    wl_listener kde_decoration_mode = {};
 
     // Xwayland only: the underlying wlr_surface only exists between
     // associate/dissociate, so map/unmap are (dis)connected there instead
@@ -138,11 +158,15 @@ void close_toplevel(BiomeToplevel *toplevel);
 void toplevel_get_geometry(BiomeToplevel *toplevel, wlr_box *box);
 
 // False for an Xwayland surface that set _MOTIF_WM_HINTS asking for no
-// border/title - e.g. a GTK3 app already drawing its own CSD titlebar.
-// Always true for xdg-shell toplevels, since Biome forces server-side mode
-// there unconditionally and xdg-decoration has no equivalent "please don't"
-// request. A live query rather than a cached flag - wlroots may not have
-// parsed the property yet when a toplevel is first created.
+// border/title - e.g. a GTK3 app already drawing its own CSD titlebar. For
+// an xdg-shell toplevel, false once either negotiation protocol (xdg-
+// decoration or the legacy KDE one) settled on client-side (see
+// xdg_client_side_decorated) - e.g. Firefox, Chromium/Electron apps - or the
+// app_id is on toplevel.cpp's hand-maintained list of apps known to never
+// negotiate at all (libadwaita HeaderBar apps - see that list's comment for
+// why no protocol signal exists to detect these automatically). A live
+// query rather than a cached flag on the Xwayland side - wlroots may not
+// have parsed the property yet when a toplevel is first created.
 bool toplevel_decorated(const BiomeToplevel *toplevel);
 
 // content_tree->node.data is set to the owning BiomeToplevel for both xdg

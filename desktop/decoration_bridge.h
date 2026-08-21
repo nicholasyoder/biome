@@ -36,8 +36,10 @@ int decoration_border_right_width(bool maximized);
 int decoration_border_bottom_height(bool maximized);
 
 // Same as the four above, but scoped to a specific toplevel: returns 0 if
-// that toplevel opted out of Biome's decoration entirely (see
-// toplevel_decorated - currently only possible for an Xwayland client).
+// that toplevel opted out of Biome's decoration entirely - either an
+// Xwayland client with _MOTIF_WM_HINTS asking for no border/title, or an
+// xdg-shell client whose xdg-decoration negotiation settled on
+// CLIENT_SIDE (see toplevel_decorated).
 inline int decoration_border_width(const BiomeToplevel *toplevel, bool maximized) {
     return toplevel_decorated(toplevel) ? decoration_border_width(maximized) : 0;
 }
