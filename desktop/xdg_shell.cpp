@@ -133,8 +133,9 @@ static void xdg_toplevel_commit(wl_listener *listener, void *data) {
         // change - see maximize_reposition_pending's declaration.
         wlr_box geo;
         toplevel_get_geometry(toplevel, &geo);
-        if (geo.width != toplevel->maximize_pending_old_width ||
-                geo.height != toplevel->maximize_pending_old_height) {
+        bool resolves = geo.width != toplevel->maximize_pending_old_width ||
+            geo.height != toplevel->maximize_pending_old_height;
+        if (resolves) {
             wlr_scene_node_set_position(&toplevel->scene_tree->node,
                 toplevel->maximize_pending_x, toplevel->maximize_pending_y);
             toplevel->maximize_reposition_pending = false;

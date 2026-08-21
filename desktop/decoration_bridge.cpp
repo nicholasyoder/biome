@@ -115,12 +115,30 @@ void render_toplevel_decoration(BiomeToplevel *toplevel) {
     int width = geo.width > 0 ? geo.width : 0;
     int height = geo.height > 0 ? geo.height : 0;
 
+    // toplevel->maximized flips the instant set_toplevel_maximized() is
+    // called, but for xdg-shell the frame's actual size/position lags behind
+    // until the resized buffer lands (maximize_reposition_pending - see its
+    // declaration). Rendering the border/titlebar art with the new state
+    // while geo/scene_tree are still the old ones bakes in the wrong border
+    // thickness (border painted 0px one render, then N px the next, while
+    // still sized+positioned for the old state) - every interior element
+    // (title, buttons, corner radius) shifts by that border delta inside a
+    // frame that hasn't actually moved or resized yet, which is exactly the
+    // demaximize position-jump bug. Render (and derive content_tree's
+    // offset) using the state that matches whatever's still on screen until
+    // xdg_toplevel_commit resolves the pending move and calls back in here
+    // with the flag already clear, at which point both the art and the
+    // frame's real position/size update together.
+    bool render_maximized = toplevel->maximize_reposition_pending
+        ? !toplevel->maximized
+        : toplevel->maximized;
+
     const char *title = toplevel->type == BiomeToplevelType::Xdg
         ? toplevel->xdg_toplevel->title
         : toplevel->xwayland_surface->title;
 
     biome_decoration::RenderedFrame frame = biome_decoration::render_decoration(width, height,
-        toplevel->focused, toplevel->maximized, title, toplevel->icon,
+        toplevel->focused, render_maximized, title, toplevel->icon,
         toplevel->hovered_region, toplevel->pressed_region);
     wlr_buffer *buffer = create_decoration_buffer(std::move(frame));
     if (buffer == nullptr) {
@@ -134,7 +152,7 @@ void render_toplevel_decoration(BiomeToplevel *toplevel) {
     // mutable global state (decoration_frame()).
     if (toplevel->content_tree != nullptr) {
         wlr_scene_node_set_position(&toplevel->content_tree->node,
-            decoration_border_width(toplevel->maximized), decoration_titlebar_height(toplevel->maximized));
+            decoration_border_width(render_maximized), decoration_titlebar_height(render_maximized));
     }
 }
 
