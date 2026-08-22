@@ -3,7 +3,6 @@
 #include "switcher.h"
 
 #include "frame_widget.h" // repolish_tree, force_activate_layouts
-#include "theme.h" // apply_decoration_stylesheet
 
 #include <QFontMetrics>
 #include <QFrame>
@@ -156,7 +155,12 @@ RenderedFrame render_switcher(const std::vector<SwitcherEntry> &entries, int sel
 
     if (g_root == nullptr) {
         g_root = new SwitcherRoot();
-        apply_decoration_stylesheet(g_root);
+        // No per-widget setStyleSheet() needed - decoration/theme.cpp's
+        // load_decoration_theme() already applied the theme application-wide
+        // via qApp->setStyleSheet(), which cascades to widgets constructed
+        // afterwards same as one set directly on them. The repolish_tree()
+        // call just below (needed unconditionally on every render anyway,
+        // for newly-added rows) covers this first-construction case too.
     }
 
     g_root->panel->setEntries(entries, selected_index);

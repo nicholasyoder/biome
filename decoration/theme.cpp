@@ -2,6 +2,7 @@
 
 #include "theme.h"
 
+#include <QApplication>
 #include <QFile>
 #include <QIODevice>
 #include <QString>
@@ -21,11 +22,9 @@ namespace {
 
 constexpr const char *kStylesheetPath = ":/biome/decoration/biome-dark.qss";
 
-DecorationFrame *g_frame = nullptr;
-
 } // namespace
 
-void apply_decoration_stylesheet(QWidget *root) {
+void load_decoration_theme() {
     ensure_decoration_resources_registered();
 
     QString stylesheet;
@@ -33,25 +32,19 @@ void apply_decoration_stylesheet(QWidget *root) {
     if (file.open(QIODevice::ReadOnly | QIODevice::Text)) {
         stylesheet = QString::fromUtf8(file.readAll());
     }
-
-    root->setStyleSheet(stylesheet);
-    repolish_tree(root);
+    qApp->setStyleSheet(stylesheet);
 }
 
-void load_decoration_theme() {
-    g_frame = new DecorationFrame();
-    apply_decoration_stylesheet(g_frame);
-
-    // Gives the widget tree a valid initial layout before any real toplevel
-    // exists - without this, borderWidth()/titlebarHeight() would read
-    // content_spacer_'s pre-layout (0, 0) position if queried before the
-    // first render_decoration() call, which re-runs layoutFor() with the
-    // real content size on every repaint.
-    g_frame->layoutFor(200, 200);
-}
-
-DecorationFrame *decoration_frame() {
-    return g_frame;
+DecorationFrame *create_decoration_frame() {
+    auto *frame = new DecorationFrame();
+    repolish_tree(frame);
+    // Gives the widget tree a valid initial layout before any real content
+    // size is known - without this, borderWidth()/titlebarHeight() would
+    // read content_spacer_'s pre-layout (0, 0) position if queried before
+    // the first render_decoration() call, which re-runs layoutFor() with
+    // the real content size on every repaint.
+    frame->layoutFor(200, 200);
+    return frame;
 }
 
 } // namespace biome_decoration

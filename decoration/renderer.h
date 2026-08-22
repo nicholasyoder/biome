@@ -9,6 +9,8 @@
 
 namespace biome_decoration {
 
+class DecorationFrame;
+
 // A rendered decoration frame (titlebar + border, transparent hole where
 // the client's own surface shows through), as tightly-packed premultiplied
 // ARGB8888 pixels, top-to-bottom, row-major - ready to hand straight to a
@@ -31,16 +33,17 @@ struct IconImage {
 };
 
 // content_width/content_height: size of the client's own surface. Renders
-// theme.h's persistent, QSS-styled DecorationFrame widget - requires
-// load_decoration_theme() to have already been called, and a QApplication
-// to already exist.
+// widget in place - a toplevel's own DecorationFrame instance
+// (biome_decoration::create_decoration_frame(), decoration/theme.h), not a
+// shared one, so its state always reflects this window and nothing else's
+// render/hit-test call can leave it stale.
 //
 // hovered_region/pressed_region select which button (if any) gets a live
 // QSS :hover/:pressed state - Region::None for neither. maximized drives the
 // #biomeFrame[biomeMaximized=...] QSS state, letting a theme style a
 // maximized window differently. icon is the window's resolved icon - an
 // empty one hides the titlebar icon slot.
-RenderedFrame render_decoration(int content_width, int content_height,
+RenderedFrame render_decoration(DecorationFrame *widget, int content_width, int content_height,
     bool focused, bool maximized, const char *title, const IconImage &icon,
     Region hovered_region, Region pressed_region);
 

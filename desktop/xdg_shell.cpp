@@ -177,6 +177,7 @@ static void xdg_toplevel_destroy(wl_listener *listener, void *data) {
     // decoration buffer too.
     wlr_scene_node_destroy(&toplevel->scene_tree->node);
 
+    destroy_toplevel_decoration(toplevel);
     clear_decoration_tracking(toplevel->server, toplevel);
     remove_toplevel_from_switcher(toplevel->server, toplevel);
     free(toplevel);

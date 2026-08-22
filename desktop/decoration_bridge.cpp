@@ -19,24 +19,36 @@ void decoration_bridge_init(BiomeServer *server) {
     wlr_scene_node_set_enabled(&server->switcher_buffer->node, false);
 }
 
-int decoration_border_width(bool maximized) {
-    biome_decoration::decoration_frame()->setMaximizedState(maximized);
-    return biome_decoration::decoration_frame()->borderWidth();
+int decoration_border_width(const BiomeToplevel *toplevel, bool maximized) {
+    if (!toplevel_decorated(toplevel)) {
+        return 0;
+    }
+    toplevel->decoration_frame->setMaximizedState(maximized);
+    return toplevel->decoration_frame->borderWidth();
 }
 
-int decoration_titlebar_height(bool maximized) {
-    biome_decoration::decoration_frame()->setMaximizedState(maximized);
-    return biome_decoration::decoration_frame()->titlebarHeight();
+int decoration_titlebar_height(const BiomeToplevel *toplevel, bool maximized) {
+    if (!toplevel_decorated(toplevel)) {
+        return 0;
+    }
+    toplevel->decoration_frame->setMaximizedState(maximized);
+    return toplevel->decoration_frame->titlebarHeight();
 }
 
-int decoration_border_right_width(bool maximized) {
-    biome_decoration::decoration_frame()->setMaximizedState(maximized);
-    return biome_decoration::decoration_frame()->rightBorderWidth();
+int decoration_border_right_width(const BiomeToplevel *toplevel, bool maximized) {
+    if (!toplevel_decorated(toplevel)) {
+        return 0;
+    }
+    toplevel->decoration_frame->setMaximizedState(maximized);
+    return toplevel->decoration_frame->rightBorderWidth();
 }
 
-int decoration_border_bottom_height(bool maximized) {
-    biome_decoration::decoration_frame()->setMaximizedState(maximized);
-    return biome_decoration::decoration_frame()->bottomBorderHeight();
+int decoration_border_bottom_height(const BiomeToplevel *toplevel, bool maximized) {
+    if (!toplevel_decorated(toplevel)) {
+        return 0;
+    }
+    toplevel->decoration_frame->setMaximizedState(maximized);
+    return toplevel->decoration_frame->bottomBorderHeight();
 }
 
 // --- Decoration buffer: wraps a RenderedFrame in a minimal software
@@ -93,8 +105,14 @@ static wlr_buffer *create_decoration_buffer(biome_decoration::RenderedFrame &&fr
 }
 
 void create_toplevel_decoration(BiomeToplevel *toplevel) {
+    toplevel->decoration_frame = biome_decoration::create_decoration_frame();
     toplevel->decoration_buffer = wlr_scene_buffer_create(toplevel->scene_tree, nullptr);
     wlr_scene_node_set_position(&toplevel->decoration_buffer->node, 0, 0);
+}
+
+void destroy_toplevel_decoration(BiomeToplevel *toplevel) {
+    delete toplevel->decoration_frame;
+    toplevel->decoration_frame = nullptr;
 }
 
 void render_toplevel_decoration(BiomeToplevel *toplevel) {
@@ -137,7 +155,8 @@ void render_toplevel_decoration(BiomeToplevel *toplevel) {
         ? toplevel->xdg_toplevel->title
         : toplevel->xwayland_surface->title;
 
-    biome_decoration::RenderedFrame frame = biome_decoration::render_decoration(width, height,
+    biome_decoration::RenderedFrame frame = biome_decoration::render_decoration(
+        toplevel->decoration_frame, width, height,
         toplevel->focused, render_maximized, title, toplevel->icon,
         toplevel->hovered_region, toplevel->pressed_region);
     wlr_buffer *buffer = create_decoration_buffer(std::move(frame));
@@ -148,11 +167,11 @@ void render_toplevel_decoration(BiomeToplevel *toplevel) {
     wlr_buffer_drop(buffer);
 
     // Re-syncs content_tree to this render's border/titlebar metrics rather
-    // than trusting the snapshot taken at creation - those come from shared,
-    // mutable global state (decoration_frame()).
+    // than trusting the snapshot taken at creation, in case the theme sizes
+    // the maximized/non-maximized state differently.
     if (toplevel->content_tree != nullptr) {
         wlr_scene_node_set_position(&toplevel->content_tree->node,
-            decoration_border_width(render_maximized), decoration_titlebar_height(render_maximized));
+            decoration_border_width(toplevel, render_maximized), decoration_titlebar_height(toplevel, render_maximized));
     }
 }
 
@@ -241,7 +260,7 @@ BiomeToplevel *decoration_toplevel_at(
     toplevel_get_geometry(toplevel, &geo);
     int width = geo.width > 0 ? geo.width : 0;
     int height = geo.height > 0 ? geo.height : 0;
-    biome_decoration::Region region = biome_decoration::decoration_frame()->hitTest(
+    biome_decoration::Region region = toplevel->decoration_frame->hitTest(
         static_cast<int>(sx), static_cast<int>(sy), width, height, toplevel->maximized);
     if (region == biome_decoration::Region::None) {
         return nullptr;

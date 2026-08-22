@@ -13,6 +13,10 @@
 #include "decoration/layout.h" // biome_decoration::Region
 #include "decoration/renderer.h" // biome_decoration::IconImage
 
+namespace biome_decoration {
+class DecorationFrame;
+}
+
 enum class BiomeToplevelType {
     Xdg,
     Xwayland,
@@ -60,6 +64,16 @@ struct BiomeToplevel {
     wlr_scene_tree *content_tree = nullptr;
     wlr_scene_buffer *decoration_buffer = nullptr;
     bool focused = false; // drives which QSS [focused=...] state gets applied
+
+    // Biome's own per-window title bar/border, as a real QSS-styled Qt
+    // widget tree - owned, one instance per toplevel (not a process-wide
+    // shared instance), so its geometry/paint state always reflects this
+    // window and never leaks a stale render/hit-test from some other
+    // toplevel's last call. Constructed in create_toplevel_decoration(),
+    // destroyed in destroy_toplevel_decoration() (both desktop/
+    // decoration_bridge.h) alongside scene_tree - see decoration/theme.h's
+    // create_decoration_frame().
+    biome_decoration::DecorationFrame *decoration_frame = nullptr;
 
     // Which decoration button (if any) is currently hovered/pressed - kept
     // per-toplevel so render_toplevel_decoration can pass the right state to

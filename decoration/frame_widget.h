@@ -3,11 +3,13 @@
 // The real, QSS-styled Qt widget tree behind a decoration frame: a
 // DecorationFrame (border/radius/background) containing a titlebar with a
 // title label and three DecorationButtons (minimize/maximize/close).
-// decoration/theme.cpp builds one persistent instance at startup;
-// decoration/renderer.cpp reuses it for every render by resizing it and
-// toggling state, then calling QWidget::render() into an offscreen QImage.
-// core/main.cpp also reuses it for hit-testing and geometry
-// (hitTest()/borderWidth()/titlebarHeight()) instead of a separate model.
+// biome_decoration::create_decoration_frame() (decoration/theme.h) builds
+// one instance per toplevel (BiomeToplevel::decoration_frame, desktop/
+// toplevel.h) - decoration/renderer.cpp renders it for every repaint by
+// resizing it and toggling state, then calling QWidget::render() into an
+// offscreen QImage; core/cursor.cpp reuses the same instance for
+// hit-testing and geometry (hitTest()/borderWidth()/titlebarHeight())
+// instead of a separate model.
 
 #pragma once
 

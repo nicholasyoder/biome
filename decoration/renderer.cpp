@@ -1,23 +1,22 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 
 #include "renderer.h"
+#include "frame_widget.h"
 #include "layout.h"
-#include "theme.h"
 
 #include <QImage>
 #include <QString>
 
 namespace biome_decoration {
 
-RenderedFrame render_decoration(int content_width, int content_height,
+RenderedFrame render_decoration(DecorationFrame *widget, int content_width, int content_height,
         bool focused, bool maximized, const char *title, const IconImage &icon,
         Region hovered_region, Region pressed_region) {
     RenderedFrame frame;
-    if (content_width <= 0 || content_height <= 0) {
+    if (widget == nullptr || content_width <= 0 || content_height <= 0) {
         return frame;
     }
 
-    DecorationFrame *widget = decoration_frame();
     widget->setMaximizedState(maximized);
     widget->layoutFor(content_width, content_height);
     widget->setFocusedState(focused);

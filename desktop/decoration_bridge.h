@@ -16,47 +16,37 @@
 // server setup, before any toplevel exists.
 void decoration_bridge_init(BiomeServer *server);
 
-// Content-size-independent decoration metrics, read live off the real
-// QSS-styled widget tree instead of a separately-duplicated constant - thin
-// aliases so move/resize/place/maximize don't have to spell out
-// biome_decoration::decoration_frame()->... at every use.
+// Content-size-independent decoration metrics, read live off the toplevel's
+// own QSS-styled widget tree (BiomeToplevel::decoration_frame) instead of a
+// separately-duplicated constant. Returns 0 if toplevel opted out of
+// Biome's decoration entirely - either an Xwayland client with
+// _MOTIF_WM_HINTS asking for no border/title, or an xdg-shell client whose
+// decoration negotiation settled on CLIENT_SIDE (see toplevel_decorated).
 //
-// maximized selects which QSS [maximized=...] state to read the metric
+// maximized selects which QSS [biomeMaximized=...] state to read the metric
 // from, since a theme is free to size the maximized border/titlebar
-// differently. This matters because these wrap a single shared, mutable
-// widget instance - the caller must say which state's metrics it wants
-// rather than getting back whatever state some unrelated toplevel's last
-// render left it in. Pass the toplevel's own `maximized` flag, or the
-// target state when computing geometry for a transition not yet committed.
-int decoration_border_width(bool maximized);
-int decoration_titlebar_height(bool maximized);
+// differently - pass the toplevel's own `maximized` flag, or the target
+// state when computing geometry for a transition not yet committed.
+int decoration_border_width(const BiomeToplevel *toplevel, bool maximized);
+int decoration_titlebar_height(const BiomeToplevel *toplevel, bool maximized);
 // Right/bottom, kept separate since border strips are independently
 // QSS-sized (not assumed symmetric).
-int decoration_border_right_width(bool maximized);
-int decoration_border_bottom_height(bool maximized);
+int decoration_border_right_width(const BiomeToplevel *toplevel, bool maximized);
+int decoration_border_bottom_height(const BiomeToplevel *toplevel, bool maximized);
 
-// Same as the four above, but scoped to a specific toplevel: returns 0 if
-// that toplevel opted out of Biome's decoration entirely - either an
-// Xwayland client with _MOTIF_WM_HINTS asking for no border/title, or an
-// xdg-shell client whose xdg-decoration negotiation settled on
-// CLIENT_SIDE (see toplevel_decorated).
-inline int decoration_border_width(const BiomeToplevel *toplevel, bool maximized) {
-    return toplevel_decorated(toplevel) ? decoration_border_width(maximized) : 0;
-}
-inline int decoration_titlebar_height(const BiomeToplevel *toplevel, bool maximized) {
-    return toplevel_decorated(toplevel) ? decoration_titlebar_height(maximized) : 0;
-}
-inline int decoration_border_right_width(const BiomeToplevel *toplevel, bool maximized) {
-    return toplevel_decorated(toplevel) ? decoration_border_right_width(maximized) : 0;
-}
-inline int decoration_border_bottom_height(const BiomeToplevel *toplevel, bool maximized) {
-    return toplevel_decorated(toplevel) ? decoration_border_bottom_height(maximized) : 0;
-}
-
-// Creates the (initially empty) decoration_buffer scene node as a child of
-// toplevel->scene_tree, positioned at its origin. Filled in by
-// render_toplevel_decoration once geometry is known.
+// Creates toplevel's own DecorationFrame widget (biome_decoration::
+// create_decoration_frame()) plus the (initially empty) decoration_buffer
+// scene node as a child of toplevel->scene_tree, positioned at its origin.
+// The buffer is filled in by render_toplevel_decoration once geometry is
+// known.
 void create_toplevel_decoration(BiomeToplevel *toplevel);
+
+// Tears down what create_toplevel_decoration() built - called from both
+// toplevel destroy handlers, before free(). decoration_buffer is a scene
+// node, destroyed recursively along with scene_tree itself and needs no
+// separate handling here; decoration_frame is a plain heap-allocated Qt
+// widget with no scene-graph tie, so it does.
+void destroy_toplevel_decoration(BiomeToplevel *toplevel);
 
 // Re-renders the full decoration frame and uploads it. Called whenever a
 // toplevel's content geometry, focus, title, or hover/press state changes.
