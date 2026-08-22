@@ -25,3 +25,10 @@ void reset_cursor_mode(BiomeServer *server);
 // toplevel under the cursor, so there's nothing to spoof).
 void begin_interactive(BiomeToplevel *toplevel, BiomeCursorMode mode, uint32_t edges,
     bool check_pointer_focus);
+
+// Adds drag_icon's surface (and any sub-surfaces) to the scene graph and
+// positions it at the current cursor location - called from
+// seat_start_drag (core/input.cpp) once a client-initiated drag with an
+// icon actually begins. Tracks its own teardown via drag_icon_tree's
+// destroy signal, so nothing else needs to call a matching destroy.
+void drag_icon_create(BiomeServer *server, wlr_drag_icon *drag_icon);

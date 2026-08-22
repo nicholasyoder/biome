@@ -89,11 +89,14 @@ int main(int argc, char *argv[]) {
     }
 
     // compositor: lets clients allocate surfaces. subcompositor: assigns the
-    // subsurface role. data_device_manager: clipboard (see
-    // seat_request_set_selection in core/input.cpp).
+    // subsurface role. data_device_manager: clipboard + drag-and-drop (see
+    // seat_request_set_selection/seat_request_start_drag in
+    // core/input.cpp). primary_selection_manager: select-to-copy /
+    // middle-click-paste (see seat_request_set_primary_selection).
     wlr_compositor *compositor = wlr_compositor_create(server.display, 5, server.renderer);
     wlr_subcompositor_create(server.display);
     wlr_data_device_manager_create(server.display);
+    wlr_primary_selection_v1_device_manager_create(server.display);
 
     output_manager_init(&server);
     decoration_bridge_init(&server);

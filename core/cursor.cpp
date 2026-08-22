@@ -36,6 +36,23 @@ void reset_cursor_mode(BiomeServer *server) {
     server->grabbed_toplevel = nullptr;
 }
 
+static void drag_icon_tree_handle_destroy(wl_listener *listener, void *data) {
+    (void)data;
+    BiomeServer *server = wl_container_of(listener, server, drag_icon_tree_destroy);
+    wl_list_remove(&server->drag_icon_tree_destroy.link);
+    server->drag_icon_tree = nullptr;
+}
+
+void drag_icon_create(BiomeServer *server, wlr_drag_icon *drag_icon) {
+    server->drag_icon_tree = wlr_scene_drag_icon_create(&server->scene->tree, drag_icon);
+    if (server->drag_icon_tree == nullptr) {
+        return;
+    }
+    wlr_scene_node_set_position(&server->drag_icon_tree->node, server->cursor->x, server->cursor->y);
+    server->drag_icon_tree_destroy.notify = drag_icon_tree_handle_destroy;
+    wl_signal_add(&server->drag_icon_tree->node.events.destroy, &server->drag_icon_tree_destroy);
+}
+
 void begin_interactive(BiomeToplevel *toplevel, BiomeCursorMode mode, uint32_t edges,
         bool check_pointer_focus) {
     BiomeServer *server = toplevel->server;
@@ -190,6 +207,10 @@ static void process_cursor_resize(BiomeServer *server, uint32_t time) {
 }
 
 static void process_cursor_motion(BiomeServer *server, uint32_t time) {
+    if (server->drag_icon_tree != nullptr) {
+        wlr_scene_node_set_position(&server->drag_icon_tree->node, server->cursor->x, server->cursor->y);
+    }
+
     if (server->cursor_mode == BiomeCursorMode::Move) {
         process_cursor_move(server, time);
         return;
@@ -220,8 +241,13 @@ static void process_cursor_motion(BiomeServer *server, uint32_t time) {
         wlr_seat_pointer_notify_motion(seat, time, sx, sy);
     } else {
         // Clear pointer focus so future button events and such are not sent
-        // to the last client to have the cursor over it.
-        wlr_seat_pointer_clear_focus(seat);
+        // to the last client to have the cursor over it. The _notify_
+        // variant (rather than the raw wlr_seat_pointer_clear_focus) is
+        // required here: it defers to the active pointer grab, which during
+        // a drag-and-drop is what actually sends wl_data_device.leave to
+        // the previously-hovered drop target and keeps wlr_drag's focus
+        // tracking in sync with the seat's real pointer state.
+        wlr_seat_pointer_notify_clear_focus(seat);
     }
 }
 
@@ -268,39 +294,47 @@ void server_cursor_button(wl_listener *listener, void *data) {
         return;
     }
 
-    // A press over our own decoration (titlebar, border, or a button) is
-    // handled entirely by Biome - it never reaches desktop_toplevel_at's
-    // client-surface lookup below.
-    biome_decoration::Region region = biome_decoration::Region::None;
-    BiomeToplevel *decoration_toplevel = decoration_toplevel_at(
-        server, server->cursor->x, server->cursor->y, &region);
-    if (decoration_toplevel != nullptr) {
-        focus_toplevel(decoration_toplevel, toplevel_surface(decoration_toplevel));
-        if (event->button == BTN_LEFT) {
-            set_decoration_pressed(server, decoration_toplevel, region);
-            constexpr uint32_t kDoubleClickMs = 400;
-            if (region == biome_decoration::Region::Titlebar &&
-                    server->last_left_click_toplevel == decoration_toplevel &&
-                    event->time_msec - server->last_left_click_time <= kDoubleClickMs) {
-                // Double-click on the titlebar toggles maximize, standard
-                // WM convention - consume the click pair so a third quick
-                // click doesn't immediately toggle it back again.
-                set_toplevel_maximized(decoration_toplevel, !decoration_toplevel->maximized);
-                server->last_left_click_toplevel = nullptr;
-            } else {
-                server->last_left_click_toplevel = decoration_toplevel;
-                server->last_left_click_time = event->time_msec;
-                handle_decoration_press(decoration_toplevel, region);
+    // A press that lands while a drag-and-drop is in progress is not a real
+    // window-interaction press - wlr_drag's own pointer grab already
+    // consumed the button that's driving the drag (via
+    // wlr_seat_pointer_notify_button above), and any other button pressed
+    // mid-drag should not be able to refocus or double-click-maximize a
+    // window out from under it.
+    if (server->seat->drag == nullptr) {
+        // A press over our own decoration (titlebar, border, or a button) is
+        // handled entirely by Biome - it never reaches desktop_toplevel_at's
+        // client-surface lookup below.
+        biome_decoration::Region region = biome_decoration::Region::None;
+        BiomeToplevel *decoration_toplevel = decoration_toplevel_at(
+            server, server->cursor->x, server->cursor->y, &region);
+        if (decoration_toplevel != nullptr) {
+            focus_toplevel(decoration_toplevel, toplevel_surface(decoration_toplevel));
+            if (event->button == BTN_LEFT) {
+                set_decoration_pressed(server, decoration_toplevel, region);
+                constexpr uint32_t kDoubleClickMs = 400;
+                if (region == biome_decoration::Region::Titlebar &&
+                        server->last_left_click_toplevel == decoration_toplevel &&
+                        event->time_msec - server->last_left_click_time <= kDoubleClickMs) {
+                    // Double-click on the titlebar toggles maximize, standard
+                    // WM convention - consume the click pair so a third quick
+                    // click doesn't immediately toggle it back again.
+                    set_toplevel_maximized(decoration_toplevel, !decoration_toplevel->maximized);
+                    server->last_left_click_toplevel = nullptr;
+                } else {
+                    server->last_left_click_toplevel = decoration_toplevel;
+                    server->last_left_click_time = event->time_msec;
+                    handle_decoration_press(decoration_toplevel, region);
+                }
             }
+            return;
         }
-        return;
-    }
 
-    double sx, sy;
-    wlr_surface *surface = nullptr;
-    BiomeToplevel *toplevel = desktop_toplevel_at(server,
-        server->cursor->x, server->cursor->y, &surface, &sx, &sy);
-    focus_toplevel(toplevel, surface);
+        double sx, sy;
+        wlr_surface *surface = nullptr;
+        BiomeToplevel *toplevel = desktop_toplevel_at(server,
+            server->cursor->x, server->cursor->y, &surface, &sx, &sy);
+        focus_toplevel(toplevel, surface);
+    }
 }
 
 void server_cursor_axis(wl_listener *listener, void *data) {

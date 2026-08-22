@@ -2,6 +2,7 @@
 
 #include "core/input.h"
 
+#include "core/cursor.h"
 #include "desktop/decoration_bridge.h"
 #include "desktop/toplevel.h"
 #include "desktop/workspace.h"
@@ -13,6 +14,9 @@
 static void server_new_input(wl_listener *listener, void *data);
 static void seat_request_cursor(wl_listener *listener, void *data);
 static void seat_request_set_selection(wl_listener *listener, void *data);
+static void seat_request_set_primary_selection(wl_listener *listener, void *data);
+static void seat_request_start_drag(wl_listener *listener, void *data);
+static void seat_start_drag(wl_listener *listener, void *data);
 
 void input_init(BiomeServer *server) {
     wl_list_init(&server->keyboards);
@@ -23,6 +27,12 @@ void input_init(BiomeServer *server) {
     wl_signal_add(&server->seat->events.request_set_cursor, &server->request_cursor);
     server->request_set_selection.notify = seat_request_set_selection;
     wl_signal_add(&server->seat->events.request_set_selection, &server->request_set_selection);
+    server->request_set_primary_selection.notify = seat_request_set_primary_selection;
+    wl_signal_add(&server->seat->events.request_set_primary_selection, &server->request_set_primary_selection);
+    server->request_start_drag.notify = seat_request_start_drag;
+    wl_signal_add(&server->seat->events.request_start_drag, &server->request_start_drag);
+    server->start_drag.notify = seat_start_drag;
+    wl_signal_add(&server->seat->events.start_drag, &server->start_drag);
 }
 
 static void keyboard_handle_modifiers(wl_listener *listener, void *data) {
@@ -258,6 +268,31 @@ static void seat_request_set_selection(wl_listener *listener, void *data) {
     BiomeServer *server = wl_container_of(listener, server, request_set_selection);
     auto *event = static_cast<wlr_seat_request_set_selection_event *>(data);
     wlr_seat_set_selection(server->seat, event->source, event->serial);
+}
+
+static void seat_request_set_primary_selection(wl_listener *listener, void *data) {
+    BiomeServer *server = wl_container_of(listener, server, request_set_primary_selection);
+    auto *event = static_cast<wlr_seat_request_set_primary_selection_event *>(data);
+    wlr_seat_set_primary_selection(server->seat, event->source, event->serial);
+}
+
+static void seat_request_start_drag(wl_listener *listener, void *data) {
+    BiomeServer *server = wl_container_of(listener, server, request_start_drag);
+    auto *event = static_cast<wlr_seat_request_start_drag_event *>(data);
+    if (wlr_seat_validate_pointer_grab_serial(server->seat, event->origin, event->serial)) {
+        wlr_seat_start_pointer_drag(server->seat, event->drag, event->serial);
+    }
+    // An invalid serial (spoofed/stale client request) is simply dropped -
+    // wlroots has no public wlr_drag_destroy() to release the rejected
+    // wlr_drag, a known upstream API gap, not something to work around here.
+}
+
+static void seat_start_drag(wl_listener *listener, void *data) {
+    BiomeServer *server = wl_container_of(listener, server, start_drag);
+    auto *drag = static_cast<wlr_drag *>(data);
+    if (drag->icon != nullptr) {
+        drag_icon_create(server, drag->icon);
+    }
 }
 
 void remove_toplevel_from_switcher(BiomeServer *server, BiomeToplevel *toplevel) {

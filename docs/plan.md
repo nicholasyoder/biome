@@ -176,17 +176,55 @@ cycling, hover/press states) is left to the user's own manual testing in
 the nested dev loop rather than agent-driven screenshots or synthetic
 input.
 
+**Phase 3.5 — Input & session completeness.** *(added 2026-08-22; the two
+clipboard-shaped items are done, `ext-session-lock-v1` still open)* Found by
+auditing the codebase for gaps a basic usable desktop needs, ahead of
+starting Phase 4 — none require touching `forest/`, so they belong before
+the phase that does:
+
+- **Drag-and-drop.** *(done)* `core/input.cpp` now wires the seat's
+  `request_start_drag`/`start_drag` signals (validating the request's
+  serial via `wlr_seat_validate_pointer_grab_serial` before calling
+  `wlr_seat_start_pointer_drag`); `core/cursor.cpp`'s `drag_icon_create()`
+  uses wlroots' `wlr_scene_drag_icon_create()` scene helper to show the drag
+  icon and keeps it positioned on the cursor via a per-motion reposition
+  call in `process_cursor_motion`. Touch drags are out of scope (Biome has
+  no touch input support anywhere). Landed alongside two related latent-bug
+  fixes in `core/cursor.cpp` that DnD made load-bearing: the cursor's
+  leaves-all-surfaces path now calls the grab-respecting
+  `wlr_seat_pointer_notify_clear_focus()` instead of the raw
+  `wlr_seat_pointer_clear_focus()` (needed so a drag's drop target actually
+  gets `wl_data_device.leave`), and decoration press-handling
+  (focus-on-click, double-click-to-maximize) is now suppressed while
+  `server->seat->drag` is non-null, so a second button press mid-drag can't
+  refocus or maximize a window out from under it. Confirmed working by the
+  user's own manual interactive testing.
+- **`primary-selection-unstable-v1`.** *(done)* X11-style select-to-copy +
+  middle-click-to-paste. New `wlr_primary_selection_v1_device_manager` in
+  `core/main.cpp` plus a `request_set_primary_selection` listener in
+  `core/input.cpp` mirroring the existing clipboard selection handler.
+  Xwayland bridging needed no extra code — confirmed from wlroots' own
+  `xwayland/xwm.c` source that its `PRIMARY`-atom bridging already rides the
+  same `wlr_xwayland_set_seat()` call the regular clipboard path uses.
+  Confirmed working by the user's own manual interactive testing.
+- **`ext-session-lock-v1` is unimplemented.** Phase 4's `idle-notify` only
+  reports *when* the session goes idle — it grants no secure lock surface,
+  so nothing stops another client from drawing over or under a fake lock
+  screen. Needed before Forest's session locker can be trusted. Header
+  already present in the linked wlroots 0.18 (`wlr_session_lock_v1.h`).
+
 **Phase 4 — Forest shell integration.**
-Layer-shell for panel + desktop, foreign-toplevel-management for the
-windowlist plugin, DBus hotkey service replacing `qxtglobalshortcut`,
-screencopy for screenshots, idle-notify for the session locker, and
-wiring the display settings app to `wlr-output-management-unstable-v1`
-(Biome-side protocol support for that still needs to land too, in Phase 3
-or here, whichever comes first). This is where Forest's shell processes
-become Wayland-native instead of X11 clients — effectively executing the
-`xcbutills` replacement that `wayland_AI_assessment.md` flagged as the
-biggest chunk of shell-side work, and the first phase where any `forest/`
-code itself gets modified.
+Layer-shell for panel + desktop (bundled with `xdg-output-unstable-v1`,
+since layer-shell clients commonly query it for per-output name/logical
+geometry), foreign-toplevel-management for the windowlist plugin, DBus
+hotkey service replacing `qxtglobalshortcut`, screencopy for screenshots,
+idle-notify for the session locker, and wiring the display settings app to
+`wlr-output-management-unstable-v1` (Biome-side protocol support for that
+still needs to land too, in Phase 3 or here, whichever comes first). This
+is where Forest's shell processes become Wayland-native instead of X11
+clients — effectively executing the `xcbutills` replacement that
+`wayland_AI_assessment.md` flagged as the biggest chunk of shell-side work,
+and the first phase where any `forest/` code itself gets modified.
 
 **Phase 5 — Cutover.**
 New `forest-session` variant that execs Biome instead of `xfwm4`, a Wayland

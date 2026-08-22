@@ -93,6 +93,16 @@ struct BiomeServer {
     wl_listener new_input = {};
     wl_listener request_cursor = {};
     wl_listener request_set_selection = {};
+    wl_listener request_set_primary_selection = {};
+    wl_listener request_start_drag = {};
+    wl_listener start_drag = {};
+    // Non-null only while a client-initiated wl_data_device drag with an
+    // icon is in progress - see drag_icon_create/process_cursor_motion in
+    // core/cursor.cpp. A drag with no icon (drag->icon == nullptr) leaves
+    // this null for the drag's whole duration; nothing to position or clean
+    // up in that case.
+    wlr_scene_tree *drag_icon_tree = nullptr;
+    wl_listener drag_icon_tree_destroy = {};
     wl_list keyboards = {};
     BiomeCursorMode cursor_mode = BiomeCursorMode::Passthrough;
     BiomeToplevel *grabbed_toplevel = nullptr;
