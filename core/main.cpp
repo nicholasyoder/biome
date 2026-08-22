@@ -1,10 +1,9 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 //
 // Entry point: argument parsing, the offscreen Qt application decoration/
-// needs, and wiring up each module's _init(server) in dependency order (see
-// docs/plan.md's "Split core/main.cpp into per-concern modules" writeup for
-// why the code is split the way it is). Everything past setup is generic
-// wlroots server lifecycle - no compositor policy lives in this file.
+// needs, and wiring up each module's _init(server) in dependency order.
+// Everything past setup is generic wlroots server lifecycle - no compositor
+// policy lives in this file.
 
 #include "wlroots.hpp"
 

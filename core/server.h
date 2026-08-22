@@ -106,10 +106,13 @@ struct BiomeServer {
 
     // Which toplevel (if any) currently has a hovered/pressed decoration
     // button, so process_cursor_motion/server_cursor_button know when to
-    // clear the old one's QSS :hover/:pressed state. Like
-    // last_left_click_toplevel above, not cleared on toplevel destroy -
-    // only ever compared, never dereferenced, so a stale pointer here is
-    // harmless.
+    // clear the old one's QSS :hover/:pressed state. Unlike
+    // last_left_click_toplevel above (only ever compared, never
+    // dereferenced), these ARE dereferenced when clearing hover/press state -
+    // a stale pointer here is a real use-after-free, so both toplevel destroy
+    // handlers clear these via desktop/decoration_bridge.h's
+    // clear_decoration_tracking() before free(). See that function's doc
+    // comment for the full story.
     BiomeToplevel *hovered_decoration_toplevel = nullptr;
     BiomeToplevel *pressed_decoration_toplevel = nullptr;
 

@@ -8,6 +8,8 @@
 
 #include <xkbcommon/xkbcommon.h>
 
+#include <algorithm>
+
 static void server_new_input(wl_listener *listener, void *data);
 static void seat_request_cursor(wl_listener *listener, void *data);
 static void seat_request_set_selection(wl_listener *listener, void *data);
@@ -256,4 +258,26 @@ static void seat_request_set_selection(wl_listener *listener, void *data) {
     BiomeServer *server = wl_container_of(listener, server, request_set_selection);
     auto *event = static_cast<wlr_seat_request_set_selection_event *>(data);
     wlr_seat_set_selection(server->seat, event->source, event->serial);
+}
+
+void remove_toplevel_from_switcher(BiomeServer *server, BiomeToplevel *toplevel) {
+    auto it = std::find(server->switcher_order.begin(), server->switcher_order.end(), toplevel);
+    if (it == server->switcher_order.end()) {
+        return;
+    }
+    auto erased_index = it - server->switcher_order.begin();
+    server->switcher_order.erase(it);
+
+    if (server->switcher_order.empty()) {
+        // Nothing left to cycle through or commit to on Alt-release.
+        server->switcher_active = false;
+        server->switcher_preview_index = 0;
+    } else {
+        if (erased_index < server->switcher_preview_index) {
+            server->switcher_preview_index--;
+        }
+        int count = static_cast<int>(server->switcher_order.size());
+        server->switcher_preview_index = ((server->switcher_preview_index % count) + count) % count;
+    }
+    update_switcher_overlay(server);
 }

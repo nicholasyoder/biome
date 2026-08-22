@@ -127,8 +127,9 @@ decorations/polish now comes before Forest shell integration, so Biome gets
 further along as a standalone compositor before any `forest/` code is
 touched.
 
-**Phase 3 — Qt-based decorations & polish.** *(window-chrome work done;
-output-management/HiDPI/damage-tracking still open)*
+**Phase 3 — Qt-based decorations & polish.** *(window-chrome work and a
+static per-output config file both done; the `wlr-output-management-unstable-v1`
+protocol itself, HiDPI/scaling, and damage-tracking still open)*
 
 Real Qt-rendered title bars and borders replace Phase 2's flat border. A
 new `decoration/` module (`biome_decoration` static lib) renders a
@@ -138,16 +139,37 @@ as a `wlr_scene_buffer`. Styling comes from a self-contained theme embedded
 in Biome itself (`decoration/theme/biome-dark.qss`, modeled on Forest's
 dark+rounded theme rather than depending on Forest's installed files) —
 real QSS border/radius/padding/`:hover`/`:pressed` states, driven by actual
-pointer input. `xdg-decoration-unstable-v1` is negotiated (Biome always
-forces server-side decorations), removing Phase 2's CSD-double-decoration
-issue. Titlebar/border dragging does interactive move/resize; maximize,
-minimize, and close are fully wired; the Alt-Tab switcher is now a real
-on-screen overlay (text list, no live thumbnails) instead of invisible
-cycling.
+pointer input. Window icons (resolved from a client's app_id/WM_CLASS via
+its `.desktop` file, falling back to `_NET_WM_ICON` for Xwayland) appear in
+both the titlebar and the Alt-Tab switcher. Titlebar/border dragging does
+interactive move/resize; maximize, minimize, and close are fully wired; the
+Alt-Tab switcher is now a real on-screen overlay (text list, no live
+thumbnails) instead of invisible cycling.
+
+Decoration mode is negotiated, not forced. Both `xdg-decoration-unstable-v1`
+and the legacy `org_kde_kwin_server_decoration` protocol (which GTK3 clients,
+including Firefox, use instead) are honored per whatever mode a client
+actually requests — a deliberate pivot away from this phase's original
+always-server-side plan, made after that forced-SSD default double-decorated
+Chromium/Electron apps and other browsers with genuine, conditional CSD. A
+client that negotiates neither protocol at all is treated as client-side
+decorated, per both protocols' own spec convention for "no decoration object
+was ever created." This also covers libadwaita/GNOME HeaderBar apps (e.g.
+`org.gnome.baobab`) that never send a decoration request at all, due to an
+upstream GTK4 bug in `gdk_wayland_toplevel_set_decorated()` that silently
+drops the request for exactly the HeaderBar case.
+
+A monitor's mode/scale/position/rotation can be pinned via a static,
+hand-edited `~/.config/Forest/Biome.conf` (`QSettings("Forest", "Biome")` —
+see `core/output_config.h`), read once at startup. This is *not* the
+`wlr-output-management-unstable-v1` Wayland protocol listed in the table
+above — that protocol is what would let a *running* display-settings client
+change output configuration live, and it's still unimplemented; it's still
+needed for Phase 4's display-settings app integration.
 
 Deliberately deferred: `wlr-output-management-unstable-v1`, HiDPI/scaling,
-damage-tracking tuning, a window-operations menu, drop shadows, app icons,
-and live theme-switch reload.
+damage-tracking tuning, a window-operations menu, drop shadows, and live
+theme-switch reload.
 
 Per established preference, visual/interactive verification (drag, keyboard
 cycling, hover/press states) is left to the user's own manual testing in

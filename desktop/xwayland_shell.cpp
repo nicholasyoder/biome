@@ -3,6 +3,7 @@
 #include "desktop/xwayland_shell.h"
 
 #include "core/cursor.h"
+#include "core/input.h"
 #include "desktop/decoration_bridge.h"
 #include "desktop/toplevel.h"
 
@@ -90,6 +91,7 @@ static void xwayland_toplevel_destroy(wl_listener *listener, void *data) {
     wlr_scene_node_destroy(&toplevel->scene_tree->node);
 
     clear_decoration_tracking(toplevel->server, toplevel);
+    remove_toplevel_from_switcher(toplevel->server, toplevel);
     free(toplevel);
 }
 

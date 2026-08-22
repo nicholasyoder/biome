@@ -41,7 +41,12 @@ void begin_interactive(BiomeToplevel *toplevel, BiomeCursorMode mode, uint32_t e
     BiomeServer *server = toplevel->server;
     if (check_pointer_focus) {
         wlr_surface *focused_surface = server->seat->pointer_state.focused_surface;
-        if (toplevel_surface(toplevel) != wlr_surface_get_root_surface(focused_surface)) {
+        // wlr_surface_get_root_surface() dereferences its argument
+        // unconditionally - nothing having pointer focus at all trivially
+        // fails the focus check too, so check for null first rather than
+        // passing it through.
+        if (focused_surface == nullptr ||
+                toplevel_surface(toplevel) != wlr_surface_get_root_surface(focused_surface)) {
             // Deny move/resize requests from unfocused clients.
             return;
         }

@@ -3,6 +3,7 @@
 #include "desktop/xdg_shell.h"
 
 #include "core/cursor.h"
+#include "core/input.h"
 #include "desktop/decoration_bridge.h"
 #include "desktop/toplevel.h"
 
@@ -61,21 +62,12 @@ static void xdg_toplevel_commit(wl_listener *listener, void *data) {
                 toplevel->xdg_client_side_decorated
                     ? WLR_XDG_TOPLEVEL_DECORATION_V1_MODE_CLIENT_SIDE
                     : WLR_XDG_TOPLEVEL_DECORATION_V1_MODE_SERVER_SIDE);
-            // TODO(debug): temporary, remove once CSD-vs-SSD scoping is
-            // confirmed across real apps.
-            wlr_log(WLR_DEBUG, "xdg-decoration: app_id=%s requested=%d -> %s",
-                toplevel->xdg_toplevel->app_id ? toplevel->xdg_toplevel->app_id : "(null)",
-                toplevel->decoration->requested_mode,
-                toplevel->xdg_client_side_decorated ? "client-side" : "server-side");
         } else if (toplevel->kde_decoration != nullptr) {
             // apply_kde_decoration_mode already resolved xdg_client_side_decorated
             // when this KDE object was created (server_new_kde_decoration runs
             // before this commit for a pre-map object) and deferred the
             // content_tree/render update to here, since it ran before
             // base->initialized was set - nothing left to do.
-            wlr_log(WLR_DEBUG, "xdg-decoration: app_id=%s resolved via KDE decoration object -> %s",
-                toplevel->xdg_toplevel->app_id ? toplevel->xdg_toplevel->app_id : "(null)",
-                toplevel->xdg_client_side_decorated ? "client-side" : "server-side");
         } else {
             // Neither protocol was ever negotiated. Per both protocols' specs,
             // absence of a decoration object means client-side decorated - see
@@ -186,6 +178,7 @@ static void xdg_toplevel_destroy(wl_listener *listener, void *data) {
     wlr_scene_node_destroy(&toplevel->scene_tree->node);
 
     clear_decoration_tracking(toplevel->server, toplevel);
+    remove_toplevel_from_switcher(toplevel->server, toplevel);
     free(toplevel);
 }
 
@@ -350,11 +343,6 @@ static void xdg_toplevel_decoration_request_mode(wl_listener *listener, void *da
     wlr_xdg_toplevel_decoration_v1_set_mode(toplevel->decoration,
         want_client_side ? WLR_XDG_TOPLEVEL_DECORATION_V1_MODE_CLIENT_SIDE
                           : WLR_XDG_TOPLEVEL_DECORATION_V1_MODE_SERVER_SIDE);
-    // TODO(debug): temporary, remove once CSD-vs-SSD scoping is confirmed
-    // across real apps.
-    wlr_log(WLR_DEBUG, "xdg-decoration: app_id=%s request_mode -> %s",
-        toplevel->xdg_toplevel->app_id ? toplevel->xdg_toplevel->app_id : "(null)",
-        want_client_side ? "client-side" : "server-side");
     if (toplevel->xdg_client_side_decorated != want_client_side) {
         toplevel->xdg_client_side_decorated = want_client_side;
         wlr_scene_node_set_position(&toplevel->content_tree->node,
@@ -403,11 +391,6 @@ static void kde_decoration_destroy_handler(wl_listener *listener, void *data) {
 static void apply_kde_decoration_mode(BiomeToplevel *toplevel) {
     bool want_client_side =
         toplevel->kde_decoration->mode == WLR_SERVER_DECORATION_MANAGER_MODE_CLIENT;
-    // TODO(debug): temporary, remove once CSD-vs-SSD scoping is confirmed
-    // across real apps.
-    wlr_log(WLR_DEBUG, "kde-decoration: app_id=%s mode=%u -> %s",
-        toplevel->xdg_toplevel->app_id ? toplevel->xdg_toplevel->app_id : "(null)",
-        toplevel->kde_decoration->mode, want_client_side ? "client-side" : "server-side");
     if (toplevel->xdg_client_side_decorated == want_client_side) {
         return;
     }
