@@ -10,8 +10,10 @@
 
 #pragma once
 
+#include "core/output_config.h"
 #include "wlroots.hpp"
 
+#include <unordered_map>
 #include <vector>
 
 struct BiomeToplevel;
@@ -131,6 +133,8 @@ struct BiomeServer {
     wlr_output_layout *output_layout = nullptr;
     wl_list outputs = {};
     wl_listener new_output = {};
+    // Loaded once at startup by output_manager_init() - see output_config.h.
+    std::unordered_map<std::string, OutputConfig> output_configs;
 };
 
 struct BiomeOutput {

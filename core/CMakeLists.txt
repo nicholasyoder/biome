@@ -1,8 +1,12 @@
+find_package(Qt6 REQUIRED COMPONENTS Core)
+
 add_executable(biome
     main.cpp
     server.h
     output.h
     output.cpp
+    output_config.h
+    output_config.cpp
     input.h
     input.cpp
     cursor.h
@@ -25,6 +29,7 @@ target_link_libraries(biome PRIVATE
     PkgConfig::WLROOTS
     PkgConfig::WAYLAND_SERVER
     PkgConfig::XKBCOMMON
+    Qt6::Core
 )
 
 install(TARGETS biome RUNTIME DESTINATION bin)

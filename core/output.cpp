@@ -10,6 +10,7 @@ void output_manager_init(BiomeServer *server) {
     server->output_layout = wlr_output_layout_create(server->display);
 
     wl_list_init(&server->outputs);
+    server->output_configs = load_output_configs();
     server->new_output.notify = server_new_output;
     wl_signal_add(&server->backend->events.new_output, &server->new_output);
 
@@ -51,21 +52,81 @@ static void output_destroy(wl_listener *listener, void *data) {
     free(output);
 }
 
+// Searches wlr_output's advertised mode list for the best match to a
+// configured width/height/refresh (refresh_mhz == 0 means "any refresh").
+// Prefers an exact refresh match, then the driver's own preferred mode
+// among same-size matches, then any same-size match. Returns nullptr if no
+// mode of that size is advertised at all (e.g. the nested Wayland/X11 dev
+// backends, which have no fixed mode list).
+static wlr_output_mode *find_matching_mode(wlr_output *wlr_output, const OutputConfig::Mode &wanted) {
+    wlr_output_mode *any_size_match = nullptr;
+    wlr_output_mode *preferred_size_match = nullptr;
+    wlr_output_mode *mode_iter;
+    wl_list_for_each(mode_iter, &wlr_output->modes, link) {
+        if (mode_iter->width != wanted.width || mode_iter->height != wanted.height) {
+            continue;
+        }
+        if (wanted.refresh_mhz != 0 && mode_iter->refresh == wanted.refresh_mhz) {
+            return mode_iter;
+        }
+        if (any_size_match == nullptr) {
+            any_size_match = mode_iter;
+        }
+        if (mode_iter->preferred) {
+            preferred_size_match = mode_iter;
+        }
+    }
+    return preferred_size_match != nullptr ? preferred_size_match : any_size_match;
+}
+
 static void server_new_output(wl_listener *listener, void *data) {
     BiomeServer *server = wl_container_of(listener, server, new_output);
     auto *wlr_output = static_cast<struct wlr_output *>(data);
 
     wlr_output_init_render(wlr_output, server->allocator, server->renderer);
 
+    OutputConfig cfg; // documented defaults if this connector has no config entry
+    if (wlr_output->name != nullptr) {
+        auto it = server->output_configs.find(wlr_output->name);
+        if (it != server->output_configs.end()) {
+            cfg = it->second;
+        }
+    }
+
     wlr_output_state state;
     wlr_output_state_init(&state);
-    wlr_output_state_set_enabled(&state, true);
+    wlr_output_state_set_enabled(&state, cfg.enabled);
 
-    // Some backends (e.g. DRM+KMS) require a mode to be set before use; just
-    // pick the monitor's preferred one.
-    wlr_output_mode *mode = wlr_output_preferred_mode(wlr_output);
-    if (mode != nullptr) {
-        wlr_output_state_set_mode(&state, mode);
+    if (cfg.enabled) {
+        if (cfg.mode.has_value()) {
+            wlr_output_mode *chosen_mode = find_matching_mode(wlr_output, *cfg.mode);
+            if (chosen_mode != nullptr) {
+                wlr_output_state_set_mode(&state, chosen_mode);
+            } else {
+                // No advertised mode matches - either this backend has no
+                // fixed mode list at all (the nested Wayland/X11 dev
+                // backends) or this exact size isn't offered. Custom modes
+                // "may result in visual artifacts" on real DRM/KMS per
+                // wlr_output_state_set_custom_mode()'s own doc comment, but
+                // are the only way to honor an exact user-requested
+                // resolution the driver doesn't enumerate.
+                wlr_log(WLR_ERROR,
+                        "output %s: no matching mode for configured %dx%d@%d, using custom mode",
+                        wlr_output->name, cfg.mode->width, cfg.mode->height, cfg.mode->refresh_mhz);
+                wlr_output_state_set_custom_mode(&state, cfg.mode->width, cfg.mode->height,
+                                                  cfg.mode->refresh_mhz);
+            }
+        } else {
+            // Some backends (e.g. DRM+KMS) require a mode to be set before
+            // use; just pick the monitor's preferred one.
+            wlr_output_mode *mode = wlr_output_preferred_mode(wlr_output);
+            if (mode != nullptr) {
+                wlr_output_state_set_mode(&state, mode);
+            }
+        }
+
+        wlr_output_state_set_scale(&state, static_cast<float>(cfg.scale));
+        wlr_output_state_set_transform(&state, cfg.transform);
     }
 
     wlr_output_commit_state(wlr_output, &state);
@@ -85,9 +146,18 @@ static void server_new_output(wl_listener *listener, void *data) {
     wl_list_insert(&server->outputs, &output->link);
 
     // add_auto arranges outputs left-to-right in the order they appear, and
-    // adds a wl_output global for clients to query (DPI, scale, etc).
+    // adds a wl_output global for clients to query (DPI, scale, etc). A
+    // configured position instead anchors the output there directly -
+    // wlr_output_layout handles a mix of anchored and auto-arranged outputs
+    // on its own (auto ones flow to the right of the rightmost anchored
+    // one). Disabled outputs still get full layout/scene wiring - wlroots
+    // withholds the wl_output global for a 0x0 output on its own, and
+    // wlr_scene already treats a disabled output as invisible.
     wlr_output_layout_output *l_output =
-        wlr_output_layout_add_auto(server->output_layout, wlr_output);
+        cfg.position.has_value()
+            ? wlr_output_layout_add(server->output_layout, wlr_output, cfg.position->first,
+                                     cfg.position->second)
+            : wlr_output_layout_add_auto(server->output_layout, wlr_output);
     wlr_scene_output *scene_output = wlr_scene_output_create(server->scene, wlr_output);
     wlr_scene_output_layout_add_output(server->scene_layout, l_output, scene_output);
 }
