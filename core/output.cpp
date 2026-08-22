@@ -2,6 +2,8 @@
 
 #include "core/output.h"
 
+#include "desktop/session_lock.h"
+
 #include <ctime>
 
 static void server_new_output(wl_listener *listener, void *data);
@@ -24,7 +26,8 @@ void output_manager_init(BiomeServer *server) {
 static void output_frame(wl_listener *listener, void *data) {
     (void)data;
     BiomeOutput *output = wl_container_of(listener, output, frame);
-    wlr_scene *scene = output->server->scene;
+    BiomeServer *server = output->server;
+    wlr_scene *scene = server->scene;
 
     wlr_scene_output *scene_output = wlr_scene_get_scene_output(scene, output->wlr);
     wlr_scene_output_commit(scene_output, nullptr);
@@ -32,6 +35,28 @@ static void output_frame(wl_listener *listener, void *data) {
     timespec now;
     clock_gettime(CLOCK_MONOTONIC, &now);
     wlr_scene_output_send_frame_done(scene_output, &now);
+
+    // ext-session-lock-v1: the `locked` event must not be sent until a
+    // locked frame has actually been presented on every output (not just
+    // scheduled) - see desktop/session_lock.cpp. This waits for every
+    // currently-enabled output to commit at least one frame after the lock
+    // began before declaring it satisfied.
+    if (server->session_locked && output->pending_lock_frame) {
+        output->pending_lock_frame = false;
+        if (server->active_lock != nullptr && !server->active_lock->locked_sent) {
+            bool any_pending = false;
+            BiomeOutput *other;
+            wl_list_for_each(other, &server->outputs, link) {
+                if (other->pending_lock_frame) {
+                    any_pending = true;
+                    break;
+                }
+            }
+            if (!any_pending) {
+                wlr_session_lock_v1_send_locked(server->active_lock);
+            }
+        }
+    }
 }
 
 // e.g. Wayland/X11 backends request a new mode when the output window resizes.
@@ -39,6 +64,25 @@ static void output_request_state(wl_listener *listener, void *data) {
     BiomeOutput *output = wl_container_of(listener, output, request_state);
     auto *event = static_cast<const wlr_output_event_request_state *>(data);
     wlr_output_commit_state(output->wlr, event->state);
+
+    // Keep the session-lock blank rect (and any live lock surface's
+    // configured size) in sync with a live resolution change - otherwise a
+    // shrunk rect would leave real desktop content visible around its edges
+    // while locked. Only realistically reachable on the nested dev backends
+    // today (a real DRM/KMS mode doesn't change without a fresh output_state
+    // commit from Biome itself), but this is a security-relevant gap if
+    // skipped, not just polish.
+    if (output->lock_rect != nullptr) {
+        int width, height;
+        wlr_output_effective_resolution(output->wlr, &width, &height);
+        if (output->lock_rect->width != width || output->lock_rect->height != height) {
+            wlr_scene_rect_set_size(output->lock_rect, width, height);
+            if (output->lock_surface != nullptr) {
+                wlr_session_lock_surface_v1_configure(
+                    output->lock_surface, static_cast<uint32_t>(width), static_cast<uint32_t>(height));
+            }
+        }
+    }
 }
 
 static void output_destroy(wl_listener *listener, void *data) {
@@ -160,4 +204,17 @@ static void server_new_output(wl_listener *listener, void *data) {
             : wlr_output_layout_add_auto(server->output_layout, wlr_output);
     wlr_scene_output *scene_output = wlr_scene_output_create(server->scene, wlr_output);
     wlr_scene_output_layout_add_output(server->scene_layout, l_output, scene_output);
+
+    // ext-session-lock-v1: created unconditionally for every output, locked
+    // or not, so a monitor that appears while already locked is blanked
+    // from its very first frame with no special hotplug-during-lock code -
+    // see desktop/session_lock.cpp. lock_rect is the opaque fallback layer;
+    // a client's own lock surface (added later, as a sibling within
+    // output->lock_tree) renders on top of it since it's created after.
+    output->lock_tree = wlr_scene_tree_create(server->lock_tree);
+    wlr_scene_node_set_position(&output->lock_tree->node, l_output->x, l_output->y);
+    int lock_width, lock_height;
+    wlr_output_effective_resolution(wlr_output, &lock_width, &lock_height);
+    output->lock_rect =
+        wlr_scene_rect_create(output->lock_tree, lock_width, lock_height, kSessionLockColor);
 }

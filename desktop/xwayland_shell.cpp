@@ -156,6 +156,20 @@ static void unmanaged_associate(wl_listener *listener, void *data) {
     surface->map.notify = [](wl_listener *l, void *d) {
         (void)d;
         BiomeUnmanaged *s = wl_container_of(l, s, map);
+        if (s->server->session_locked) {
+            // An override-redirect surface (X11 popup/menu/tooltip) has no
+            // BiomeToplevel, so it's invisible to
+            // update_toplevel_visibility()'s session_locked check - and its
+            // scene_tree was freshly created in unmanaged_associate() above,
+            // so it would otherwise render as the new topmost sibling
+            // regardless of server->lock_tree having been raised earlier.
+            // Disable it outright rather than just skipping the raise below
+            // - this also skips the unconditional keyboard-focus grab a few
+            // lines down, which would otherwise steal focus from the lock
+            // surface with no lock check at all.
+            wlr_scene_node_set_enabled(&s->scene_tree->node, false);
+            return;
+        }
         wlr_scene_node_raise_to_top(&s->scene_tree->node);
         if (wlr_xwayland_or_surface_wants_focus(s->xwayland_surface)) {
             wlr_seat *seat = s->server->seat;

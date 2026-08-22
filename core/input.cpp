@@ -83,6 +83,18 @@ static bool handle_keybinding(BiomeServer *server, xkb_keysym_t sym, uint32_t mo
         return true;
     }
 
+    // Every other compositor keybinding below (Escape-quits-compositor,
+    // Alt-Tab switcher, Ctrl-Alt-workspace-switch) must not fire while the
+    // session is locked - returning false (not handled) lets the raw key
+    // event fall through to wlr_seat_keyboard_notify_key() in
+    // keyboard_handle_key() instead, i.e. delivered to whatever currently
+    // has keyboard focus (the lock surface), which needs real keystrokes for
+    // its own password-entry UI. VT-switch above stays live even while
+    // locked - it's a kernel-level session handoff, not a Biome-content leak.
+    if (server->session_locked) {
+        return false;
+    }
+
     switch (sym) {
     case XKB_KEY_Escape:
         wl_display_terminate(server->display);

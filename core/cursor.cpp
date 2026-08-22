@@ -333,6 +333,19 @@ void server_cursor_button(wl_listener *listener, void *data) {
         wlr_surface *surface = nullptr;
         BiomeToplevel *toplevel = desktop_toplevel_at(server,
             server->cursor->x, server->cursor->y, &surface, &sx, &sy);
+        if (toplevel == nullptr && surface != nullptr && server->session_locked) {
+            // A click on a session-lock surface (e.g. a different monitor's
+            // password prompt) - not a BiomeToplevel, so focus_toplevel()
+            // doesn't apply. Guarded on session_locked so this can't change
+            // today's behavior for the other case that hits this same
+            // null-toplevel/non-null-surface shape (an override-redirect
+            // Xwayland popup).
+            wlr_keyboard *keyboard = wlr_seat_get_keyboard(server->seat);
+            if (keyboard != nullptr) {
+                wlr_seat_keyboard_notify_enter(server->seat, surface,
+                    keyboard->keycodes, keyboard->num_keycodes, &keyboard->modifiers);
+            }
+        }
         focus_toplevel(toplevel, surface);
     }
 }

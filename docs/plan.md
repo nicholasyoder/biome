@@ -176,8 +176,9 @@ cycling, hover/press states) is left to the user's own manual testing in
 the nested dev loop rather than agent-driven screenshots or synthetic
 input.
 
-**Phase 3.5 — Input & session completeness.** *(added 2026-08-22; the two
-clipboard-shaped items are done, `ext-session-lock-v1` still open)* Found by
+**Phase 3.5 — Input & session completeness.** *(added 2026-08-22; all three
+items done - the two clipboard-shaped ones confirmed by manual testing,
+`ext-session-lock-v1` not yet manually tested)* Found by
 auditing the codebase for gaps a basic usable desktop needs, ahead of
 starting Phase 4 — none require touching `forest/`, so they belong before
 the phase that does:
@@ -207,11 +208,116 @@ the phase that does:
   `xwayland/xwm.c` source that its `PRIMARY`-atom bridging already rides the
   same `wlr_xwayland_set_seat()` call the regular clipboard path uses.
   Confirmed working by the user's own manual interactive testing.
-- **`ext-session-lock-v1` is unimplemented.** Phase 4's `idle-notify` only
-  reports *when* the session goes idle — it grants no secure lock surface,
-  so nothing stops another client from drawing over or under a fake lock
-  screen. Needed before Forest's session locker can be trusted. Header
-  already present in the linked wlroots 0.18 (`wlr_session_lock_v1.h`).
+- **`ext-session-lock-v1`.** *(done)* New `desktop/session_lock.{h,cpp}`
+  module wiring `wlr_session_lock_manager_v1`. A single `server->lock_tree`
+  scene node, raised to the top of `server->scene->tree` and enabled for the
+  duration of a lock, is the one invariant the whole implementation leans
+  on: `desktop_toplevel_at`/`decoration_toplevel_at` already stop their
+  scene-graph hit-test at the first node under the cursor, so an opaque
+  full-output `wlr_scene_rect` per output (created unconditionally at
+  output-add time, so a hotplugged monitor is blanked from its first frame
+  even mid-lock) makes every normal window and Biome's own decoration
+  unreachable to click/hover with no bespoke lock-aware hit-testing needed.
+  The only place a normal toplevel's scene node ever gets raised is
+  `focus_toplevel()` (both click-to-focus and auto-focus-on-map go through
+  it) - gating that one function on `server->session_locked` is what stops a
+  window from being raised above, or stealing keyboard focus from, the lock
+  surfaces. `handle_keybinding()` (`core/input.cpp`) swallows nothing while
+  locked except VT-switch, which stays live (kernel-level session handoff,
+  matches sway, not a Biome-content leak) - every other compositor keybind
+  (Escape-quit, Alt-Tab, workspace-switch) falls through as an ordinary key
+  event to the lock client instead.
+
+  `session_locked` (survives a lock client crash) and `active_lock` (nulled
+  the moment that lock's wl_resource is gone, crash or not) are deliberately
+  two separate fields: per spec, a client dying without calling
+  `unlock_and_destroy` must not unlock the session, so `session_locked` is
+  only ever cleared by a real `unlock` event. Since the reject-a-second-lock
+  check in `new_session_lock` tests `active_lock` (not `session_locked`), a
+  replacement client can `lock()` and take over recovery after a crash -
+  exactly the compositor-policy recovery path the spec names - with no
+  extra code for it.
+
+  `wlr_session_lock_v1_send_locked()` is deferred until every currently-
+  enabled output has actually committed a frame since the lock began
+  (tracked per-`BiomeOutput` via `pending_lock_frame`, checked in
+  `output_frame()`), not sent synchronously from the `new_lock` handler -
+  the spec's locked-event timing rule exists specifically to prevent a
+  suspend-races-resume race, and the compositor's own blanking is enough to
+  satisfy it without waiting on the client's own surface to render.
+  `output_request_state()` also keeps the blank rect and any live lock
+  surface's configured size in sync with a live output resolution change
+  (reachable on the nested dev backends), since a stale-sized rect would be
+  a real edge leak, not just cosmetic.
+
+  **Follow-up fix, same day:** the user's manual test (real DRM/KMS session,
+  swaylock) found a real leak the design above missed - a *new* window
+  mapped while locked (tested via a Wayland client launched against Biome's
+  socket from another VT) appeared on top of swaylock's UI and could be
+  dragged around, though it correctly never got keyboard focus. Root cause:
+  keeping `lock_tree` raised to the top only protects scene content that
+  already existed when the lock began - `wlr_scene_tree_create()` always
+  appends a *new* node as the topmost sibling regardless of history (the
+  same mechanism `lock_tree` itself relies on to get on top), so anything
+  mapped after the lock started re-topped itself automatically. Found two
+  independent instances: (1) `update_toplevel_visibility()`
+  (`desktop/workspace.cpp`, already called for every newly placed toplevel
+  via `place_new_toplevel()`) didn't factor in `session_locked` at all -
+  fixed by adding it to the visibility formula, plus re-running it over
+  every existing toplevel on both lock and unlock in `session_lock.cpp`
+  (replacing an initial unlock-focus implementation that hand-rolled "just
+  focus toplevels.next" with the existing, workspace-aware
+  `focus_topmost_on_active_workspace()` helper instead, avoiding a second,
+  separate bug where unlocking could've focused a toplevel on a hidden
+  workspace). (2) Xwayland override-redirect surfaces (X11
+  popups/menus/tooltips, `desktop/xwayland_shell.cpp`'s `BiomeUnmanaged`) are
+  a completely separate path with no `BiomeToplevel` at all, invisible to
+  fix (1) - and its map handler unconditionally raised to top *and grabbed
+  keyboard focus* with no lock check whatsoever, a worse gap than what the
+  user actually observed. Fixed by disabling the surface's scene node
+  outright (not just skipping the raise) when `session_locked`, which also
+  skips the focus grab. xdg-shell popups were checked and don't have this
+  problem - `wlr_scene_xdg_surface_create()` parents them under their
+  parent's own existing content_tree node, not the scene root, so they're
+  transitively hidden whenever their parent toplevel is. Full clean
+  incremental rebuild, zero warnings. Still needs a retest by the user to
+  confirm the fix.
+
+  **Research + small polish, same day:** user asked for a sanity check
+  against how other wlroots compositors actually implement this, worried the
+  approach above was "hacky." Compared against sway's real `sway/lock.c`
+  (fetched from `swaywm/sway` on GitHub - sway is the closer reference since
+  it's built on `wlr_scene` like Biome, unlike Hyprland which has its own
+  renderer) and the locally-checked-out Hyprland source
+  (`/home/nicholas/ForestProject/misc/Hyprland/src/{managers/SessionLockManager,protocols/SessionLock}.{cpp,hpp}`).
+  Conclusion: the core strategy (an opaque layer occluding everything else,
+  gated on a locked flag) matches both exactly - not a weird approach. Two
+  small, deliberate deviations, both fine, documented in a note added to
+  Phase 4 below regarding the real structural difference (no persistent
+  per-output layer stack yet). Borrowed one small polish from sway's own
+  precedent: `handle_lock_destroy` now tints every output's `lock_rect` red
+  (`kSessionLockAbandonedColor`, `desktop/session_lock.h`) when a lock is
+  abandoned (crashed without `unlock_and_destroy`) rather than staying the
+  same black as a normal in-progress lock, so a permanently-stuck-locked
+  screen is visually distinguishable - matches sway's own convention of
+  recoloring the background rect on `handle_abandon`. Reset back to black at
+  the start of every new lock (`handle_new_session_lock`), covering both a
+  replacement client recovering from a crash and the ordinary case (a
+  harmless no-op there). `output.cpp`'s original locally-scoped color
+  constant was promoted to `session_lock.h`'s new `kSessionLockColor` so
+  both files share the same literal instead of duplicating it. Full clean
+  incremental rebuild, zero warnings.
+
+  Deliberately out of scope this pass: restricting the session-lock global
+  to a privileged client (Biome has no client-allowlist mechanism anywhere
+  yet; the global is exposed unrestricted, same trust model as every other
+  global Biome currently exposes), cancelling an in-flight drag if a lock
+  starts mid-drag, and `idle-notify`/auto-lock-on-idle (still Phase 4 as
+  scoped below - this only makes a manually-triggered lock actually secure).
+  Full clean rebuild, zero warnings. **Not yet manually tested interactively
+  by the user** - per [[feedback-manual-interactive-testing]]; needs a lock
+  client to drive it (Forest doesn't have one yet, and no throwaway test
+  client was written this pass).
 
 **Phase 4 — Forest shell integration.**
 Layer-shell for panel + desktop (bundled with `xdg-output-unstable-v1`,
@@ -225,6 +331,29 @@ is where Forest's shell processes become Wayland-native instead of X11
 clients — effectively executing the `xcbutills` replacement that
 `wayland_AI_assessment.md` flagged as the biggest chunk of shell-side work,
 and the first phase where any `forest/` code itself gets modified.
+
+**Follow-up noted 2026-08-22, don't lose this:** when layer-shell lands
+here, build a real persistent per-output scene-layer stack (background /
+bottom / normal toplevels / top / overlay / session-lock, each a
+`wlr_scene_tree` created once at output-init in that fixed order - mirrors
+sway's own `sway_output::layers` in `include/sway/output.h` /
+`sway/tree/output.c`, and is the layer-shell protocol's own layer model
+anyway, so this isn't extra scope, it's building the thing layer-shell
+needs regardless). Once that exists, make `session_lock`'s tree the
+permanently-last layer instead of something raised at lock time - z-order
+becomes structural (nothing can ever be created above it, by construction)
+instead of a rule every content-creation site has to separately remember to
+respect. At that point, delete the `session_locked` checks added in Phase
+3.5's session-lock work: `update_toplevel_visibility()`
+(`desktop/workspace.cpp`), the override-redirect map handler
+(`desktop/xwayland_shell.cpp`), and `session_lock.cpp`'s two lock/unlock
+visibility sweeps - all of it becomes unnecessary once new content simply
+can't be inserted above the lock layer in the first place. Confirmed via
+research (see Phase 3.5's entry above) that the current runtime-check
+approach is exactly what caused a real bug this session (a newly-mapped
+window escaping the lock) - a structural layer stack is not just cleaner,
+it's the thing that would have made that bug impossible rather than merely
+fixed.
 
 **Phase 5 — Cutover.**
 New `forest-session` variant that execs Biome instead of `xfwm4`, a Wayland

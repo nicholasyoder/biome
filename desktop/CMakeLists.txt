@@ -17,6 +17,8 @@ add_library(biome_desktop STATIC
     xwayland_shell.cpp
     decoration_bridge.h
     decoration_bridge.cpp
+    session_lock.h
+    session_lock.cpp
 )
 
 add_dependencies(biome_desktop biome_wlroots_cxx_shim ${XDG_SHELL_PROTOCOL_HEADER_TARGET})

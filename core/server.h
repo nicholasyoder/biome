@@ -148,6 +148,33 @@ struct BiomeServer {
     wl_listener new_output = {};
     // Loaded once at startup by output_manager_init() - see output_config.h.
     std::unordered_map<std::string, OutputConfig> output_configs;
+
+    // ext-session-lock-v1 (desktop/session_lock.cpp). lock_tree is created
+    // once at startup and just enabled/raised on lock, disabled on unlock -
+    // same create-once-toggle-visibility pattern as switcher_buffer below.
+    // See that file's header comment for the security invariant this relies
+    // on: lock_tree must stay the topmost sibling of scene->tree for as long
+    // as session_locked is true.
+    wlr_session_lock_manager_v1 *session_lock_manager = nullptr;
+    wl_listener new_session_lock = {};
+    // Non-null only for the lifetime of the current lock's wl_resource -
+    // nulled by lock_destroy (fires for both a clean unlock_and_destroy and
+    // an abnormal client death). Deliberately a separate field from
+    // session_locked below: the reject-a-second-lock check in
+    // session_lock.cpp reads this one, not session_locked, so that a
+    // replacement client can take over locking after the original lock
+    // client crashes (session_locked stays true across that handoff).
+    wlr_session_lock_v1 *active_lock = nullptr;
+    wl_listener lock_new_surface = {};
+    wl_listener lock_unlock = {};
+    wl_listener lock_destroy = {};
+    // True from the instant a lock is accepted until a real `unlock` event
+    // fires (i.e. the client called unlock_and_destroy). Must NOT be reset
+    // by active_lock going null on an abnormal client death - per the
+    // ext-session-lock-v1 spec the compositor must not unlock the session in
+    // that case, so this is the one field that has to survive a crash.
+    bool session_locked = false;
+    wlr_scene_tree *lock_tree = nullptr;
 };
 
 struct BiomeOutput {
@@ -157,6 +184,26 @@ struct BiomeOutput {
     wl_listener frame = {};
     wl_listener request_state = {};
     wl_listener destroy = {};
+
+    // ext-session-lock-v1 (desktop/session_lock.cpp). Created unconditionally
+    // for every output, locked or not, so a monitor that appears while
+    // already locked is blanked from its very first frame with no special
+    // hotplug-during-lock handling. lock_tree is a child of
+    // BiomeServer::lock_tree, positioned at this output's layout coords;
+    // lock_rect is the opaque fallback/backstop layer, always the first
+    // (bottommost) child of lock_tree so a client's own lock surface (added
+    // later, as a sibling) renders on top of it.
+    wlr_scene_tree *lock_tree = nullptr;
+    wlr_scene_rect *lock_rect = nullptr;
+    // Non-null only while this output has a live client-provided lock
+    // surface - needed by output_request_state() to re-configure it if the
+    // output's resolution changes mid-lock (e.g. a nested dev backend's host
+    // window resizing). Owned by wlroots; the owning BiomeLockSurface
+    // wrapper (session_lock.cpp) clears this on the surface's own destroy.
+    wlr_session_lock_surface_v1 *lock_surface = nullptr;
+    // True from the start of a lock until this output has committed one
+    // frame since - see session_lock.cpp's locked-event timing.
+    bool pending_lock_frame = false;
 };
 
 struct BiomeKeyboard {

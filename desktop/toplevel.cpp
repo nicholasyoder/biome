@@ -89,6 +89,14 @@ void focus_toplevel(BiomeToplevel *toplevel, wlr_surface *surface) {
         return;
     }
     BiomeServer *server = toplevel->server;
+    // While the session is locked, no normal toplevel may be raised above
+    // (or take keyboard focus from) the lock surfaces - this is the one
+    // choke point both click-to-focus and auto-focus-on-map go through, so
+    // gating it here is what keeps server->lock_tree the topmost scene
+    // sibling for the whole lock (see desktop/session_lock.h).
+    if (server->session_locked) {
+        return;
+    }
     wlr_seat *seat = server->seat;
     wlr_surface *prev_surface = seat->keyboard_state.focused_surface;
     if (prev_surface == surface) {

@@ -3,7 +3,8 @@
 #include "desktop/workspace.h"
 
 void update_toplevel_visibility(BiomeToplevel *toplevel) {
-    bool visible = toplevel->workspace == toplevel->server->active_workspace && !toplevel->minimized;
+    bool visible = toplevel->workspace == toplevel->server->active_workspace &&
+        !toplevel->minimized && !toplevel->server->session_locked;
     wlr_scene_node_set_enabled(&toplevel->scene_tree->node, visible);
 }
 

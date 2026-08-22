@@ -14,6 +14,7 @@
 #include "decoration/theme.h"
 #include "desktop/app_icon.h"
 #include "desktop/decoration_bridge.h"
+#include "desktop/session_lock.h"
 #include "desktop/xdg_shell.h"
 #include "desktop/xwayland_shell.h"
 
@@ -99,6 +100,7 @@ int main(int argc, char *argv[]) {
     wlr_primary_selection_v1_device_manager_create(server.display);
 
     output_manager_init(&server);
+    session_lock_init(&server);
     decoration_bridge_init(&server);
     xdg_shell_init(&server);
     cursor_init(&server);
