@@ -1,9 +1,11 @@
 # Biome Development Plan
 
 Biome is a Wayland compositor, built on wlroots, that replaces xfwm4 as the
-window manager/compositor underneath the Forest desktop shell. It is
-purpose-built for Forest — no goal of being a generic, independently
-configurable compositor like sway/river.
+window manager/compositor underneath the Forest desktop shell. It is an
+opinionated, fixed-policy compositor — no goal of being a generic,
+user-configurable compositor like sway/river — but as of 2026-08-22 it is a
+deliberate goal that Biome and Forest stay decoupled at the interface level
+rather than hard-wired to each other. See "Decoupling goal" below.
 
 This plan was written 2026-08-13, before any code existed in this repo.
 
@@ -63,6 +65,44 @@ the distro Forest already packages for), not the upstream-latest 0.20.
 Revisit this if Trixie's packaged version moves or if a needed protocol
 isn't in 0.18.
 
+## Decoupling goal (decided 2026-08-22)
+
+Revisited whether Biome should be hard-wired to Forest specifically.
+Decision: keep them decoupled at the interface level, even though Biome
+remains an opinionated, single-policy compositor — that's a separate axis
+from Forest-coupling and isn't changing; Biome isn't becoming sway/river-
+configurable. Two directions:
+
+- **Biome usable by another shell.** Achieved almost for free: most of the
+  protocol surface in the table below (`xdg-shell`, `wlr-layer-shell`,
+  `xdg-decoration`, `wlr-foreign-toplevel-management`, `wlr-screencopy`,
+  `ext-idle-notify`, `wlr-output-management`) is standard Wayland protocol —
+  any shell speaking it can use Biome regardless of what built it. Phase 3's
+  decoration theme (`decoration/theme/biome-dark.qss`) is already
+  self-contained and only modeled on Forest's look, not dependent on
+  Forest's installed theme files at runtime — this already met the goal by
+  accident before the goal was made explicit.
+- **Forest usable on another compositor.** Follows from Phase 4 targeting
+  the same standard protocols instead of Biome-specific escape hatches:
+  Forest's shell components become Wayland-native against generic
+  protocols, not against Biome internals, so any compositor implementing
+  the same protocols can host Forest.
+
+The one place real coupling would otherwise get baked in: **global
+hotkeys**, since Wayland has no grab protocol by design (see Open risks
+below). Decision: Biome implements the existing
+`org.freedesktop.portal.GlobalShortcuts` interface (the same one GNOME/KDE
+portals expose) instead of a bespoke schema, and Forest's Phase 4 hotkey
+client is written against that same portal interface rather than a
+Biome-specific one. Chosen for compatibility over the simpler alternative
+(a from-scratch `org.biome` schema): this gives Forest a shot at working
+against any other compositor that backs the same portal, and gives Biome a
+shot at being usable by any shell that already speaks it.
+
+Practical implication going forward: default to the standard
+protocol/interface for anything Phase 4 needs, and treat a Biome-specific
+or Forest-specific shortcut as something to justify, not the default.
+
 ## Repo layout
 
 ```
@@ -73,7 +113,9 @@ biome/
   core/            # event loop, backend/output/input setup, scene graph, seat
   desktop/         # xdg-shell + XWayland surface management, window state, focus
   decoration/      # Qt-based offscreen title bar / border renderer
-  ipc/             # DBus service (extends org.forest or new org.biome), hotkey grabbing
+  ipc/             # DBus service under org.biome (kept separate from org.forest —
+                   # see Decoupling goal), implements org.freedesktop.portal.GlobalShortcuts
+                   # for hotkeys, output-management wiring, etc.
   main.cpp
 ```
 
@@ -89,7 +131,7 @@ biome/
 | Screenshots | `wlr-screencopy-unstable-v1` (or `ext-image-copy-capture-v1`); PipeWire + `xdg-desktop-portal` ScreenCast is the alternative if portal-based capture is ever needed |
 | Session locker / screensaver | `ext-idle-notify-v1` |
 | Display settings (multi-monitor) | `wlr-output-management-unstable-v1` |
-| Global hotkeys (currently `qxtglobalshortcut`/`XGrabKey`) | No Wayland equivalent exists (by design) — Biome-native DBus API, since purpose-built |
+| Global hotkeys (currently `qxtglobalshortcut`/`XGrabKey`) | No Wayland equivalent exists (by design) — Biome implements `org.freedesktop.portal.GlobalShortcuts`; Forest's hotkey client targets that same portal interface rather than a Biome-specific one (see Decoupling goal) |
 | System tray | Already DBus/StatusNotifierItem-based — no change needed |
 | Cursor theme / numlock | Handled directly via wlroots' xcursor manager and keyboard state — no protocol needed |
 
@@ -322,8 +364,9 @@ the phase that does:
 **Phase 4 — Forest shell integration.**
 Layer-shell for panel + desktop (bundled with `xdg-output-unstable-v1`,
 since layer-shell clients commonly query it for per-output name/logical
-geometry), foreign-toplevel-management for the windowlist plugin, DBus
-hotkey service replacing `qxtglobalshortcut`, screencopy for screenshots,
+geometry), foreign-toplevel-management for the windowlist plugin, a DBus
+hotkey service implementing `org.freedesktop.portal.GlobalShortcuts`
+(replacing `qxtglobalshortcut` — see Decoupling goal), screencopy for screenshots,
 idle-notify for the session locker, and wiring the display settings app to
 `wlr-output-management-unstable-v1` (Biome-side protocol support for that
 still needs to land too, in Phase 3 or here, whichever comes first). This
@@ -364,8 +407,13 @@ is solid, then eventually deprecated.
 
 - **Global hotkeys need a real rewrite, not a port.** Wayland has no
   global-hotkey grab primitive by design (security model), so
-  `services/services-app/hotkeys` can't be mechanically translated. Worth
-  prototyping early in Phase 4 since it touches both Biome and Forest.
+  `services/services-app/hotkeys` can't be mechanically translated. Decided
+  2026-08-22 (see Decoupling goal) to implement this as
+  `org.freedesktop.portal.GlobalShortcuts` rather than a bespoke schema, for
+  compatibility with other compositors/shells — worth prototyping early in
+  Phase 4 since it touches both Biome and Forest and the portal's exact
+  semantics (binding registration, conflict handling) aren't yet validated
+  against Biome's architecture.
 - **Greeter/session integration** (LightDM Wayland session support, a new
   `.desktop` session entry) is Phase 5 infra work, not a blocker for early
   development, but should be scoped before Phase 5 starts.
