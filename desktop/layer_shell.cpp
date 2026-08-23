@@ -192,6 +192,25 @@ static void handle_layer_surface_new_popup(wl_listener *listener, void *data) {
     // this signal. Its commit/destroy listeners are already wired; this
     // just supplies the scene node they were missing.
     xdg_popup->base->data = wlr_scene_xdg_surface_create(wrapper->scene_layer_surface->tree, xdg_popup->base);
+
+    // Constrain the popup to its output so a client-requested anchor near
+    // the screen edge (e.g. a panel launcher a few pixels from the corner)
+    // gets slid back on-screen instead of hanging off it - without this,
+    // the positioner's own constraint_adjustment (slide_x/slide_y, which
+    // every client here requests by default) has no box to slide within
+    // and is silently a no-op. The box must be expressed relative to the
+    // popup's parent surface's own top-left, per
+    // wlr_xdg_popup_unconstrain_from_box()'s contract - for a layer-shell
+    // surface that's wherever arrange_layers() last placed it within the
+    // output, which scene_layer_surface->tree->node.x/y already holds,
+    // since that tree is a direct child of the output's own
+    // layout-position-relative layer tree (see core/output.cpp).
+    wlr_box full_area = {};
+    wlr_output_effective_resolution(wrapper->output->wlr, &full_area.width, &full_area.height);
+    wlr_box unconstrain_box = full_area;
+    unconstrain_box.x = -wrapper->scene_layer_surface->tree->node.x;
+    unconstrain_box.y = -wrapper->scene_layer_surface->tree->node.y;
+    wlr_xdg_popup_unconstrain_from_box(xdg_popup, &unconstrain_box);
 }
 
 static void handle_new_layer_surface(wl_listener *listener, void *data) {

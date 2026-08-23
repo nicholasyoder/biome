@@ -297,7 +297,7 @@ static void xdg_popup_destroy(wl_listener *listener, void *data) {
 }
 
 static void server_new_xdg_popup(wl_listener *listener, void *data) {
-    (void)listener;
+    BiomeServer *server = wl_container_of(listener, server, new_xdg_popup);
     auto *xdg_popup = static_cast<wlr_xdg_popup *>(data);
 
     auto *popup = static_cast<BiomePopup *>(calloc(1, sizeof(BiomePopup)));
@@ -320,6 +320,30 @@ static void server_new_xdg_popup(wl_listener *listener, void *data) {
         assert(parent != nullptr);
         auto *parent_tree = static_cast<wlr_scene_tree *>(parent->data);
         xdg_popup->base->data = wlr_scene_xdg_surface_create(parent_tree, xdg_popup->base);
+
+        // Constrain to whichever output the parent surface is actually on,
+        // so an anchor near the screen edge gets slid back on-screen instead
+        // of hanging off it (mirrors desktop/layer_shell.cpp's identical fix
+        // for layer-shell-owned popups - see that file for why this call is
+        // necessary at all: without it, the positioner's own
+        // constraint_adjustment has no box to slide within and is a no-op).
+        // wlr_scene_node_coords() walks the scene tree for the parent's
+        // absolute position regardless of whether it's a toplevel or (for a
+        // nested popup-on-popup) another popup, so this works uniformly
+        // rather than assuming a specific parent shape.
+        int parent_lx = 0, parent_ly = 0;
+        wlr_scene_node_coords(&parent_tree->node, &parent_lx, &parent_ly);
+        wlr_output *wlr_output = wlr_output_layout_output_at(server->output_layout, parent_lx, parent_ly);
+        if (wlr_output != nullptr) {
+            wlr_box output_box = {};
+            wlr_output_layout_get_box(server->output_layout, wlr_output, &output_box);
+            if (!wlr_box_empty(&output_box)) {
+                wlr_box unconstrain_box = output_box;
+                unconstrain_box.x -= parent_lx;
+                unconstrain_box.y -= parent_ly;
+                wlr_xdg_popup_unconstrain_from_box(xdg_popup, &unconstrain_box);
+            }
+        }
     }
 
     popup->commit.notify = xdg_popup_commit;
