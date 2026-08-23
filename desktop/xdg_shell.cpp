@@ -290,10 +290,93 @@ static void xdg_popup_destroy(wl_listener *listener, void *data) {
     (void)data;
     BiomePopup *popup = wl_container_of(listener, popup, destroy);
 
+    wl_list_remove(&popup->map.link);
+    wl_list_remove(&popup->unmap.link);
     wl_list_remove(&popup->commit.link);
     wl_list_remove(&popup->destroy.link);
 
     free(popup);
+}
+
+// A client that calls xdg_popup.grab (every toolkit menu/combo box does, to
+// get outside-click dismissal) installs its own wlr_seat_keyboard_grab the
+// moment it makes that request - before this popup even maps. That grab's
+// own .enter callback is a deliberate no-op ("keyboard focus should remain
+// on the popup" - wlroots' types/xdg_shell/wlr_xdg_popup.c), so routing
+// through the grab-aware wlr_seat_keyboard_notify_enter() would be silently
+// swallowed and the popup would never actually receive keyboard focus - focus
+// would stay wherever it already was, exactly the bug this fixes. The plain
+// wlr_seat_keyboard_enter() bypasses grab dispatch entirely, which is what's
+// needed to actually grant the focus the grab intends to pin in place; for a
+// popup that never requested a grab this is a no-op-equivalent to the
+// notify_* variant, since the default grab's own .enter just calls this same
+// function - so it's safe to use unconditionally here.
+static void xdg_popup_map(wl_listener *listener, void *data) {
+    (void)data;
+    BiomePopup *popup = wl_container_of(listener, popup, map);
+    BiomeServer *server = popup->server;
+
+    // Matches desktop/layer_shell.cpp's identical guard on its own map-time
+    // focus grant: while locked, only the lock surfaces may hold keyboard
+    // focus.
+    if (server->session_locked) {
+        return;
+    }
+
+    wlr_seat *seat = server->seat;
+    wlr_keyboard *keyboard = wlr_seat_get_keyboard(seat);
+    wlr_seat_keyboard_enter(seat, popup->xdg_popup->base->surface,
+        keyboard ? keyboard->keycodes : nullptr, keyboard ? keyboard->num_keycodes : 0,
+        keyboard ? &keyboard->modifiers : nullptr);
+}
+
+static void xdg_popup_unmap(wl_listener *listener, void *data) {
+    (void)data;
+    BiomePopup *popup = wl_container_of(listener, popup, unmap);
+    BiomeServer *server = popup->server;
+    wlr_seat *seat = server->seat;
+    if (seat->keyboard_state.focused_surface != popup->xdg_popup->base->surface) {
+        return;
+    }
+
+    // Hand focus back to whatever this popup was anchored on: its xdg_popup
+    // parent, if that resolves to a live BiomeToplevel (routed through
+    // focus_toplevel so its raise/activate bookkeeping stays right), or
+    // otherwise the bare parent surface itself - a layer surface (e.g. the
+    // panel) or an enclosing popup in a submenu chain, neither of which is a
+    // BiomeToplevel. Falls back to the topmost toplevel, same as
+    // desktop/layer_shell.cpp's own unmap handler, if the parent is already
+    // gone.
+    wlr_surface *parent = popup->xdg_popup->parent;
+    BiomeToplevel *parent_toplevel = nullptr;
+    if (parent != nullptr) {
+        wlr_xdg_toplevel *parent_xdg = wlr_xdg_toplevel_try_from_wlr_surface(parent);
+        if (parent_xdg != nullptr) {
+            parent_toplevel = toplevel_from_xdg(parent_xdg);
+        } else {
+            wlr_xwayland_surface *parent_xwayland = wlr_xwayland_surface_try_from_wlr_surface(parent);
+            if (parent_xwayland != nullptr) {
+                parent_toplevel = toplevel_from_xwayland(parent_xwayland);
+            }
+        }
+    }
+    if (parent_toplevel != nullptr) {
+        focus_toplevel(parent_toplevel, parent);
+        return;
+    }
+    if (parent != nullptr) {
+        wlr_keyboard *keyboard = wlr_seat_get_keyboard(seat);
+        wlr_seat_keyboard_enter(seat, parent,
+            keyboard ? keyboard->keycodes : nullptr, keyboard ? keyboard->num_keycodes : 0,
+            keyboard ? &keyboard->modifiers : nullptr);
+        return;
+    }
+    if (!wl_list_empty(&server->toplevels)) {
+        BiomeToplevel *top = wl_container_of(server->toplevels.next, top, link);
+        focus_toplevel(top, toplevel_surface(top));
+    } else {
+        wlr_seat_keyboard_notify_clear_focus(seat);
+    }
 }
 
 static void server_new_xdg_popup(wl_listener *listener, void *data) {
@@ -302,6 +385,7 @@ static void server_new_xdg_popup(wl_listener *listener, void *data) {
 
     auto *popup = static_cast<BiomePopup *>(calloc(1, sizeof(BiomePopup)));
     popup->xdg_popup = xdg_popup;
+    popup->server = server;
 
     // Adding a popup to the scene graph needs its parent scene node, which
     // is why every xdg_surface's user data is set to its scene node. A
@@ -345,6 +429,12 @@ static void server_new_xdg_popup(wl_listener *listener, void *data) {
             }
         }
     }
+
+    popup->map.notify = xdg_popup_map;
+    wl_signal_add(&xdg_popup->base->surface->events.map, &popup->map);
+
+    popup->unmap.notify = xdg_popup_unmap;
+    wl_signal_add(&xdg_popup->base->surface->events.unmap, &popup->unmap);
 
     popup->commit.notify = xdg_popup_commit;
     wl_signal_add(&xdg_popup->base->surface->events.commit, &popup->commit);

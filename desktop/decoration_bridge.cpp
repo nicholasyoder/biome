@@ -198,7 +198,7 @@ biome_decoration::SwitcherEntry switcher_entry_for(BiomeToplevel *pos) {
 } // namespace
 
 void update_switcher_overlay(BiomeServer *server) {
-    if (!server->switcher_active || wl_list_length(&server->toplevels) < 2) {
+    if (!server->switcher_active || wl_list_empty(&server->toplevels)) {
         if (server->switcher_buffer != nullptr) {
             wlr_scene_node_set_enabled(&server->switcher_buffer->node, false);
         }

@@ -102,8 +102,12 @@ static bool handle_keybinding(BiomeServer *server, xkb_keysym_t sym, uint32_t mo
     case XKB_KEY_Tab:
     case XKB_KEY_ISO_Left_Tab: {
         // Alt-Tab / Alt-Shift-Tab: cycle through windows in MRU order, no
-        // live preview (matches xfwm4's cycle_preview=false default).
-        if (wl_list_length(&server->toplevels) < 2) {
+        // live preview (matches xfwm4's cycle_preview=false default). Still
+        // runs with a single window - that's what lets Alt-Tab reclaim
+        // keyboard focus from a layer-shell surface (e.g. the panel) back to
+        // the one open window; focus_toplevel() below no-ops if that window
+        // already has focus.
+        if (wl_list_empty(&server->toplevels)) {
             return true;
         }
         bool reverse = shift || sym == XKB_KEY_ISO_Left_Tab;

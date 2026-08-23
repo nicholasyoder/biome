@@ -161,6 +161,9 @@ struct BiomeUnmanaged {
 
 struct BiomePopup {
     wlr_xdg_popup *xdg_popup = nullptr;
+    BiomeServer *server = nullptr;
+    wl_listener map = {};
+    wl_listener unmap = {};
     wl_listener commit = {};
     wl_listener destroy = {};
 };

@@ -333,17 +333,34 @@ void server_cursor_button(wl_listener *listener, void *data) {
         wlr_surface *surface = nullptr;
         BiomeToplevel *toplevel = desktop_toplevel_at(server,
             server->cursor->x, server->cursor->y, &surface, &sx, &sy);
-        if (toplevel == nullptr && surface != nullptr && server->session_locked) {
-            // A click on a session-lock surface (e.g. a different monitor's
-            // password prompt) - not a BiomeToplevel, so focus_toplevel()
-            // doesn't apply. Guarded on session_locked so this can't change
-            // today's behavior for the other case that hits this same
-            // null-toplevel/non-null-surface shape (an override-redirect
-            // Xwayland popup).
-            wlr_keyboard *keyboard = wlr_seat_get_keyboard(server->seat);
-            if (keyboard != nullptr) {
-                wlr_seat_keyboard_notify_enter(server->seat, surface,
-                    keyboard->keycodes, keyboard->num_keycodes, &keyboard->modifiers);
+        if (toplevel == nullptr && surface != nullptr) {
+            // A click on a surface with no BiomeToplevel of its own -
+            // a layer-shell surface (e.g. the panel), an xdg_popup (e.g. one
+            // of its menus), or a session-lock surface (a different
+            // monitor's password prompt) - none of which focus_toplevel()
+            // below applies to. Excluded outside session lock: an
+            // override-redirect Xwayland surface (positions/dismisses
+            // itself; clicking one is not expected to steal focus, matching
+            // its X11 click-through behavior), identified by being
+            // Xwayland-backed - a *managed* Xwayland toplevel would already
+            // have resolved via desktop_toplevel_at above, so reaching here
+            // with one means it's unmanaged.
+            bool unmanaged_xwayland = wlr_xwayland_surface_try_from_wlr_surface(surface) != nullptr;
+            if (!unmanaged_xwayland || server->session_locked) {
+                // The plain (non-notify_*) enter bypasses any active seat
+                // keyboard grab - needed so this reliably wins even when
+                // `surface` is an xdg_popup that requested xdg_popup.grab,
+                // whose own keyboard grab makes wlr_seat_keyboard_notify_enter()
+                // a deliberate no-op (see desktop/xdg_shell.cpp's
+                // xdg_popup_map for the full explanation). Equivalent to the
+                // notify_* variant whenever no such grab is active, which
+                // covers every other case reaching here (the panel, a lock
+                // surface).
+                wlr_keyboard *keyboard = wlr_seat_get_keyboard(server->seat);
+                wlr_seat_keyboard_enter(server->seat, surface,
+                    keyboard ? keyboard->keycodes : nullptr,
+                    keyboard ? keyboard->num_keycodes : 0,
+                    keyboard ? &keyboard->modifiers : nullptr);
             }
         }
         focus_toplevel(toplevel, surface);
