@@ -21,6 +21,8 @@ add_library(biome_desktop STATIC
     session_lock.cpp
     layer_shell.h
     layer_shell.cpp
+    foreign_toplevel.h
+    foreign_toplevel.cpp
 )
 
 add_dependencies(biome_desktop biome_wlroots_cxx_shim

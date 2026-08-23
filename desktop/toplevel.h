@@ -17,6 +17,8 @@ namespace biome_decoration {
 class DecorationFrame;
 }
 
+struct BiomeForeignToplevel;
+
 enum class BiomeToplevelType {
     Xdg,
     Xwayland,
@@ -88,6 +90,11 @@ struct BiomeToplevel {
     // re-resolution if app_id/WM_CLASS changes after map.
     biome_decoration::IconImage icon;
     bool icon_resolved = false;
+
+    // wlr-foreign-toplevel-management-unstable-v1 (desktop/foreign_toplevel.h) -
+    // created in toplevel_map, destroyed in toplevel_unmap. Null between
+    // those (or if the manager global failed to create).
+    BiomeForeignToplevel *foreign_toplevel = nullptr;
 
     wlr_xdg_toplevel *xdg_toplevel = nullptr;         // type == Xdg
     wlr_xwayland_surface *xwayland_surface = nullptr; // type == Xwayland

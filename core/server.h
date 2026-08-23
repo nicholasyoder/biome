@@ -75,6 +75,12 @@ struct BiomeServer {
     wl_listener new_xdg_popup = {};
     wl_list toplevels = {};
 
+    // wlr-foreign-toplevel-management-unstable-v1 (desktop/foreign_toplevel.cpp).
+    // Exposes server->toplevels to external clients (taskbars) for listing
+    // and basic control. No per-manager state beyond the global itself -
+    // every BiomeForeignToplevel handle lives on its owning BiomeToplevel.
+    wlr_foreign_toplevel_manager_v1 *foreign_toplevel_manager = nullptr;
+
     // wlr-layer-shell-unstable-v1 (desktop/layer_shell.cpp). Holds every
     // live BiomeLayerSurface across all outputs - arrange_layers() filters
     // this by output+layer rather than each BiomeOutput keeping its own

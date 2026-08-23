@@ -150,7 +150,9 @@ can run at all) - both now unblocked.
   is assigned via the same API.
 
 ### B — `wlr-foreign-toplevel-management-unstable-v1` for windowlist
-**Status:** `[ ]` not started. **Depends on:** A.
+**Status:** `[~]` in progress. **Depends on:** A (done). Biome-side manager +
+per-toplevel handle landed and clean-builds (see session log); Forest-side
+work (replacing `KX11Extras`/`Xcbutills::*`) not started.
 
 - Current (X11): `panel/panel-plugins/windowlist/windowlist.cpp` uses KDE's
   `KX11Extras` (KWindowSystem) signals — `windowAdded`/`windowRemoved`/
@@ -169,11 +171,15 @@ can run at all) - both now unblocked.
   the window is actually mapped/visible (design question, not yet decided).
 - Target (Wayland): `wlr-foreign-toplevel-management-unstable-v1` maps
   cleanly onto KX11Extras' add/remove/changed signals and the
-  activate/maximize/minimize/close/set-workspace actions. Check
-  `ext-foreign-toplevel-list-v1` availability/preference on wlroots 0.18 per
-  `docs/plan.md`'s existing table note.
-- Biome-side work: implement the manager global + per-toplevel handle,
-  wired to the existing `BiomeToplevel` list.
+  activate/maximize/minimize/close actions (**not** set-workspace — see
+  session log, no protocol here or in `ext-foreign-toplevel-list-v1` covers
+  that; it's Workstream D's territory if anything's ever exposed there at
+  all). Resolved the `ext-foreign-toplevel-list-v1` check `docs/plan.md`
+  flagged: it's list-only (title/app_id/identifier), no control requests at
+  all, so it can't replace `wlr-foreign-toplevel-management-unstable-v1`
+  here — see session log for the full comparison.
+- Biome-side work: `[x]` done — manager global + per-toplevel handle, wired
+  to the existing `BiomeToplevel` list. See session log.
 - Forest-side work: replace `KX11Extras` usage with a
   `QWaylandClientExtensionTemplate`-based listener generated via
   `qt_generate_wayland_protocol_client_sources()` against the standard
@@ -182,6 +188,20 @@ can run at all) - both now unblocked.
   documented generator, not hand-rolled `wl_proxy` code); replace every
   `Xcbutills::*` call in `windowbutton.cpp` with the protocol's request
   methods; decide the thumbnail fallback.
+- **Later, optional:** also implement `ext-foreign-toplevel-list-v1`
+  (identification-only companion global) for compatibility with any client
+  that speaks the newer "standard" protocol instead of the wlr-specific
+  one — nothing currently needs this (Forest binds the wlr protocol above;
+  Waybar's own `wlr/taskbar` module used for this workstream's manual
+  testing does too). Genuinely cheap when it's wanted: its API
+  (`wlr_ext_foreign_toplevel_list_v1_create`/
+  `wlr_ext_foreign_toplevel_handle_v1_create`/`update_state`/`destroy`,
+  confirmed present in the installed `wlroots-0.18.2` headers) is a strict
+  subset of what `desktop/foreign_toplevel.cpp` already does - no request
+  listeners to wire at all, just title/app_id/a generated stable
+  `identifier` string, reusing the exact same `toplevel_map`/
+  `toplevel_unmap`/`set_title` hook points already in place. Not scheduled;
+  add it if a concrete client that needs it ever comes up.
 
 ### C — Global hotkeys via `org.freedesktop.portal.GlobalShortcuts`
 **Status:** `[ ]` not started. **Independent** of A — can be built and
@@ -685,3 +705,80 @@ what to pick up next time.)*
   smooth with `desktop-app` enabled and the panel reserving space.
   Workstream A (both sides) is now fully done and manually verified,
   including the first-ever bare-metal multi-monitor pass.
+
+- **2026-08-23 — Workstream B's Biome-side foundation landed (planned via a
+  full EnterPlanMode cycle scoping just the Biome-side protocol work, no
+  `forest/` changes yet - mirrors how Workstream A actually sequenced
+  itself).** First resolved the open protocol-choice question from
+  `docs/plan.md`'s table: compared `ext-foreign-toplevel-list-v1` (staging,
+  present on this system) against `wlr-foreign-toplevel-management-unstable-v1`
+  by reading both XMLs directly - the `ext` one is identification-only
+  (`title`/`app_id`/`identifier`/`closed`, no requests besides `stop`), while
+  `wlr-foreign-toplevel-management-unstable-v1` has the
+  `set_maximized`/`set_minimized`/`activate`/`close` requests
+  `windowbutton.cpp`'s context menu actually needs, and is confirmed present
+  in the installed `wlroots-0.18.2` headers. Decision: implement only the
+  `wlr` one. Also found neither protocol has a "move to workspace" concept
+  at all - `windowbutton.cpp`'s "Move to desktop" submenu has no home in
+  this workstream regardless of protocol choice; it's Workstream D's
+  territory if it ever gets exposed anywhere.
+
+  New `desktop/foreign_toplevel.{h,cpp}` (added to `biome_desktop` in
+  `desktop/CMakeLists.txt`), same per-object-wrapper shape as
+  `desktop/session_lock.{h,cpp}`: `foreign_toplevel_init()` creates the
+  `wlr_foreign_toplevel_manager_v1` global (`core/main.cpp`, alongside
+  `session_lock_init`/`layer_shell_init`); a `BiomeForeignToplevel` wrapper
+  (private to the .cpp) holds the handle and its five request listeners, and
+  is created/destroyed directly from the existing shared
+  `toplevel_map`/`toplevel_unmap` (`desktop/toplevel.cpp`) - no new
+  lifecycle to design, since map/unmap already bracket exactly the window's
+  visible-to-external-tools lifetime. `BiomeToplevel` gained one new field
+  (`foreign_toplevel`, `desktop/toplevel.h`) to hold the wrapper pointer.
+
+  Deliberately no new state cached anywhere: title/app_id are read live off
+  `xdg_toplevel`/`xwayland_surface` (from the existing `set_title` listeners
+  in `xdg_shell.cpp`/`xwayland_shell.cpp`, which already fire on change) and
+  maximized/minimized/activated are pushed from `BiomeToplevel`'s own flags
+  by a new `foreign_toplevel_sync_state()` called from
+  `set_toplevel_maximized`/`set_toplevel_minimized`/`set_toplevel_focused`
+  (`desktop/toplevel.cpp`) - confirmed by reading
+  `wlr_foreign_toplevel_management_v1.c` that
+  `wlr_foreign_toplevel_handle_v1_set_maximized()` and friends already dedup
+  against the handle's current state internally, so no redundant-call
+  guarding was needed on Biome's side either. `set_fullscreen`/
+  `unset_fullscreen` requests are no-ops and the fullscreen state bit is
+  never set - Biome has no fullscreen support anywhere to map them onto
+  (`xdg_toplevel_request_fullscreen`/`xwayland_toplevel_request_fullscreen`
+  already unconditionally deny it).
+
+  One build error caught by the compiler, not planned for: the four
+  `wl_container_of`-based listener handlers initially used `auto *wrapper =
+  wl_container_of(listener, wrapper, ...)`, which GCC rejected ("use of
+  'wrapper' before deduction of 'auto'") - the macro's offsetof-style
+  expansion needs the variable's type already resolved, so `auto` can't
+  self-referentially deduce it the way it can for an ordinary initializer.
+  Fixed by spelling out `BiomeForeignToplevel *wrapper = wl_container_of(...)`
+  explicitly, matching the style `session_lock.cpp`'s equivalent line
+  already used (not previously understood as load-bearing, just apparently
+  a stylistic choice, until this).
+
+  `wlr_foreign_toplevel_management_v1.h` needed no protocol-XML vendoring or
+  wayland-scanner codegen at all, unlike layer-shell's - confirmed by
+  reading the installed header directly, it doesn't `#include` a generated
+  protocol header the way `wlr_layer_shell_v1.h` does, and has no C++-
+  reserved-keyword field names needing `cmake/BiomeWlrootsShim.cmake`
+  treatment either. Just one new `#include <wlr/types/wlr_foreign_toplevel_management_v1.h>`
+  in `core/wlroots.hpp`, alongside the existing wlr includes.
+
+  Full clean rebuild (`rm -rf build`, fresh configure + `cmake --build
+  -j$(nproc)`), zero warnings, zero errors. **Not yet manually tested** -
+  per [[feedback_manual_interactive_testing]], next step is adding
+  `"wlr/taskbar"` to `~/.config/waybar/config.jsonc` (Waybar ships a
+  `wlr/taskbar` module that speaks this exact protocol, already the dev-loop
+  verification tool from Workstream A) and confirming in the nested session:
+  buttons appear with correct titles, click activates/raises, and
+  maximize/minimize/close drive the same visible behavior as the existing
+  keyboard/decoration paths. Forest-side work (Qt client extension,
+  replacing `KX11Extras`/`Xcbutills::*` in `windowlist.cpp`/
+  `windowbutton.cpp`) and the thumbnail-fallback decision are both still
+  untouched, per this step's own scoping.

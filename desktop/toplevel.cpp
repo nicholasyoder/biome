@@ -6,6 +6,7 @@
 #include "core/output.h"
 #include "desktop/app_icon.h"
 #include "desktop/decoration_bridge.h"
+#include "desktop/foreign_toplevel.h"
 #include "desktop/workspace.h"
 
 #include <algorithm>
@@ -83,6 +84,7 @@ void set_toplevel_focused(BiomeToplevel *toplevel, bool focused) {
     }
     toplevel->focused = focused;
     render_toplevel_decoration(toplevel);
+    foreign_toplevel_sync_state(toplevel);
 }
 
 // Keyboard focus only (and, for Xwayland, the X11 stacking order with it).
@@ -319,6 +321,7 @@ void set_toplevel_maximized(BiomeToplevel *toplevel, bool maximized) {
         wlr_xwayland_surface_set_maximized(toplevel->xwayland_surface, maximized);
     }
     render_toplevel_decoration(toplevel);
+    foreign_toplevel_sync_state(toplevel);
 }
 
 void set_toplevel_minimized(BiomeToplevel *toplevel, bool minimized) {
@@ -327,6 +330,7 @@ void set_toplevel_minimized(BiomeToplevel *toplevel, bool minimized) {
     }
     toplevel->minimized = minimized;
     update_toplevel_visibility(toplevel);
+    foreign_toplevel_sync_state(toplevel);
 
     BiomeServer *server = toplevel->server;
     if (minimized) {
@@ -370,6 +374,7 @@ void toplevel_map(wl_listener *listener, void *data) {
     place_new_toplevel(toplevel);
     render_toplevel_decoration(toplevel);
     wl_list_insert(&toplevel->server->toplevels, &toplevel->link);
+    foreign_toplevel_create(toplevel);
     focus_toplevel(toplevel, toplevel_surface(toplevel));
 }
 
@@ -384,6 +389,7 @@ void toplevel_unmap(wl_listener *listener, void *data) {
 
     bool was_focused = server->seat->keyboard_state.focused_surface == toplevel_surface(toplevel);
 
+    foreign_toplevel_destroy(toplevel);
     wl_list_remove(&toplevel->link);
 
     if (was_focused) {

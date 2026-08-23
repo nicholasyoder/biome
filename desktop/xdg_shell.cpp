@@ -5,6 +5,7 @@
 #include "core/cursor.h"
 #include "core/input.h"
 #include "desktop/decoration_bridge.h"
+#include "desktop/foreign_toplevel.h"
 #include "desktop/toplevel.h"
 
 #include <cassert>
@@ -147,6 +148,7 @@ static void xdg_toplevel_set_title(wl_listener *listener, void *data) {
     (void)data;
     BiomeToplevel *toplevel = wl_container_of(listener, toplevel, set_title);
     render_toplevel_decoration(toplevel);
+    foreign_toplevel_update_title_app_id(toplevel);
 }
 
 static void xdg_toplevel_destroy(wl_listener *listener, void *data) {

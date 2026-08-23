@@ -14,6 +14,7 @@
 #include "decoration/theme.h"
 #include "desktop/app_icon.h"
 #include "desktop/decoration_bridge.h"
+#include "desktop/foreign_toplevel.h"
 #include "desktop/layer_shell.h"
 #include "desktop/session_lock.h"
 #include "desktop/xdg_shell.h"
@@ -103,6 +104,7 @@ int main(int argc, char *argv[]) {
     output_manager_init(&server);
     session_lock_init(&server);
     layer_shell_init(&server);
+    foreign_toplevel_init(&server);
     decoration_bridge_init(&server);
     xdg_shell_init(&server);
     cursor_init(&server);
