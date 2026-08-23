@@ -2,6 +2,7 @@
 
 #include "desktop/session_lock.h"
 
+#include "core/output.h"
 #include "desktop/workspace.h"
 
 // Per-BiomeOutput wlr_session_lock_surface_v1 wrapper - not exposed outside
@@ -58,14 +59,7 @@ static void handle_lock_new_surface(wl_listener *listener, void *data) {
     BiomeServer *server = wl_container_of(listener, server, lock_new_surface);
     auto *lock_surface = static_cast<wlr_session_lock_surface_v1 *>(data);
 
-    BiomeOutput *output = nullptr;
-    BiomeOutput *candidate;
-    wl_list_for_each(candidate, &server->outputs, link) {
-        if (candidate->wlr == lock_surface->output) {
-            output = candidate;
-            break;
-        }
-    }
+    BiomeOutput *output = biome_output_from_wlr(server, lock_surface->output);
     if (output == nullptr) {
         // wlroots already validated the wl_output resource before emitting
         // this signal - shouldn't happen, but nothing sane to do if our own

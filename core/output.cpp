@@ -10,6 +10,16 @@
 
 static void server_new_output(wl_listener *listener, void *data);
 
+BiomeOutput *biome_output_from_wlr(BiomeServer *server, wlr_output *wlr_output) {
+    BiomeOutput *candidate;
+    wl_list_for_each(candidate, &server->outputs, link) {
+        if (candidate->wlr == wlr_output) {
+            return candidate;
+        }
+    }
+    return nullptr;
+}
+
 void output_manager_init(BiomeServer *server) {
     server->output_layout = wlr_output_layout_create(server->display);
 

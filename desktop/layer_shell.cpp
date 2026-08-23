@@ -2,6 +2,7 @@
 
 #include "desktop/layer_shell.h"
 
+#include "core/output.h"
 #include "desktop/toplevel.h"
 
 // Per-wlr_layer_surface_v1 bookkeeping - not exposed outside this file.
@@ -162,13 +163,7 @@ static void handle_new_layer_surface(wl_listener *listener, void *data) {
 
     BiomeOutput *output = nullptr;
     if (layer_surface->output != nullptr) {
-        BiomeOutput *candidate;
-        wl_list_for_each(candidate, &server->outputs, link) {
-            if (candidate->wlr == layer_surface->output) {
-                output = candidate;
-                break;
-            }
-        }
+        output = biome_output_from_wlr(server, layer_surface->output);
     } else if (!wl_list_empty(&server->outputs)) {
         // Per wlr_layer_shell_v1's own doc comment: the output may be null,
         // in which case it's the compositor's responsibility to assign one

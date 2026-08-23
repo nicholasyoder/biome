@@ -3,10 +3,12 @@
 #include "desktop/toplevel.h"
 
 #include "core/cursor.h"
+#include "core/output.h"
 #include "desktop/app_icon.h"
 #include "desktop/decoration_bridge.h"
 #include "desktop/workspace.h"
 
+#include <algorithm>
 #include <xcb/xproto.h>
 
 wlr_surface *toplevel_surface(BiomeToplevel *toplevel) {
@@ -140,6 +142,32 @@ void focus_toplevel(BiomeToplevel *toplevel, wlr_surface *surface) {
     }
 }
 
+// Global-coordinate box a window should stay within on this output -
+// wlr_output's usable_area (desktop/layer_shell.cpp's arrange_layers(),
+// shrunk by any exclusive-zone layer surface) translated from its
+// output-local coordinates into the same global layout space
+// wlr_output_layout_get_box() itself uses, since that's what every caller
+// here already works in. Falls back to the full output box if wlr_output
+// can't be resolved to a BiomeOutput, or if usable_area is degenerate
+// (e.g. a pathological exclusive-zone claim consuming the whole output) -
+// never returns something that would make a window disappear entirely.
+static wlr_box output_target_box(BiomeServer *server, wlr_output *wlr_output) {
+    wlr_box box = {};
+    wlr_output_layout_get_box(server->output_layout, wlr_output, &box);
+    if (wlr_box_empty(&box)) {
+        return box;
+    }
+    BiomeOutput *output = biome_output_from_wlr(server, wlr_output);
+    if (output == nullptr) {
+        return box;
+    }
+    wlr_box usable = output->usable_area;
+    if (usable.width <= 0 || usable.height <= 0) {
+        return box;
+    }
+    return wlr_box{box.x + usable.x, box.y + usable.y, usable.width, usable.height};
+}
+
 void place_new_toplevel(BiomeToplevel *toplevel) {
     BiomeServer *server = toplevel->server;
 
@@ -178,6 +206,20 @@ void place_new_toplevel(BiomeToplevel *toplevel) {
         vis_x = layout_box.x + (layout_box.width - width) / 2 + cascade;
         vis_y = layout_box.y + (layout_box.height - height) / 2 + cascade;
         toplevel->workspace = server->active_workspace;
+
+        // Clamp away from whichever single output's reserved (exclusive-zone)
+        // edge this cascade position landed on or under - doesn't change the
+        // cascade algorithm itself (still centered in the whole multi-output
+        // layout box above), just keeps the result from starting a window
+        // partly behind a panel.
+        wlr_output *wlr_output = wlr_output_layout_output_at(server->output_layout, vis_x, vis_y);
+        if (wlr_output != nullptr) {
+            wlr_box target = output_target_box(server, wlr_output);
+            if (!wlr_box_empty(&target)) {
+                vis_x = std::clamp(vis_x, target.x, std::max(target.x, target.x + target.width - width));
+                vis_y = std::clamp(vis_y, target.y, std::max(target.y, target.y + target.height - height));
+            }
+        }
     }
 
     // A freshly placed toplevel is never already maximized.
@@ -198,17 +240,18 @@ static wlr_box maximize_target_box(BiomeToplevel *toplevel) {
     double vis_y = toplevel->scene_tree->node.y + decoration_titlebar_height(toplevel, toplevel->maximized);
 
     wlr_output *output = wlr_output_layout_output_at(server->output_layout, vis_x, vis_y);
-    wlr_box box = {};
-    wlr_output_layout_get_box(server->output_layout, output, &box);
+    wlr_box box = output_target_box(server, output);
     if (wlr_box_empty(&box)) {
         return box;
     }
 
-    // box is the whole output - inset it by the decorated frame's border/
-    // titlebar so this returns the content area a maximized window should
-    // fill (toplevel_set_size()/set_toplevel_maximized() add the border/
-    // titlebar back to get the outer frame position). Left as the raw
-    // output box, the frame would end up larger than the monitor.
+    // box is the space a maximized window should fill - the whole output,
+    // shrunk by any exclusive-zone layer surface's reservation (see
+    // output_target_box()) - inset further by the decorated frame's
+    // border/titlebar so this returns the *content* area
+    // (toplevel_set_size()/set_toplevel_maximized() add the border/
+    // titlebar back to get the outer frame position). Left uninset, the
+    // frame would end up larger than the box it's meant to fill.
     //
     // Unlike vis_x/vis_y above, this hardcodes the *maximized* metrics
     // (true, not toplevel->maximized) - a theme can size a maximized

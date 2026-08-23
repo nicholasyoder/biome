@@ -106,9 +106,11 @@ and manually confirmed working (2026-08-22): `swaybg` (background layer),
 `waybar` (exclusive-zone bar, correctly structurally on top of windows once
 its own config sets `layer: top` - see session log), layer-shell popups
 (Waybar's power-menu/clock-tooltip), and a `swaylock` re-test all passed.
-Forest-side work (linking `layer-shell-qt`, replacing the XCB strut/window-
-type calls below) not started; `usable_area` → toplevel placement/maximize
-wiring (see session log) also still open. **Blocks:** B, D (windowlist and
+`usable_area` is now wired into toplevel placement/maximize
+(`desktop/toplevel.cpp`, see session log) - built clean and manually
+confirmed working. Forest-side work (linking `layer-shell-qt`, replacing
+the XCB strut/window-type calls below) is the only piece of this
+workstream still not started. **Blocks:** B, D (windowlist and
 deskswitch are panel plugins — the panel process itself must be a Wayland
 client before either can run at all).
 
@@ -429,3 +431,35 @@ what to pick up next time.)*
   still blocking as expected under the new structural stack. Workstream A's
   Biome-side foundation is now verified end-to-end for everything in this
   step's scope.
+
+- **`usable_area` wired into toplevel placement/maximize, same day
+  (built clean, not yet manually tested).** Planned via a full
+  EnterPlanMode cycle plus one AskUserQuestion (scope: fix both maximize
+  *and* new-window cascade placement, not maximize alone - user picked
+  both, since it's the same underlying gap and cheap once the lookup
+  helper exists). `desktop/toplevel.cpp`'s `maximize_target_box()` and
+  `place_new_toplevel()`'s no-parent cascade branch both previously sized/
+  positioned against the raw output box, ignoring any panel's exclusive
+  zone. New static `output_target_box()` (`desktop/toplevel.cpp`) converts
+  `BiomeOutput::usable_area` (output-local, as `arrange_layers()` needs it
+  for `wlr_scene_layer_surface_v1_configure()`) into the same global
+  layout coordinates `wlr_output_layout_get_box()` already uses, with a
+  fallback to the full output box if the output can't be resolved or
+  `usable_area` is degenerate. `maximize_target_box()` now fills that box
+  instead of the raw output; `place_new_toplevel()`'s cascade math is
+  unchanged but its result is now clamped into it. Also extracted
+  `biome_output_from_wlr()` (`core/output.h`/`.cpp`) - the "find the
+  `BiomeOutput*` for a `wlr_output*`" linear scan was already hand-
+  duplicated in `desktop/session_lock.cpp` and `desktop/layer_shell.cpp`;
+  this step's third need for it was the point past which naming it was
+  worth doing, so both existing call sites were switched over too (no
+  behavior change). Deliberately left out of scope: live re-flow of an
+  already-maximized window if a panel's exclusive zone changes at runtime
+  (rare, non-trivial, flagged for later if needed), and redesigning
+  `place_new_toplevel()`'s existing multi-monitor whole-layout-box cascade
+  algorithm itself (a separate, pre-existing rough edge). Full clean
+  rebuild (`rm -rf build`, fresh configure+build), zero warnings, zero
+  errors. **Manually confirmed working, same day:** user tested with
+  Waybar (`layer: top`) - new windows no longer cascade in under the bar,
+  maximize now fills the space below it, and un-maximize restore geometry
+  is unaffected.
