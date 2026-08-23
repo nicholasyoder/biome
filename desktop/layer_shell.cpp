@@ -69,10 +69,37 @@ void arrange_layers(BiomeOutput *output) {
     output->usable_area = usable_area;
 }
 
+// Layout-relevant state only - a plain content commit (a client just
+// repainting, e.g. every frame a wallpaper or panel widget redraws) leaves
+// all of these bits clear and must not retrigger arrange_layers().
+static constexpr uint32_t kLayoutRelevantState =
+    WLR_LAYER_SURFACE_V1_STATE_DESIRED_SIZE | WLR_LAYER_SURFACE_V1_STATE_ANCHOR |
+    WLR_LAYER_SURFACE_V1_STATE_EXCLUSIVE_ZONE | WLR_LAYER_SURFACE_V1_STATE_MARGIN |
+    WLR_LAYER_SURFACE_V1_STATE_LAYER;
+
 static void handle_layer_surface_commit(wl_listener *listener, void *data) {
     (void)data;
     BiomeLayerSurface *wrapper = wl_container_of(listener, wrapper, commit);
     wlr_layer_surface_v1 *layer_surface = wrapper->layer_surface;
+
+    // wlr_layer_surface_v1_configure() (called from arrange_layers() below,
+    // via wlr_scene_layer_surface_v1_configure()) always sends a fresh
+    // configure with a new serial, even when the box it computes is
+    // byte-for-byte identical to the last one - wlroots does no such
+    // deduplication itself. Combined with calling arrange_layers()
+    // unconditionally on every commit, that made *any* commit from *any*
+    // layer surface on an output reconfigure every layer surface on it,
+    // which the client then acks and recommits in response - a
+    // self-sustaining reconfigure/recommit loop across every layer surface
+    // on the output, all day, paced only by buffer-release/vsync timing
+    // (so it stayed cheap on CPU while still starving other event-loop work,
+    // like pointer motion, on Biome's single thread - found the hard way via
+    // a WAYLAND_DEBUG trace during Workstream A's Forest-side bring-up,
+    // see biome/docs/phase4-plan.md). Only actually re-arrange when
+    // something layout-relevant changed.
+    if (!(layer_surface->current.committed & kLayoutRelevantState)) {
+        return;
+    }
 
     if (layer_surface->current.committed & WLR_LAYER_SURFACE_V1_STATE_LAYER) {
         // The client asked to move to a different layer - the scene node
@@ -92,6 +119,16 @@ static void handle_layer_surface_map(wl_listener *listener, void *data) {
     (void)data;
     BiomeLayerSurface *wrapper = wl_container_of(listener, wrapper, map);
     wlr_layer_surface_v1 *layer_surface = wrapper->layer_surface;
+
+    // wlr_scene_layer_surface_v1_configure() only applies a positive
+    // exclusive_zone to usable_area once the surface is actually mapped (see
+    // layer_surface_exclusive_zone() in wlroots' own scene/layer_shell_v1.c),
+    // so an exclusive-zone-reserving surface needs one arrange_layers() pass
+    // right at the map transition to make sure that reservation actually
+    // takes effect promptly - handle_layer_surface_commit() above is now
+    // gated on layout-relevant committed state and won't reliably re-arrange
+    // on its own right at this exact point.
+    arrange_layers(wrapper->output);
 
     // While locked, the lock surface holds keyboard focus (desktop/
     // session_lock.cpp) and nothing else may take it - matches the same

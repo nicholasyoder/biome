@@ -101,7 +101,11 @@ rather than discovering the answer mid-workstream.
 ## Workstreams
 
 ### A — Layer-shell for panel & desktop (+ xdg-output)
-**Status:** `[~]` in progress — Biome-side foundation built, clean-compiled,
+**Status:** `[x]` done, fully manually confirmed on both sides, including a
+bare-metal multi-monitor pass (the first for either side of this
+workstream) that caught and fixed a real Biome-side layer-shell
+reconfigure-storm bug (see session log's last entry). Biome-side
+foundation built, clean-compiled,
 and manually confirmed working (2026-08-22): `swaybg` (background layer),
 `waybar` (exclusive-zone bar, correctly structurally on top of windows once
 its own config sets `layer: top` - see session log), layer-shell popups
@@ -109,10 +113,11 @@ its own config sets `layer: top` - see session log), layer-shell popups
 `usable_area` is now wired into toplevel placement/maximize
 (`desktop/toplevel.cpp`, see session log) - built clean and manually
 confirmed working. Forest-side work (linking `layer-shell-qt`, replacing
-the XCB strut/window-type calls below) is the only piece of this
-workstream still not started. **Blocks:** B, D (windowlist and
-deskswitch are panel plugins — the panel process itself must be a Wayland
-client before either can run at all).
+the XCB strut/window-type calls below) also landed same day (see session
+log) - full clean rebuild of the whole `forest` tree passed, zero errors,
+no new warnings. **Blocks:** B, D (windowlist and deskswitch are panel
+plugins — the panel process itself must be a Wayland client before either
+can run at all) - both now unblocked.
 
 - Current (X11): `panel/panel-app/panel.cpp` sets
   `Qt::WA_X11NetWmWindowTypeDock` (Qt-abstracted EWMH hint); actual strut
@@ -261,13 +266,13 @@ Workstream A.
 
 ## Suggested sequencing
 
-All three cross-cutting decisions are now resolved — Workstream A can
-start.
+Workstream A is done (both sides landed, pending the user's manual retest of
+the Forest half). B and D are now unblocked.
 
-1. **A** (layer-shell) — foundational, unblocks B and D.
-2. **C** (hotkeys/portal) — independent, run in parallel with A.
-3. **B** (windowlist/foreign-toplevel) and **D** (workspaces) — after A;
-   D is gated on its own protocol decision, so may slip behind B.
+1. ~~**A** (layer-shell) — foundational, unblocks B and D.~~ done.
+2. **C** (hotkeys/portal) — independent, can run any time, not started yet.
+3. **B** (windowlist/foreign-toplevel) and **D** (workspaces) — unblocked by
+   A; D is gated on its own protocol decision, so may slip behind B.
 
 ## Open questions log
 
@@ -463,3 +468,220 @@ what to pick up next time.)*
   Waybar (`layer: top`) - new windows no longer cascade in under the bar,
   maximize now fills the space below it, and un-maximize restore geometry
   is unaffected.
+
+- **Workstream A's Forest-side landed, same day (planned via a full
+  EnterPlanMode cycle, then implemented directly in `forest/`).** Installed
+  `liblayershellqtinterface-dev` (Trixie package `liblayershellqtinterface6`
+  was already present at runtime, dev headers were not); confirmed it's a
+  plain CMake config package (`find_package(LayerShellQt REQUIRED)`, target
+  `LayerShellQt::Interface`, no `.pc` file - the plan's guess of
+  `pkg_check_modules` was wrong, corrected during implementation) and that
+  `LayerShellQt::Window` has no `setSize()` - sizing stays ordinary Qt
+  widget sizing, LayerShellQt only ever controls anchors/exclusive-zone/
+  layer/keyboard-interactivity/scope/screen. Also found the vendored header
+  doesn't call `Q_DECLARE_OPERATORS_FOR_FLAGS` for `Anchors`, so
+  `Anchor | Anchor` decays to a plain `int` - every anchor combination needed
+  an explicit `LayerShellQt::Window::Anchors(...)` functional-style cast to
+  compile, not the bare `|` chain the plan assumed.
+
+  Added `find_package(LayerShellQt REQUIRED)` (top `CMakeLists.txt`) and a
+  `forest_link_layershellqt(target)` helper (`cmake/ForestDeps.cmake`),
+  linked into `forest`, `panel-app`, and `desktop-app`; added
+  `liblayershellqtinterface-dev` to `debian/control`'s `Build-Depends`.
+  `forest/forest/main.cpp` calls `LayerShellQt::Shell::useLayerShell()`
+  right after constructing `QApplication`, before `forest::setup()` creates
+  any window - required since `panel-app`/`desktop-app` are
+  `QPluginLoader`-loaded into this same process, not separate ones, so one
+  process-wide call covers both. No `platformName()` guard, per
+  [[feedback_no_runtime_platform_branching]].
+
+  `GeometryManager` (`panel/panel-app/geometrymanager.{h,cpp}`) - the one
+  shared code path for both the real panel and the 1px `HiddenPanel`
+  autohide strip - now caches a `LayerShellQt::Window*` (forcing
+  `panel_widget->winId()` in the constructor so `windowHandle()` is valid),
+  sets `LayerTop` + `KeyboardInteractivityOnDemand` once, and
+  `update_geometry()` replaces the old `move()` + `Xcbutills::setPartialStrut()`
+  calls with `setAnchors()` (top/bottom, both left+right) and
+  `setExclusiveZone(reserve_screen_space ? fixed_panel_size : 0)` - one line
+  now covers what used to be two separate `setPartialStrut()` branches.
+  `panel.cpp`/`hiddenpanel.cpp` had their `WA_X11NetWmWindowTypeDock`
+  attribute deleted outright (meaningless once a real layer-shell surface is
+  driving the role).
+
+  `desktop/desktop-app/wallpaperwidget.cpp` follows the same pattern
+  directly (only one caller): `LayerBackground` layer, anchored to all four
+  edges, `setExclusiveZone(0)`, `KeyboardInteractivityNone`. Per-output
+  placement needed a real design decision the plan had flagged as
+  unprecedented in this codebase: `desktop.cpp`'s old X11-style absolute
+  `setGeometry(screen->geometry())` positioning doesn't carry over, since
+  `LayerShellQt::Window`'s default `ScreenConfiguration::ScreenFromQWindow`
+  reads `QWindow::screen()`, not window position. Resolved by calling
+  `wallwidget->windowHandle()->setScreen(screen)` in `desktop.cpp`'s
+  existing per-`QScreen` loop (`loadwallpaperwidgets()`) right where the old
+  `setGeometry()` call was - confirmed via Qt's own docs that `setScreen()`
+  is safe to call after the platform window already exists (it recreates the
+  window on the new screen), so no ordering hazard versus the constructor's
+  forced `winId()`.
+
+  `Xcbutills::setPartialStrut()` (`library/xcbutills/xcbutills.{h,cpp}`) -
+  confirmed via a full-tree grep it had exactly one caller
+  (`geometrymanager.cpp`) - was deleted outright once that caller was gone,
+  taking the `wayland`-branch `if (!conn) return;` stopgap guard with it:
+  the "replaced, not just reverted" resolution `WAYLAND-TESTING-NOTES.md`
+  already called for. That file's own scaffolding-item entry was updated to
+  reflect this landing. Left untouched, per the plan's stated scope:
+  `services/services-app/notifications/notifypopup.cpp`'s own (likely
+  pre-existing, unrelated copy-paste bug) `WA_X11NetWmWindowTypeDesktop`
+  attribute; the three `"Forest-wayland"` `QSettings` scaffolding overrides
+  (still needed until B/C/D land); and `geometrymanager.cpp`'s pre-existing
+  primary-screen-only limitation (panel still doesn't support true
+  multi-monitor placement).
+
+  Full clean rebuild of the entire `forest` tree (`rm -rf build`, fresh
+  configure + `cmake --build -j$(nproc)`), zero errors, no new warnings -
+  every target built including the not-yet-ported `windowlist`/`deskswitch`/
+  hotkey code (untouched by this workstream, still X11-only, still builds
+  fine since B/C/D haven't started). **Not yet manually tested interactively
+  by the user** - per [[feedback_manual_interactive_testing]]; needs a real
+  nested-Biome session with the panel showing/reserving space, autohide
+  toggled, and a multi-monitor wallpaper check.
+
+- **Follow-up fix, same day - user's first bare-metal multi-monitor test
+  found a resize feedback loop.** Wallpaper and panel placement/exclusive-
+  zone both looked correct, but cursor movement was severely jerky the
+  whole time `forest` ran. Root cause: `GeometryManager::update_geometry()`
+  (`panel/panel-app/geometrymanager.cpp`) ran reactively off `pframe`'s own
+  `resized` signal (`panel::update_panel_size()`, a pre-existing "hacky way
+  to make the panel size change when the theme changes" mechanism) as well
+  as output-change signals, and on every call re-requested
+  `panel_widget->setFixedSize(qApp->primaryScreen()->geometry().width(), ...)`.
+  Since the panel is anchored to both left and right edges, Biome's
+  `arrange_layers()`/`wlr_scene_layer_surface_v1_configure()`
+  (`desktop/layer_shell.cpp`) unconditionally overrides that dimension to
+  the actual output's width regardless of what the client requests - and on
+  this machine, nothing pins the panel's `QWindow` to a specific `QScreen`
+  (unlike `wallpaperwidget`, which does), so it landed on a different output
+  than `qApp->primaryScreen()`. Every compositor-driven resize back to the
+  correct width retriggered `pframe`'s `resized` signal, which
+  re-requested the *wrong* (primary-screen) width again, which the
+  compositor corrected again, forever - an infinite configure/commit
+  ping-pong between `forest` and `biome`, both serialized on Biome's
+  single-threaded event loop, starving input processing badly enough to
+  make cursor motion itself stutter. Only reachable when the panel's actual
+  output differs in width from `qApp->primaryScreen()`, which is why
+  nothing caught it in the single-output nested dev loop.
+
+  Fix: stopped requesting a width in `update_geometry()` at all -
+  `panel_widget->setFixedHeight(fixed_panel_size)` only, anchors/exclusive-
+  zone otherwise unchanged. This is what the original plan actually called
+  for ("leave width to the compositor") before implementation quietly
+  regressed it back to an X11-style explicit width once `LayerShellQt::Window`
+  turned out to have no `setSize()` API - the fix removes the guessed width
+  outright rather than reintroducing it, since the double-anchored dimension
+  was always going to be compositor-controlled regardless. Clean incremental
+  rebuild of `panel-app`, zero errors.
+
+  **Re-tested by the user, same day: cursor still jerky.** The panel fix
+  above was real but not the cause. User bisected by toggling
+  `desktop-app`'s `enabled` key off in `~/.config/Forest-wayland/Forest.conf`
+  (per `WAYLAND-TESTING-NOTES.md`'s existing convention for disabling app
+  plugins) - confirmed Biome alone (no `forest`) was already smooth on this
+  bare-metal multi-monitor rig, and that disabling *just* `desktop-app`
+  (wallpaper) fixed the jerk with `panel-app` still running - narrowing it
+  to `wallpaperwidget.cpp` specifically, not the panel.
+
+  Root cause, found by reading wlroots' own
+  `types/scene/layer_shell_v1.c`, `wlr_scene_layer_surface_v1_configure()`
+  (local checkout: `/home/nicholas/Misc/wlroots`, not the docs-only
+  `misc/wlroots` in this project - the latter has no `.c` sources):
+  `exclusive_zone == -1` sizes the surface against `full_area`;
+  *any other value, including `0`*, sizes it against `usable_area` (already
+  shrunk by higher-priority layers' own exclusive-zone claims - `arrange_layers()`
+  processes overlay/top/bottom/background in that priority order). The
+  plan's `wallpaperwidget.cpp` implementation set `setExclusiveZone(0)`,
+  reasoning "the background doesn't claim space" - true, but `0` *also*
+  means "and respect everyone else's claims", so with the panel reserving
+  space (autohide off, the default the user was testing), Biome computed
+  the background layer's box against a `usable_area` shorter than the full
+  output - while `desktop.cpp` separately forces
+  `wallwidget->setFixedSize(screen->size())`, the *un*-shrunk full height.
+  That's a standing mismatch between what the compositor configures and
+  what the client insists on, and since `handle_layer_surface_commit()`
+  (`desktop/layer_shell.cpp`) reruns `arrange_layers()` on *every* commit
+  from *any* layer surface on the output (not gated on whether anything
+  relevant actually changed), this drove continuous reconfigure/recommit
+  churn on Biome's single-threaded event loop - the actual mechanism behind
+  the jerk, and also, independently, a real (if visually-masked-by-the-
+  panel) under-coverage bug: the wallpaper wasn't actually extending behind
+  the panel's reserved strip.
+
+  Confirmed against the vendored protocol XML itself
+  (`biome/protocol/wlr-layer-shell-unstable-v1.xml`,
+  `set_exclusive_zone`'s doc comment): "*a wallpaper or lock screen might
+  set their exclusive zone to -1*" - the documented idiom, and how `swaybg`
+  itself behaves. Fixed by changing `setExclusiveZone(0)` to
+  `setExclusiveZone(-1)` in `wallpaperwidget.cpp`. Clean incremental
+  rebuild of `desktop-app`, zero errors.
+
+  **Re-tested by the user, same day: still just as jerky, and it's not
+  Forest-side.** User confirmed the actual `biome` compositor process
+  itself, not just `forest`, was affected: cursor was jerky even hovering
+  over *other windows* covering the wallpaper, not just the bare desktop.
+  CPU readings were the real clue and initially looked backwards -
+  `biome`/`forest` both showed *lower* CPU with `desktop-app` enabled
+  (jerky) than disabled (smooth) - low CPU while visibly stuttering means
+  stalled/blocked, not busy-computing, which ruled out every "expensive
+  per-event processing" theory tried so far. Confirmed definitively via a
+  `WAYLAND_DEBUG=1 forest 2>log` capture: `wl_pointer.motion` delivery
+  paused for ~20-45ms stretches, each pause coinciding with a burst where
+  *every* mapped layer-shell surface (`#40`/`#48`/`#46`/`#43` - two
+  wallpapers, the panel, and a fourth 1920x1080 surface) cycled through
+  `wl_buffer.release()` -> `zwlr_layer_surface_v1.configure()` ->
+  `ack_configure()` -> `offset`/`attach`/`damage_buffer`/`commit`, on
+  repeat, forever - and the configured size was *identical* on every
+  cycle (`#40.configure(1216, 1920, 1080)`, then `#40.configure(1222,
+  1920, 1080)`, ...), only the serial changing.
+
+  Root cause, this time genuinely in Biome, confirmed by reading
+  wlroots' own source directly rather than assumed:
+  `wlr_layer_surface_v1_configure()` (`/home/nicholas/Misc/wlroots/types/wlr_layer_shell_v1.c:316` -
+  the actual `.c` sources live only in the separate `~/Misc/wlroots`
+  checkout; the `misc/wlroots` inside this project has headers only) is
+  **unconditional** - it always allocates a new configure entry and always
+  sends `zwlr_layer_surface_v1.configure` with a fresh serial, with no
+  check for whether the box it was just given differs from the last one.
+  wlroots leaves that dedup entirely up to the compositor. `handle_layer_surface_commit()`
+  (`desktop/layer_shell.cpp`) called `arrange_layers()`
+  unconditionally on *every* commit from *any* layer surface on the output
+  - so any surface's ordinary content-only commit (a client just
+  repainting) reconfigured every layer surface on that output, even ones
+  whose box hadn't changed at all; each of those, receiving a configure,
+  acks and recommits (standard client behavior, regardless of whether the
+  size actually differs); that recommit retriggers `arrange_layers()`
+  again; forever. A self-sustaining reconfigure/recommit storm across
+  every layer surface on the output, naturally paced by buffer-
+  release/vsync timing rather than a tight busy-loop - which is exactly
+  why it stayed cheap on CPU while still monopolizing enough of Biome's
+  single-threaded event loop, every ~20-40ms, to visibly starve pointer-
+  motion delivery. Present in principle with the panel alone too (same
+  unconditional call site), just small enough - one 1920x36 surface
+  reconfiguring itself - to be imperceptible; adding the wallpaper's
+  full-screen surfaces (and, per the trace, a fourth 1920x1080 surface -
+  the second monitor's own wallpaper) to the same storm made it glaring.
+
+  Fixed by gating `handle_layer_surface_commit()`'s call to
+  `arrange_layers()` on `wlr_layer_surface_v1_state::committed` actually
+  containing a layout-relevant bit (`DESIRED_SIZE`/`ANCHOR`/
+  `EXCLUSIVE_ZONE`/`MARGIN`/`LAYER`) - a plain content commit now leaves
+  every layer surface on the output untouched. Added one narrow safety net
+  alongside it: `handle_layer_surface_map()` now calls `arrange_layers()`
+  once at the map transition, since `wlr_scene_layer_surface_v1_configure()`
+  only applies a positive `exclusive_zone` to `usable_area` once
+  `layer_surface->surface->mapped` is true (confirmed in the same wlroots
+  source read), and the newly-gated commit handler can no longer be relied
+  on to reliably catch that exact transition on its own. Full clean
+  incremental rebuild of `biome`, zero errors, zero warnings. **Confirmed
+  fixed by the user** on the same bare-metal multi-monitor rig - cursor is
+  smooth with `desktop-app` enabled and the panel reserving space.
+  Workstream A (both sides) is now fully done and manually verified,
+  including the first-ever bare-metal multi-monitor pass.
