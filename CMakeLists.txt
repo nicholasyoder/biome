@@ -22,6 +22,17 @@ pkg_check_modules(XKBCOMMON REQUIRED IMPORTED_TARGET xkbcommon)
 biome_generate_protocol_header(XDG_SHELL_PROTOCOL_HEADER XDG_SHELL_PROTOCOL_HEADER_TARGET
     "${WAYLAND_PROTOCOLS_DATADIR}/stable/xdg-shell/xdg-shell.xml")
 
+# wlr-layer-shell-unstable-v1 isn't part of the wayland-protocols package
+# (unlike xdg-shell above) - it originates in wlroots' own protocol/ dir and
+# isn't installed by the wlroots-0.18-dev package either, so a copy is
+# vendored here instead of assuming a system path for it. wlr/types/
+# wlr_layer_shell_v1.h itself #includes the generated
+# "wlr-layer-shell-unstable-v1-protocol.h" by name, so this only needs
+# generating and putting on the include path (BIOME_PROTOCOL_DIR, below) -
+# nothing in Biome's own code includes it directly.
+biome_generate_protocol_header(LAYER_SHELL_PROTOCOL_HEADER LAYER_SHELL_PROTOCOL_HEADER_TARGET
+    "${CMAKE_SOURCE_DIR}/protocol/wlr-layer-shell-unstable-v1.xml")
+
 add_subdirectory(decoration)
 add_subdirectory(desktop)
 add_subdirectory(core)

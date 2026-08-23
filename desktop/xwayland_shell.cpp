@@ -149,29 +149,30 @@ static void unmanaged_associate(wl_listener *listener, void *data) {
     BiomeUnmanaged *surface = wl_container_of(listener, surface, associate);
     wlr_xwayland_surface *xsurface = surface->xwayland_surface;
 
+    // Parented under layers.toplevels (not scene->tree directly) so it's
+    // structurally below layers.session_lock like every other toplevel-ish
+    // piece of content - see BiomeServer::layers' doc comment in server.h.
+    // An override-redirect surface (X11 popup/menu/tooltip) has no
+    // BiomeToplevel, so update_toplevel_visibility()'s per-toplevel
+    // visibility logic never runs for it; this reparenting is what covers
+    // it instead, with no runtime session_locked check needed here anymore.
     surface->scene_tree =
-        wlr_scene_subsurface_tree_create(&surface->server->scene->tree, xsurface->surface);
+        wlr_scene_subsurface_tree_create(surface->server->layers.toplevels, xsurface->surface);
     wlr_scene_node_set_position(&surface->scene_tree->node, xsurface->x, xsurface->y);
 
     surface->map.notify = [](wl_listener *l, void *d) {
         (void)d;
         BiomeUnmanaged *s = wl_container_of(l, s, map);
-        if (s->server->session_locked) {
-            // An override-redirect surface (X11 popup/menu/tooltip) has no
-            // BiomeToplevel, so it's invisible to
-            // update_toplevel_visibility()'s session_locked check - and its
-            // scene_tree was freshly created in unmanaged_associate() above,
-            // so it would otherwise render as the new topmost sibling
-            // regardless of server->lock_tree having been raised earlier.
-            // Disable it outright rather than just skipping the raise below
-            // - this also skips the unconditional keyboard-focus grab a few
-            // lines down, which would otherwise steal focus from the lock
-            // surface with no lock check at all.
-            wlr_scene_node_set_enabled(&s->scene_tree->node, false);
-            return;
-        }
+        // raise_to_top only reorders siblings within layers.toplevels (its
+        // scene_tree's parent - see unmanaged_associate above), so unlike
+        // before this reparenting, it can no longer put this surface above
+        // layers.session_lock regardless of lock state - no check needed
+        // for that anymore. Keyboard focus is a separate, seat-level
+        // concern structural z-order doesn't touch, though: while locked,
+        // the lock surface holds focus (desktop/session_lock.cpp) and
+        // nothing else may take it, so that grab still needs its own check.
         wlr_scene_node_raise_to_top(&s->scene_tree->node);
-        if (wlr_xwayland_or_surface_wants_focus(s->xwayland_surface)) {
+        if (!s->server->session_locked && wlr_xwayland_or_surface_wants_focus(s->xwayland_surface)) {
             wlr_seat *seat = s->server->seat;
             wlr_keyboard *keyboard = wlr_seat_get_keyboard(seat);
             wlr_seat_keyboard_notify_enter(seat, s->xwayland_surface->surface,
@@ -256,7 +257,7 @@ static void server_new_xwayland_surface(wl_listener *listener, void *data) {
     // scene_tree is created up front (unlike content_tree, which comes and
     // goes with associate/dissociate) so the decoration survives
     // re-association.
-    toplevel->scene_tree = wlr_scene_tree_create(&server->scene->tree);
+    toplevel->scene_tree = wlr_scene_tree_create(server->layers.toplevels);
     toplevel->scene_tree->node.data = toplevel;
     create_toplevel_decoration(toplevel);
 

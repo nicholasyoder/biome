@@ -3,8 +3,18 @@
 #include "desktop/workspace.h"
 
 void update_toplevel_visibility(BiomeToplevel *toplevel) {
-    bool visible = toplevel->workspace == toplevel->server->active_workspace &&
-        !toplevel->minimized && !toplevel->server->session_locked;
+    // No session_locked check here (Phase 3.5 added one; removed now that
+    // Workstream A's real per-output layer stack exists - see
+    // BiomeServer::layers' doc comment in server.h). toplevel->scene_tree is
+    // always a child of server->layers.toplevels, which is structurally
+    // below server->layers.session_lock for every toplevel that will ever
+    // exist, not just the ones that existed when a lock began - so while
+    // locked, layers.session_lock's opaque per-output rect (desktop/
+    // session_lock.cpp) already covers every toplevel for both rendering
+    // and hit-testing (desktop_toplevel_at/decoration_toplevel_at stop at
+    // the first node they hit, topmost first) with no need to separately
+    // disable this node too.
+    bool visible = toplevel->workspace == toplevel->server->active_workspace && !toplevel->minimized;
     wlr_scene_node_set_enabled(&toplevel->scene_tree->node, visible);
 }
 

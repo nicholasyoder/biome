@@ -2,7 +2,6 @@
 
 #include "desktop/session_lock.h"
 
-#include "desktop/toplevel.h"
 #include "desktop/workspace.h"
 
 // Per-BiomeOutput wlr_session_lock_surface_v1 wrapper - not exposed outside
@@ -96,18 +95,13 @@ static void handle_lock_unlock(wl_listener *listener, void *data) {
     (void)data;
     BiomeServer *server = wl_container_of(listener, server, lock_unlock);
     server->session_locked = false;
-    wlr_scene_node_set_enabled(&server->lock_tree->node, false);
+    wlr_scene_node_set_enabled(&server->layers.session_lock->node, false);
 
-    // Restore each toplevel's normal (workspace/minimized-driven) visibility
-    // - update_toplevel_visibility() only just started respecting
-    // session_locked, so every toplevel that was forcibly hidden above needs
-    // its enabled bit re-derived now that the lock is gone, not just
-    // re-enabled unconditionally (a toplevel on an inactive workspace must
-    // stay hidden).
-    BiomeToplevel *toplevel;
-    wl_list_for_each(toplevel, &server->toplevels, link) {
-        update_toplevel_visibility(toplevel);
-    }
+    // No toplevel visibility sweep needed here (Phase 3.5 had one, to undo
+    // update_toplevel_visibility()'s now-removed session_locked clause -
+    // see workspace.cpp): a toplevel's enabled bit was never touched by
+    // locking in the first place under the current structural layer stack,
+    // so there's nothing to restore.
 
     // Restores focus to the MRU-front toplevel that's actually visible on
     // the active workspace (not just MRU-front overall - the same
@@ -170,8 +164,11 @@ static void handle_new_session_lock(wl_listener *listener, void *data) {
     wlr_seat_keyboard_notify_clear_focus(server->seat);
     wlr_seat_pointer_notify_clear_focus(server->seat);
 
-    wlr_scene_node_set_enabled(&server->lock_tree->node, true);
-    wlr_scene_node_raise_to_top(&server->lock_tree->node);
+    // No raise_to_top needed: server->layers.session_lock is structurally
+    // the last of BiomeServer::layers' six fixed trees (core/layers.cpp),
+    // so it's already the topmost sibling of scene->tree the moment it's
+    // enabled - see server.h's doc comment on BiomeServer::layers.
+    wlr_scene_node_set_enabled(&server->layers.session_lock->node, true);
 
     // Every lock starts from a clean, normally-colored rect - undoes the red
     // abandoned-lock tint (see handle_lock_destroy) if this is a replacement
@@ -183,20 +180,17 @@ static void handle_new_session_lock(wl_listener *listener, void *data) {
         }
     }
 
-    // Staying above lock_tree in z-order alone only protects content that
-    // already existed when the lock started - any scene node created after
-    // this point (e.g. a client mapping a brand new window while locked)
-    // gets appended as the new topmost sibling regardless of history, the
-    // same mechanism lock_tree itself just used to get on top. Explicitly
-    // disabling every toplevel's scene node (rather than relying on z-order)
-    // closes that gap: update_toplevel_visibility() now factors in
-    // session_locked, and place_new_toplevel() already calls it for every
-    // newly mapped window, so this just needs re-running for toplevels that
-    // were already visible before the lock began.
-    BiomeToplevel *toplevel;
-    wl_list_for_each(toplevel, &server->toplevels, link) {
-        update_toplevel_visibility(toplevel);
-    }
+    // No toplevel visibility sweep needed here either, for the same
+    // structural reason handle_lock_unlock's comment above gives: every
+    // toplevel's scene_tree is a child of the fixed server->layers.toplevels
+    // tree (server.h's BiomeServer::layers doc comment), which is
+    // structurally below server->layers.session_lock for the lifetime of
+    // the compositor - including for a toplevel mapped for the first time
+    // *while* locked, since place_new_toplevel() parents it there too, not
+    // as a fresh sibling of scene->tree. That's what closes the gap Phase
+    // 3.5's original ad-hoc single-raised-tree design had (a brand new
+    // scene node always becomes the newest topmost sibling of *its own*
+    // parent, which used to be scene->tree itself for every toplevel).
 
     BiomeOutput *output;
     wl_list_for_each(output, &server->outputs, link) {
@@ -207,9 +201,9 @@ static void handle_new_session_lock(wl_listener *listener, void *data) {
 }
 
 void session_lock_init(BiomeServer *server) {
-    server->lock_tree = wlr_scene_tree_create(&server->scene->tree);
-    wlr_scene_node_set_enabled(&server->lock_tree->node, false);
-
+    // server->layers.session_lock already exists (core/layers.cpp, called
+    // from output_manager_init before this runs) and starts disabled -
+    // nothing to create here.
     server->session_lock_manager = wlr_session_lock_manager_v1_create(server->display);
     server->new_session_lock.notify = handle_new_session_lock;
     wl_signal_add(&server->session_lock_manager->events.new_lock, &server->new_session_lock);

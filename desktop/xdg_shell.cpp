@@ -240,7 +240,7 @@ static void server_new_xdg_toplevel(wl_listener *listener, void *data) {
     // object the client may have created before this toplevel existed.
     claim_pending_kde_decoration(server, toplevel, xdg_toplevel->base->surface);
 
-    toplevel->scene_tree = wlr_scene_tree_create(&toplevel->server->scene->tree);
+    toplevel->scene_tree = wlr_scene_tree_create(toplevel->server->layers.toplevels);
     toplevel->scene_tree->node.data = toplevel;
     create_toplevel_decoration(toplevel);
 
@@ -304,11 +304,23 @@ static void server_new_xdg_popup(wl_listener *listener, void *data) {
     popup->xdg_popup = xdg_popup;
 
     // Adding a popup to the scene graph needs its parent scene node, which
-    // is why every xdg_surface's user data is set to its scene node.
-    wlr_xdg_surface *parent = wlr_xdg_surface_try_from_wlr_surface(xdg_popup->parent);
-    assert(parent != nullptr);
-    auto *parent_tree = static_cast<wlr_scene_tree *>(parent->data);
-    xdg_popup->base->data = wlr_scene_xdg_surface_create(parent_tree, xdg_popup->base);
+    // is why every xdg_surface's user data is set to its scene node. A
+    // layer-shell-owned popup is created with xdg_popup->parent still null
+    // here - the client gets a popup via the ordinary xdg_surface.get_popup
+    // request (parent-less, which xdg-shell itself allows specifically for
+    // this case) and only associates it with its layer surface afterward,
+    // via a separate zwlr_layer_surface_v1.get_popup request (confirmed
+    // from wlroots' own types/wlr_layer_shell_v1.c, not assumed). That
+    // second request is what fires wlr_layer_surface_v1::events.new_popup -
+    // desktop/layer_shell.cpp's handler creates the scene node once the
+    // parent is actually known; commit/destroy listeners are still wired
+    // unconditionally below since those don't need a parent scene tree yet.
+    if (xdg_popup->parent != nullptr) {
+        wlr_xdg_surface *parent = wlr_xdg_surface_try_from_wlr_surface(xdg_popup->parent);
+        assert(parent != nullptr);
+        auto *parent_tree = static_cast<wlr_scene_tree *>(parent->data);
+        xdg_popup->base->data = wlr_scene_xdg_surface_create(parent_tree, xdg_popup->base);
+    }
 
     popup->commit.notify = xdg_popup_commit;
     wl_signal_add(&xdg_popup->base->surface->events.commit, &popup->commit);

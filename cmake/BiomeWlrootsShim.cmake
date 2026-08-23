@@ -13,6 +13,13 @@
 #   so it can't be used as an identifier even inside `extern "C"` (that only
 #   affects linkage, not the parser). Renamed to `class_`; same offset,
 #   same ABI, just a different source-level name to access it by.
+# - wlr/types/wlr_layer_shell_v1.h has the identical problem: a
+#   `char *namespace;` struct field (the layer-shell "namespace" string) -
+#   `namespace` is likewise a reserved C++ keyword. Renamed to `namespace_`,
+#   same fix as above. (The generated protocol header this file itself
+#   #includes has the same collision from the wire protocol's own arg name -
+#   fixed at the source instead, by renaming that arg in Biome's vendored
+#   protocol/wlr-layer-shell-unstable-v1.xml.)
 #
 # This copies just the affected headers into the build dir with the fix
 # applied, and puts that directory ahead of the system one on the include
@@ -48,5 +55,7 @@ biome_patch_cxx_header("wlr/types/wlr_scene.h")
 biome_patch_cxx_header("wlr/types/wlr_matrix.h")
 biome_patch_cxx_header("wlr/xwayland/xwayland.h"
     SED_EXPR "s/\\bclass\\b/class_/")
+biome_patch_cxx_header("wlr/types/wlr_layer_shell_v1.h"
+    SED_EXPR "s/\\bnamespace\\b/namespace_/g")
 
 add_custom_target(biome_wlroots_cxx_shim DEPENDS ${BIOME_WLROOTS_SHIM_HEADERS})

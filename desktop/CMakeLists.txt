@@ -19,9 +19,12 @@ add_library(biome_desktop STATIC
     decoration_bridge.cpp
     session_lock.h
     session_lock.cpp
+    layer_shell.h
+    layer_shell.cpp
 )
 
-add_dependencies(biome_desktop biome_wlroots_cxx_shim ${XDG_SHELL_PROTOCOL_HEADER_TARGET})
+add_dependencies(biome_desktop biome_wlroots_cxx_shim
+    ${XDG_SHELL_PROTOCOL_HEADER_TARGET} ${LAYER_SHELL_PROTOCOL_HEADER_TARGET})
 
 # BIOME_WLROOTS_SHIM_DIR must come before PkgConfig::WLROOTS's own include
 # dir so the patched copies of wlr_scene.h/wlr_matrix.h are the ones found.

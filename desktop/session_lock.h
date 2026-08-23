@@ -2,10 +2,13 @@
 //
 // ext-session-lock-v1: grants a client an opaque, input-exclusive lock
 // surface per output while the session is locked. Security-sensitive - see
-// docs/plan.md's Phase 3.5 writeup for the invariants this relies on
-// (server->lock_tree staying the topmost scene sibling for as long as
-// server->session_locked is true is what makes normal window content and
-// input unreachable, not per-callsite locked checks).
+// docs/plan.md's Phase 3.5 and Phase 4 writeups for the invariants this
+// relies on. server->layers.session_lock (core/layers.cpp) is structurally
+// the topmost of BiomeServer::layers' six fixed trees, so everything else
+// in the compositor is unreachable to hit-testing/rendering the instant
+// that tree is enabled - this module only needs to toggle its enabled bit
+// and manage its per-output content (BiomeOutput::lock_tree/lock_rect,
+// created in core/output.cpp), not raise anything itself.
 
 #pragma once
 

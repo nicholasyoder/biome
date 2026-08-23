@@ -89,11 +89,14 @@ void focus_toplevel(BiomeToplevel *toplevel, wlr_surface *surface) {
         return;
     }
     BiomeServer *server = toplevel->server;
-    // While the session is locked, no normal toplevel may be raised above
-    // (or take keyboard focus from) the lock surfaces - this is the one
-    // choke point both click-to-focus and auto-focus-on-map go through, so
-    // gating it here is what keeps server->lock_tree the topmost scene
-    // sibling for the whole lock (see desktop/session_lock.h).
+    // While the session is locked, no normal toplevel may take keyboard
+    // focus from the lock surfaces - this is the one choke point both
+    // click-to-focus and auto-focus-on-map go through, so gating it here is
+    // enough (see desktop/session_lock.h). Doesn't need to also guard
+    // against raising the scene node above the lock anymore: toplevel->
+    // scene_tree's parent is now the fixed server->layers.toplevels tree
+    // (see BiomeServer::layers in server.h), which is structurally below
+    // server->layers.session_lock regardless of sibling order within it.
     if (server->session_locked) {
         return;
     }

@@ -42,10 +42,47 @@ struct BiomeServer {
     wlr_scene *scene = nullptr;
     wlr_scene_output_layout *scene_layout = nullptr;
 
+    // The fixed, persistent per-server scene-layer stack, created once by
+    // core/layers.cpp's scene_layers_init() (called from output_manager_init,
+    // right after server->scene itself is created) as direct children of
+    // server->scene->tree, in this order bottom to top - order is z-order in
+    // wlr_scene, so this list *is* the compositor's global stacking policy,
+    // not just a naming convenience:
+    //   background -> bottom -> toplevels -> top -> overlay -> session_lock
+    // background/bottom/top/overlay correspond 1:1 to wlr-layer-shell's own
+    // four zwlr_layer_shell_v1_layer values (desktop/layer_shell.cpp);
+    // toplevels is where every normal window's scene_tree lives (previously
+    // a direct child of scene->tree - see desktop/xdg_shell.cpp,
+    // desktop/xwayland_shell.cpp); session_lock is what used to be the
+    // ad-hoc, separately-raised BiomeServer::lock_tree (desktop/session_lock.cpp).
+    // Because nothing can be created as a *later* sibling of scene->tree
+    // than session_lock (every other tree in this stack is created here,
+    // once, at startup, before any client ever connects), session_lock is
+    // structurally topmost by construction - no runtime "is the session
+    // locked" check is needed anywhere else to keep other content from
+    // rendering or hit-testing above it.
+    struct {
+        wlr_scene_tree *background = nullptr;
+        wlr_scene_tree *bottom = nullptr;
+        wlr_scene_tree *toplevels = nullptr;
+        wlr_scene_tree *top = nullptr;
+        wlr_scene_tree *overlay = nullptr;
+        wlr_scene_tree *session_lock = nullptr;
+    } layers;
+
     wlr_xdg_shell *xdg_shell = nullptr;
     wl_listener new_xdg_toplevel = {};
     wl_listener new_xdg_popup = {};
     wl_list toplevels = {};
+
+    // wlr-layer-shell-unstable-v1 (desktop/layer_shell.cpp). Holds every
+    // live BiomeLayerSurface across all outputs - arrange_layers() filters
+    // this by output+layer rather than each BiomeOutput keeping its own
+    // per-layer lists, since the expected surface count (a handful of shell
+    // clients, not hundreds of windows) makes the O(n) filter pass cheap.
+    wlr_layer_shell_v1 *layer_shell = nullptr;
+    wl_listener new_layer_surface = {};
+    wl_list layer_surfaces = {};
 
     // Biome draws its own decoration (see decoration/) by default, but honors
     // a client's own request for client-side decoration instead - see
@@ -189,10 +226,10 @@ struct BiomeOutput {
     // for every output, locked or not, so a monitor that appears while
     // already locked is blanked from its very first frame with no special
     // hotplug-during-lock handling. lock_tree is a child of
-    // BiomeServer::lock_tree, positioned at this output's layout coords;
-    // lock_rect is the opaque fallback/backstop layer, always the first
-    // (bottommost) child of lock_tree so a client's own lock surface (added
-    // later, as a sibling) renders on top of it.
+    // BiomeServer::layers.session_lock, positioned at this output's layout
+    // coords; lock_rect is the opaque fallback/backstop layer, always the
+    // first (bottommost) child of lock_tree so a client's own lock surface
+    // (added later, as a sibling) renders on top of it.
     wlr_scene_tree *lock_tree = nullptr;
     wlr_scene_rect *lock_rect = nullptr;
     // Non-null only while this output has a live client-provided lock
@@ -204,6 +241,23 @@ struct BiomeOutput {
     // True from the start of a lock until this output has committed one
     // frame since - see session_lock.cpp's locked-event timing.
     bool pending_lock_frame = false;
+
+    // wlr-layer-shell-unstable-v1 (desktop/layer_shell.cpp). One child tree
+    // per output-scoped global layer (BiomeServer::layers.background/bottom/
+    // top/overlay), positioned at this output's layout coords - same
+    // per-output-child-of-a-global-tree pattern lock_tree above already
+    // establishes, since layer-shell surfaces (like lock surfaces) are
+    // anchored to a specific output rather than placed in global coordinates
+    // the way toplevels are.
+    wlr_scene_tree *layer_background = nullptr;
+    wlr_scene_tree *layer_bottom = nullptr;
+    wlr_scene_tree *layer_top = nullptr;
+    wlr_scene_tree *layer_overlay = nullptr;
+    // The area left over after arrange_layers() (desktop/layer_shell.cpp)
+    // subtracts every mapped layer surface's exclusive zone from this
+    // output's full box. Not consumed by toplevel placement/maximize yet -
+    // stored here for that follow-up step.
+    wlr_box usable_area = {};
 };
 
 struct BiomeKeyboard {

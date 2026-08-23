@@ -127,10 +127,11 @@ biome/
 | Existing unmodified X11 apps during migration | XWayland (built into wlroots) |
 | Panel dock / desktop background | `wlr-layer-shell-unstable-v1` |
 | `windowlist` panel plugin (taskbar) | `wlr-foreign-toplevel-management-unstable-v1` (check whether `ext-foreign-toplevel-list-v1` is available/preferable once on 0.18/later) |
+| `deskswitch` panel plugin (workspaces) | No standard protocol chosen yet — `ext-workspace-v1` vs. a Biome-specific `org.biome` DBus interface, open decision (see `docs/phase4-plan.md` Workstream D) |
 | Title bars / borders | `xdg-decoration-unstable-v1` (negotiate SSD) |
-| Screenshots | `wlr-screencopy-unstable-v1` (or `ext-image-copy-capture-v1`); PipeWire + `xdg-desktop-portal` ScreenCast is the alternative if portal-based capture is ever needed |
-| Session locker / screensaver | `ext-idle-notify-v1` |
-| Display settings (multi-monitor) | `wlr-output-management-unstable-v1` |
+| Screenshots *(Phase 6 — net-new, not a port)* | `wlr-screencopy-unstable-v1` (or `ext-image-copy-capture-v1`); PipeWire + `xdg-desktop-portal` ScreenCast is the alternative if portal-based capture is ever needed |
+| Session locker / screensaver *(Phase 6 — net-new, not a port)* | `ext-idle-notify-v1` |
+| Display settings (multi-monitor) *(Phase 6 — net-new, not a port)* | `wlr-output-management-unstable-v1` |
 | Global hotkeys (currently `qxtglobalshortcut`/`XGrabKey`) | No Wayland equivalent exists (by design) — Biome implements `org.freedesktop.portal.GlobalShortcuts`; Forest's hotkey client targets that same portal interface rather than a Biome-specific one (see Decoupling goal) |
 | System tray | Already DBus/StatusNotifierItem-based — no change needed |
 | Cursor theme / numlock | Handled directly via wlroots' xcursor manager and keyboard state — no protocol needed |
@@ -354,8 +355,9 @@ the phase that does:
   to a privileged client (Biome has no client-allowlist mechanism anywhere
   yet; the global is exposed unrestricted, same trust model as every other
   global Biome currently exposes), cancelling an in-flight drag if a lock
-  starts mid-drag, and `idle-notify`/auto-lock-on-idle (still Phase 4 as
-  scoped below - this only makes a manually-triggered lock actually secure).
+  starts mid-drag, and `idle-notify`/auto-lock-on-idle (now Phase 6, moved
+  there 2026-08-22 - this only makes a manually-triggered lock actually
+  secure).
   Full clean rebuild, zero warnings. **Not yet manually tested interactively
   by the user** - per [[feedback-manual-interactive-testing]]; needs a lock
   client to drive it (Forest doesn't have one yet, and no throwaway test
@@ -366,14 +368,25 @@ Layer-shell for panel + desktop (bundled with `xdg-output-unstable-v1`,
 since layer-shell clients commonly query it for per-output name/logical
 geometry), foreign-toplevel-management for the windowlist plugin, a DBus
 hotkey service implementing `org.freedesktop.portal.GlobalShortcuts`
-(replacing `qxtglobalshortcut` — see Decoupling goal), screencopy for screenshots,
-idle-notify for the session locker, and wiring the display settings app to
-`wlr-output-management-unstable-v1` (Biome-side protocol support for that
-still needs to land too, in Phase 3 or here, whichever comes first). This
-is where Forest's shell processes become Wayland-native instead of X11
-clients — effectively executing the `xcbutills` replacement that
+(replacing `qxtglobalshortcut` — see Decoupling goal), and a Wayland-native
+workspace-switching mechanism for the deskswitch plugin (protocol choice
+still open — see `docs/phase4-plan.md` Workstream D). This is where
+Forest's shell processes become Wayland-native instead of X11 clients —
+effectively executing the `xcbutills` replacement that
 `wayland_AI_assessment.md` flagged as the biggest chunk of shell-side work,
 and the first phase where any `forest/` code itself gets modified.
+
+Screenshots, the session locker, and display settings were originally
+scoped into this phase but moved out 2026-08-22: none of the three exist as
+Forest features today (X11 or otherwise), so building them is net-new app
+work, not a port — bundling that into an already-large port-focused phase
+just added scope for no dependency reason. See Phase 6 below.
+
+See `docs/phase4-plan.md` for the detailed, session-spanning breakdown of
+this phase (workstreams, cross-repo file touchpoints, sequencing, and open
+protocol/architecture decisions) — this phase is large enough to span many
+sessions across both repos, so the summary above stays high-level and that
+file is where progress is actually tracked.
 
 **Follow-up noted 2026-08-22, don't lose this:** when layer-shell lands
 here, build a real persistent per-output scene-layer stack (background /
@@ -400,8 +413,44 @@ fixed.
 
 **Phase 5 — Cutover.**
 New `forest-session` variant that execs Biome instead of `xfwm4`, a Wayland
-session entry for the greeter, X11 path kept alive in parallel until Biome
-is solid, then eventually deprecated.
+session entry for the greeter. **Decided 2026-08-22: this is a hard switch,
+not a dual-maintained transition** — Phase 4's X11 mechanisms (struts,
+window enumeration, hotkeys, workspaces) get replaced outright by their
+Wayland equivalents rather than kept working behind a runtime-selectable
+abstraction. Revised from this phase's original wording ("X11 path kept
+alive in parallel until Biome is solid, then eventually deprecated"): a
+live dual-backend would mean building and maintaining two implementations
+of every Phase 4 mechanism indefinitely, for comparatively little benefit
+since Biome isn't meant to become a second-class option — it's meant to
+replace xfwm4 outright. Forest simply requires Biome (or another
+Wayland compositor speaking the same protocols, per the Decoupling goal)
+from Phase 4 onward; there's no X11-fallback code path to design or keep
+working.
+
+**Phase 6 — New capabilities.** *(added 2026-08-22, split out of Phase 4)*
+Screenshots (`wlr-screencopy-unstable-v1` or `ext-image-copy-capture-v1`),
+a session-locker UI (a new Forest lock-screen client speaking
+`ext-session-lock-v1`, plus wiring `ext-idle-notify-v1` so idle timeout
+actually triggers it — Biome's compositor-side `ext-session-lock-v1`
+support landed in Phase 3.5 but has no client to drive it yet), and a
+display-settings plugin wired to `wlr-output-management-unstable-v1`
+(Biome-side protocol support for that still needs to land too, in Phase 3,
+Phase 4, or here, whichever comes first). None of these three are ports —
+Forest has no existing screenshot tool, lock client, or multi-monitor
+settings UI on X11 today, so this is net-new design/build work using the
+Wayland protocol as the target from day one. Deliberately sequenced after
+cutover since none of the three block Phase 5, but a lock-screen client is
+lightweight enough (fullscreen, single-purpose) that it's worth considering
+as an earlier pilot for whatever Forest-side Wayland-client plumbing Phase
+4 establishes — see `docs/phase4-plan.md` for that reasoning in more
+detail (it kept a de-scoped writeup of these three items when they were
+still Phase 4 workstreams E/F/G).
+
+**Display-settings implementation note (found 2026-08-22 while researching
+Phase 4's Qt/Wayland binding options):** `libkscreen`/KScreen already has a
+working `wlr-output-management-unstable-v1` backend (used for
+KScreen-on-Sway) — reuse it for this plugin instead of hand-binding the
+protocol directly when this phase starts.
 
 ## Open risks
 
