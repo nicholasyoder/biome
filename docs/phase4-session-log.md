@@ -778,3 +778,160 @@ lasting value (the full blow-by-blow, for anything trimmed, is still in
   frontend contract - replacing `qxt/`'s `XGrabKey` internals with `QtDBus`
   calls against `org.freedesktop.portal.GlobalShortcuts`, per this
   workstream's own bullets above.
+
+- **2026-08-26 (same day) — Workstream C step 3: forest-side port off
+  `XGrabKey`, plus the two Biome-side companion pieces it needed.** Planned
+  via a full EnterPlanMode cycle covering both repos at once. Built, not yet
+  manually tested by the user - per [[feedback_manual_interactive_testing]]
+  in Claude's memory, that pass is deferred to the user.
+
+  **Biome-side companion work (`biome/ipc/`, `biome/core/`):**
+
+  - Real `org.freedesktop.impl.portal.Session` object, closing the exact gap
+    step 2's `busctl` monitor capture characterized (`Properties.GetAll`/
+    `Close()` both returning `UnknownObject` against the session_handle
+    path). `ipc/global_shortcuts_portal.h`/`.cpp` gained a `PortalSession`
+    class (`Q_CLASSINFO("D-Bus Interface", "org.freedesktop.impl.portal.
+    Session")`, a `version` property, a `Close()` slot) - one instance
+    created and `registerObject()`-ed at the session_handle path inside
+    `CreateSession()`, torn down by its own `Close()` slot (unregisters
+    itself, calls back into `GlobalShortcutsPortal::closeSession()` - the
+    renamed, no-longer-a-D-Bus-method version of the old stand-in
+    `CloseSession()` slot, which is deleted - then `deleteLater()`s). First
+    attempt put `closeSession()`'s declaration under the class's `signals:`
+    section by mistake, which made moc synthesize a signal-emitter body for
+    it - collided at link time with the real definition in the .cpp
+    (`multiple definition of GlobalShortcutsPortal::closeSession`); fixed by
+    moving it to a plain private method section, caught immediately by the
+    first incremental build.
+  - Modifier-only ("bare tap") trigger support, needed for forest's
+    Meta-only "Show menu" binding (`etc/forest/Forest.conf` item-0013),
+    which the shortcuts-spec grammar has no syntax for.
+    `core/keybindings.h`'s `ParsedTrigger::keysym == XKB_KEY_NoSymbol` is now
+    a documented sentinel for "modifier-only"; `parse_trigger()`
+    (`core/keybindings.cpp`) returns it for a trigger string that's a single
+    recognized modifier name on its own (`"LOGO"`, `"CTRL"`, etc.), ahead of
+    the existing multi-part parsing. Matching/firing is new state machine
+    logic, not a `trigger_matches()` extension: `BiomeServer` gained
+    `modifier_tap_candidate`/`modifier_tap_interrupted` (`core/server.h`,
+    next to `switcher_active`), and a new `handle_modifier_tap()` is called
+    from `core/input.cpp`'s `keyboard_handle_key()` for every key event -
+    press *and* release, unlike the press-only `handle_key_press()` it runs
+    alongside - mirroring the old X11-era `XCB_KEY_RELEASE`/`lastkeypressed`
+    logic from forest's pre-port `hotkey.cpp`: a press of a lone matchable
+    modifier (arbitrated via `is_modifier_keysym()` against
+    `Shift_L/R`/`Control_L/R`/`Alt_L/R`/`Super_L/R`) arms a candidate; any
+    other key press (or a second modifier) marks it interrupted without
+    disarming it; release of that same modifier back to zero matchable bits
+    fires the matching portal-registered binding if it was never
+    interrupted. Deliberately doesn't try to disambiguate `Super_L` from
+    `Super_R` (holding both and releasing one is treated as still-held,
+    per the popcount check on `kMatchableModifierMask` bits, not physical
+    keycodes) - an accepted edge case, not exercised by any real trigger.
+
+  Full incremental rebuild of `biome` (touched targets: `biome_ipc`,
+  `biome`), zero errors, after the one signals/private mistake above was
+  caught and fixed. A destructive full clean rebuild (`rm -rf build/*` or
+  `cmake --build --target clean`) was blocked by the coding agent's own
+  sandbox classifier as a destructive action outside this task's scope, so
+  the full-clean-rebuild bar this phase's other workstreams held to
+  couldn't be verified this session - left for the user (or a future
+  session with that permission granted) to confirm.
+
+  **Forest-side work (`forest/services/services-app/hotkeys/`):**
+
+  - Deleted `qxt/qxtglobalshortcut.cpp`/`.h`/`_p.h`, `qxt/qxtglobal.h`,
+    `qxt/qxtglobalshortcut_x11.cpp` outright (confirmed dead: the
+    `QxtGlobalShortcut` class was compiled but never instantiated, and
+    `hotkey.h`'s include of it was already commented out) - removed their
+    entries from `services/services-app/CMakeLists.txt` too. Kept
+    `qxt/keymapper_x11.h`'s `KeyTbl` (Qt::Key → numeric X11/xkb keysym
+    table) in place, repurposed below rather than relocated (left as a
+    cosmetic follow-up, per the plan).
+  - `hotkey.h`/`.cpp`'s `globalhotkey` is now a pure data holder: dropped
+    `setShortcut`/`unsetShortcut`/`pause`/`resume`/`XcbEventFilter`/
+    `nativeKeycode`/`nativeModifiers`/`registerShortcut`/
+    `unregisterShortcut` and the `<X11/Xlib.h>`/`Xcbutills` dependency that
+    came with them. Gained a stable `id` (the QSettings group name,
+    `"item-0001"` etc., threaded through from `foresthotkeys::loadhotkeys()`
+    - already unique) and a `description` (now actually read from
+    Forest.conf's existing `description` key, previously parsed by nothing),
+    plus `triggerString()`: looks the stored `QKeySequence`'s key up in
+    `KeyTbl` to get its numeric keysym (covers media/brightness/function
+    keys the same way the old `nativeKeycode()` did), falls back to
+    `xkb_keysym_from_name()` on `QKeySequence::toString()` for keys not in
+    the table, then resolves the canonical shortcuts-spec name via
+    `xkb_keysym_get_name()` - confirmed `KeyTbl`'s `XK_*` numeric values and
+    libxkbcommon's `XKB_KEY_*` values are the same numbers (shared X11/xkb
+    keysym numbering), so no translation layer was needed beyond a cast.
+    Special-cases `Qt::Key_Meta` with no modifiers (how
+    `loadhotkeys()`'s pre-existing `"Meta"` sentinel already gets built into
+    a `QKeySequence`) straight to the trigger string `"LOGO"`, matching the
+    Biome-side grammar extension above.
+  - New `hotkeys/globalshortcutsportal.{h,cpp}` (`GlobalShortcutsPortal`)
+    wraps the real frontend contract validated in step 2:
+    `createSession()`/`bindShortcuts()`/`closeSession()`, each driving the
+    real async `CreateSession`/`BindShortcuts` `Request`-object/`Response`-
+    signal dance (a private `PortalRequest` QObject, defined directly in the
+    `.cpp` via the `#include "globalshortcutsportal.moc"` pattern, forwards
+    a `Request`'s one-shot `Response` signal to an arbitrary
+    `std::function` per call - `QDBusConnection::connect()` only takes a
+    real slot, not a lambda, so this is the shim that avoids one fixed slot
+    per call site). `bindShortcuts()` redeclares its own `PortalShortcutSpec`
+    marshalling struct rather than sharing Biome's `GlobalShortcutSpec` -
+    the two repos have no shared header, so it's the same `(sa{sv})` wire
+    shape hand-duplicated, same as the trigger-string grammar itself is
+    duplicated knowledge between `hotkey.cpp` and
+    `biome/core/keybindings.cpp`. `Activated` is connected once, at
+    construction, straight to a `handleActivated()` slot that re-emits a
+    plain Qt `shortcutActivated(QString id)` signal; `Deactivated` stays
+    unconnected (unused on the Biome side too, per step 1/2's own notes).
+  - `foresthotkeys.cpp`'s `setup()` now constructs the portal and defers
+    `loadhotkeys()` into `createSession()`'s callback - portal setup is
+    inherently async, nothing can bind before a session exists.
+    `loadhotkeys()` builds the `QList<globalhotkey*>` exactly as before
+    (unchanged QSettings parsing, now also reading `description`) and hands
+    it to `portal->bindShortcuts()` instead of letting each `globalhotkey`
+    grab its own key. A new `dispatch(QString id)` slot, connected to
+    `shortcutActivated`, looks up the matching entry by `id` and calls
+    `exec()`, gated by the pre-existing `paused` flag.
+    `pauseHotkeys()`/`resumeHotkeys()` collapsed to pure flag toggles - no
+    portal calls needed now that dispatch is centralized here rather than
+    each hotkey grabbing/ungrabbing its own key, a genuine simplification
+    over the old per-item loop. `reloadhotkeys()` chains
+    `closeSession()` → `createSession()` → `loadhotkeys()` through their
+    callbacks, so a reload actually gets a fresh session (needed once the
+    portal's `Session::Close()` companion piece above lands - otherwise the
+    daemon's "bind once per session" behavior would make a second
+    `loadhotkeys()` a no-op). `showdesktop()` is now a `qWarning()` stub
+    (no Biome equivalent to `_NET_SHOWING_DESKTOP` exists yet - deferred to
+    Workstream D, which it's conceptually adjacent to) in place of the old
+    `Xcbutills::showDesktop()` call, dropping that include.
+  - `services.h`/`.cpp`: `XcbEventFilter()` is now an empty-body override
+    (matching `windowlist`'s post-port precedent) instead of forwarding to
+    `fhotkeys`, and `needs_xcb_events()` flipped to `return false` - nothing
+    in `services-app` needs XCB events anymore.
+  - Build: added `pkg_check_modules(XKBCOMMON REQUIRED IMPORTED_TARGET
+    xkbcommon)` to the top-level `CMakeLists.txt` (found system xkbcommon
+    1.7.0), linked `PkgConfig::XKBCOMMON` into `services-app`, dropped
+    `forest_link_xcbutills(services-app)` (confirmed via grep that neither
+    `notify`/`notifyadapter`/`notifypopup` nor `polkitagent`/`polkitdialog`
+    use `Xcbutills` or raw XCB events either). Added `libxkbcommon-dev` to
+    `debian/control`'s Build-Depends, alongside the existing X11/layer-shell
+    entries.
+
+  Full incremental rebuild of `forest` (`services-app` target, then the
+  whole tree), zero errors, no new warnings. Same sandbox-classifier
+  restriction as the Biome side prevented a destructive full clean rebuild
+  this session.
+
+  **Not yet manually tested** - per
+  [[feedback_manual_interactive_testing]]: needs a real nested-Biome session
+  with a normal combo (`Meta+E` → file manager), a media key (`Volume
+  Mute`), the bare `Meta` tap (menu toggle), `pauseHotkeys`/`resumeHotkeys`
+  during a settings-UI key capture, and a `reloadhotkeys()` (edit+save in
+  `forest-settings`) all confirmed working end-to-end without leaking stale
+  bindings on repeated reloads. The local `~/.config/Forest-wayland/
+  Forest.conf` `[hotkeys]` section (deliberately emptied per
+  `WAYLAND-TESTING-NOTES.md`) needs restoring first - see that file's own
+  note to do this once this workstream lands.

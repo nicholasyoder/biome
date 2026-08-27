@@ -10,6 +10,8 @@
 #include <QDBusMetaType>
 #include <QDateTime>
 
+#include <utility>
+
 QDBusArgument &operator<<(QDBusArgument &arg, const GlobalShortcutSpec &spec) {
     arg.beginStructure();
     arg << spec.id << spec.options;
@@ -33,7 +35,19 @@ uint GlobalShortcutsPortal::CreateSession(const QDBusObjectPath &handle,
     (void)handle;
     (void)app_id;
     (void)options;
-    m_sessions.insert(session_handle.path(), {});
+
+    const QString owner = session_handle.path();
+    m_sessions.insert(owner, {});
+
+    auto *sessionObject = new PortalSession(this, owner);
+    QDBusConnection bus = QDBusConnection::sessionBus();
+    if (!bus.registerObject(owner, sessionObject,
+            QDBusConnection::ExportAllSlots | QDBusConnection::ExportAllProperties)) {
+        wlr_log(WLR_ERROR, "GlobalShortcuts: failed to register Session object at %s: %s",
+            qPrintable(owner), qPrintable(bus.lastError().message()));
+    }
+    m_sessionObjects.insert(owner, sessionObject);
+
     results.clear();
     return 0; // success
 }
@@ -135,10 +149,20 @@ uint GlobalShortcutsPortal::ConfigureShortcuts(const QDBusObjectPath &handle,
     return 2; // not supported - Biome has no shortcut-configuration UI
 }
 
-void GlobalShortcutsPortal::CloseSession(const QDBusObjectPath &session_handle) {
-    const QString owner = session_handle.path();
+void GlobalShortcutsPortal::closeSession(const QString &owner) {
     remove_session_keybindings(owner);
     m_sessions.remove(owner);
+    m_sessionObjects.remove(owner);
+}
+
+PortalSession::PortalSession(GlobalShortcutsPortal *portal, QString path)
+    : QObject(portal), m_portal(portal), m_path(std::move(path)) {
+}
+
+void PortalSession::Close() {
+    QDBusConnection::sessionBus().unregisterObject(m_path);
+    m_portal->closeSession(m_path);
+    deleteLater();
 }
 
 namespace {

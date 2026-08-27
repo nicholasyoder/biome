@@ -31,6 +31,22 @@ bool trigger_matches(const ParsedTrigger &trigger, xkb_keysym_t sym, uint32_t mo
     return trigger.keysym == sym && trigger.modmask == (modifiers & kMatchableModifierMask);
 }
 
+bool is_modifier_keysym(xkb_keysym_t sym) {
+    switch (sym) {
+    case XKB_KEY_Shift_L:
+    case XKB_KEY_Shift_R:
+    case XKB_KEY_Control_L:
+    case XKB_KEY_Control_R:
+    case XKB_KEY_Alt_L:
+    case XKB_KEY_Alt_R:
+    case XKB_KEY_Super_L:
+    case XKB_KEY_Super_R:
+        return true;
+    default:
+        return false;
+    }
+}
+
 struct PortalBinding {
     QString owner;
     BiomeKeybinding binding;
@@ -158,6 +174,25 @@ std::optional<ParsedTrigger> parse_trigger(const QString &trigger) {
         return std::nullopt;
     }
 
+    // A trigger that's just a single recognized modifier name on its own
+    // (no other modifiers, no key) is a bare-tap trigger - e.g. forest's
+    // Meta-only "Show menu" binding, which XGrabKey could express directly
+    // but the shortcuts-spec grammar has no dedicated syntax for.
+    // XKB_KEY_NoSymbol is the sentinel handle_modifier_tap() checks for.
+    if (parts.size() == 1) {
+        if (parts[0] == "CTRL") {
+            return ParsedTrigger{WLR_MODIFIER_CTRL, XKB_KEY_NoSymbol};
+        } else if (parts[0] == "ALT") {
+            return ParsedTrigger{WLR_MODIFIER_ALT, XKB_KEY_NoSymbol};
+        } else if (parts[0] == "SHIFT") {
+            return ParsedTrigger{WLR_MODIFIER_SHIFT, XKB_KEY_NoSymbol};
+        } else if (parts[0] == "LOGO") {
+            return ParsedTrigger{WLR_MODIFIER_LOGO, XKB_KEY_NoSymbol};
+        } else if (parts[0] == "NUM") {
+            return ParsedTrigger{WLR_MODIFIER_MOD2, XKB_KEY_NoSymbol};
+        }
+    }
+
     uint32_t modmask = 0;
     for (qsizetype i = 0; i < parts.size() - 1; i++) {
         const QString &mod = parts[i];
@@ -229,6 +264,53 @@ bool handle_key_press(BiomeServer *server, xkb_keysym_t sym, uint32_t modifiers)
         }
     }
 
+    return false;
+}
+
+bool handle_modifier_tap(BiomeServer *server, xkb_keysym_t sym, uint32_t modifiers, bool pressed) {
+    // Same lockout as handle_key_press() - no keybinding of any kind fires
+    // while the lock surface needs real keystrokes.
+    if (server->session_locked) {
+        return false;
+    }
+
+    const uint32_t mods = modifiers & kMatchableModifierMask;
+
+    if (pressed) {
+        if (is_modifier_keysym(sym) && mods != 0 && (mods & (mods - 1)) == 0) {
+            // Exactly one matchable modifier held, and this press is that
+            // modifier's own key going down - (re)arm a fresh candidate.
+            server->modifier_tap_candidate = mods;
+            server->modifier_tap_interrupted = false;
+        } else if (server->modifier_tap_candidate != 0) {
+            // Some other key (or a second modifier) went down mid-hold -
+            // this is now a combo, not a bare tap.
+            server->modifier_tap_interrupted = true;
+        }
+        return false;
+    }
+
+    if (!is_modifier_keysym(sym)) {
+        return false;
+    }
+
+    const uint32_t candidate = server->modifier_tap_candidate;
+    const bool fire = candidate != 0 && !server->modifier_tap_interrupted && mods == 0;
+    if (mods == 0) {
+        // The last held matchable modifier just came up - the candidate
+        // hold is over either way, fired or not.
+        server->modifier_tap_candidate = 0;
+        server->modifier_tap_interrupted = false;
+    }
+    if (!fire) {
+        return false;
+    }
+
+    for (const PortalBinding &entry : portal_bindings()) {
+        if (entry.binding.trigger.keysym == XKB_KEY_NoSymbol && entry.binding.trigger.modmask == candidate) {
+            return entry.binding.invoke(server, modifiers);
+        }
+    }
     return false;
 }
 

@@ -82,9 +82,18 @@ static void keyboard_handle_key(wl_listener *listener, void *data) {
     // Alt-chords the way Biome's own built-in bindings are.
     bool handled = false;
     uint32_t modifiers = wlr_keyboard_get_modifiers(keyboard->wlr);
-    if (event->state == WL_KEYBOARD_KEY_STATE_PRESSED) {
+    const bool pressed = event->state == WL_KEYBOARD_KEY_STATE_PRESSED;
+    if (pressed) {
         for (int i = 0; i < nsyms; i++) {
             handled = handle_key_press(server, syms[i], modifiers);
+        }
+    }
+
+    // Runs on both press and release, independent of handle_key_press()
+    // above - a bare-modifier trigger fires on release, not press.
+    for (int i = 0; i < nsyms; i++) {
+        if (handle_modifier_tap(server, syms[i], modifiers, pressed)) {
+            handled = true;
         }
     }
 

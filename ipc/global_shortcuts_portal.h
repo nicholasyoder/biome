@@ -21,14 +21,14 @@
 // Activated/Deactivated as real D-Bus signals when a registered trigger
 // fires.
 //
-// Deliberately NOT yet spec-accurate about session teardown: the real
-// protocol has the portal daemon implement a per-session
-// org.freedesktop.impl.portal.Session object at the session_handle path,
-// with its own Close() the backend is notified through. Building that is
-// real added complexity not needed to validate the trigger-registration/
-// matching mechanism this step cares about, so CloseSession() below is a
-// stand-in a test client calls directly instead - fix this properly when
-// the real xdg-desktop-portal broker gets wired up in a later step.
+// Session teardown: CreateSession() also exports a real per-session
+// org.freedesktop.impl.portal.Session object (PortalSession below) at the
+// session_handle path, since a live busctl monitor capture during
+// Workstream C step 2 (docs/phase4-session-log.md, 2026-08-26) confirmed
+// the real xdg-desktop-portal daemon actually calls
+// org.freedesktop.DBus.Properties.GetAll and
+// org.freedesktop.impl.portal.Session.Close() against that exact path -
+// without an object there, both got UnknownObject errors back.
 
 #pragma once
 
@@ -82,9 +82,6 @@ public slots:
     uint ConfigureShortcuts(const QDBusObjectPath &handle, const QDBusObjectPath &session_handle,
         const QString &parent_window, const QVariantMap &options, QVariantMap &results);
 
-    // Stand-in for real session teardown - see this file's header comment.
-    void CloseSession(const QDBusObjectPath &session_handle);
-
 signals:
     void Activated(const QDBusObjectPath &session_handle, const QString &shortcut_id,
         qulonglong timestamp, const QVariantMap &options);
@@ -94,9 +91,42 @@ signals:
         const QList<GlobalShortcutSpec> &shortcuts);
 
 private:
+    // Called by PortalSession::Close() once it has unregistered itself
+    // from the bus - drops the session's portal keybindings and its
+    // bookkeeping entries. Not a D-Bus slot itself, just a plain call from
+    // PortalSession back to its owning portal.
+    void closeSession(const QString &owner);
+    friend class PortalSession;
+
     // session_handle path -> the bound shortcuts array last returned for
     // it, for ListShortcuts to hand back.
     QHash<QString, QList<GlobalShortcutSpec>> m_sessions;
+    // session_handle path -> the exported Session object owning that path,
+    // so CreateSession/closeSession can register/tear it down.
+    QHash<QString, class PortalSession *> m_sessionObjects;
+};
+
+// org.freedesktop.impl.portal.Session - the per-session object the real
+// portal daemon expects at the session_handle path (see this file's header
+// comment). One instance per session: created and registered on the bus in
+// GlobalShortcutsPortal::CreateSession(), unregistered and deleted once
+// Close() fires.
+class PortalSession : public QObject {
+    Q_OBJECT
+    Q_CLASSINFO("D-Bus Interface", "org.freedesktop.impl.portal.Session")
+    Q_PROPERTY(uint version READ version)
+
+public:
+    PortalSession(GlobalShortcutsPortal *portal, QString path);
+
+    uint version() const { return 1; }
+
+public slots:
+    void Close();
+
+private:
+    GlobalShortcutsPortal *m_portal;
+    QString m_path;
 };
 
 // Registers the GlobalShortcutSpec D-Bus marshalling, constructs a

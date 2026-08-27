@@ -32,6 +32,12 @@
 // "CTRL+ALT+Return". NUM parses successfully (WLR_MODIFIER_MOD2) but isn't
 // currently honored at match time - see keybindings.cpp's
 // kMatchableModifierMask comment.
+//
+// keysym == XKB_KEY_NoSymbol is a sentinel for a bare-modifier ("tap")
+// trigger - a trigger string that's just a single recognized modifier name
+// on its own, e.g. "LOGO" for forest's Meta-only "Show menu" binding, which
+// the shortcuts-spec grammar has no dedicated syntax for. Matched by
+// handle_modifier_tap() below, not trigger_matches().
 struct ParsedTrigger {
     uint32_t modmask = 0;
     xkb_keysym_t keysym = XKB_KEY_NoSymbol;
@@ -51,6 +57,20 @@ struct BiomeKeybinding {
 // old Alt-only-gated handle_keybinding() this replaces - portal-registered
 // shortcuts aren't restricted to Alt-chords).
 bool handle_key_press(BiomeServer *server, xkb_keysym_t sym, uint32_t modifiers);
+
+// Also called from keyboard_handle_key(), but for every key event - press
+// AND release alike (handle_key_press() above is press-only), since a bare-
+// modifier trigger fires on release. `modifiers` is the already-updated
+// mask (xkb state reflects this exact event by the time wlroots delivers
+// it). Mirrors the old X11 XGrabKey-era logic (forest's pre-port
+// hotkey.cpp: XCB_KEY_RELEASE + lastkeypressed) generalized to any single
+// recognized modifier: arms a tap candidate the instant exactly one
+// matchable modifier is held alone, drops it (without firing) if any other
+// key goes down meanwhile, and fires the matching portal-registered
+// bare-modifier binding on release of that same lone modifier if nothing
+// interrupted it. Returns true if a tap fired and the release should be
+// considered handled (not forwarded to the focused client).
+bool handle_modifier_tap(BiomeServer *server, xkb_keysym_t sym, uint32_t modifiers, bool pressed);
 
 // Registration API for ipc/global_shortcuts_portal.cpp. `owner` is an
 // opaque per-session key (the portal's session_handle object path) used

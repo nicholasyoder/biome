@@ -186,6 +186,15 @@ struct BiomeServer {
     std::vector<BiomeToplevel *> switcher_order;
     int switcher_preview_index = 0;
 
+    // Bare-modifier ("tap") hotkey candidate tracking - see
+    // core/keybindings.h's handle_modifier_tap() for the mechanism.
+    // modifier_tap_candidate is the single matchable-modifier bitmask
+    // currently held alone (0 = no candidate hold in progress);
+    // modifier_tap_interrupted becomes true once some other key goes down
+    // during that hold, disqualifying it from firing on release.
+    uint32_t modifier_tap_candidate = 0;
+    bool modifier_tap_interrupted = false;
+
     wlr_output_layout *output_layout = nullptr;
     wl_list outputs = {};
     wl_listener new_output = {};
