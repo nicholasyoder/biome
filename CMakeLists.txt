@@ -35,4 +35,5 @@ biome_generate_protocol_header(LAYER_SHELL_PROTOCOL_HEADER LAYER_SHELL_PROTOCOL_
 
 add_subdirectory(decoration)
 add_subdirectory(desktop)
+add_subdirectory(ipc)
 add_subdirectory(core)

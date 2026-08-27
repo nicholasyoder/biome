@@ -215,6 +215,41 @@ void toplevel_sync_position(BiomeToplevel *toplevel, int x, int y);
 void focus_toplevel(BiomeToplevel *toplevel, wlr_surface *surface);
 void set_toplevel_focused(BiomeToplevel *toplevel, bool focused);
 
+// If a toplevel currently holds keyboard focus (per the seat's real
+// wlr_surface, not any cached bookkeeping), unfocuses it - the same
+// "outgoing toplevel" half of what focus_toplevel() does before handing
+// focus to another toplevel. Used internally by focus_toplevel() and by
+// grant_keyboard_focus_to_non_toplevel() below - not meant to be called
+// directly by anything granting focus itself; see that function instead.
+void clear_focused_toplevel(BiomeServer *server);
+
+// The single chokepoint for handing keyboard focus to any surface that
+// *isn't* a BiomeToplevel: a keyboard-interactive layer-shell surface (the
+// panel), an xdg_popup (any of Forest's panel/panel-library popup/popupmenu
+// widgets - context menus, the main menu, tooltips), an Xwayland
+// override-redirect surface, or a plain click on one of those. Always calls
+// clear_focused_toplevel() first, then grants via the grab-bypassing
+// wlr_seat_keyboard_enter() (safe and equivalent to the grab-aware
+// wlr_seat_keyboard_notify_enter() whenever no seat keyboard grab is
+// active, and necessary when `surface` is an xdg_popup that installed its
+// own grab - see desktop/xdg_shell.cpp's xdg_popup_map for the full
+// explanation of why notify_enter() would silently no-op there).
+//
+// This exists because every call site that granted focus this way used to
+// call wlr_seat_keyboard_(notify_)enter() directly, and every one of them
+// independently had to remember to unfocus whatever toplevel currently held
+// focus first - a discipline that was violated four separate times (found
+// 2026-08-23: desktop/layer_shell.cpp's map-time grab,
+// desktop/xwayland_shell.cpp's unmanaged-surface map-time grab,
+// desktop/xdg_shell.cpp's xdg_popup_map, and core/cursor.cpp's click-on-
+// non-toplevel-surface handler - the last of these being the actual
+// everyday trigger, since it's what runs on an ordinary click on the
+// panel). Routing every such site through this one function makes it
+// structurally impossible to add a fifth: nothing outside toplevel.cpp
+// calls wlr_seat_keyboard_(notify_)enter()/wlr_seat_keyboard_enter()
+// directly for a non-toplevel surface anymore.
+void grant_keyboard_focus_to_non_toplevel(BiomeServer *server, wlr_surface *surface);
+
 // Places a newly-mapped floating toplevel. A transient window (one with a
 // parent, e.g. a dialog) centers on its parent, matching xfwm4's default
 // dialog placement. Otherwise it's centered on the output layout, with a

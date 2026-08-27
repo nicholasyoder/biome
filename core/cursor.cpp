@@ -347,20 +347,15 @@ void server_cursor_button(wl_listener *listener, void *data) {
             // with one means it's unmanaged.
             bool unmanaged_xwayland = wlr_xwayland_surface_try_from_wlr_surface(surface) != nullptr;
             if (!unmanaged_xwayland || server->session_locked) {
-                // The plain (non-notify_*) enter bypasses any active seat
-                // keyboard grab - needed so this reliably wins even when
-                // `surface` is an xdg_popup that requested xdg_popup.grab,
-                // whose own keyboard grab makes wlr_seat_keyboard_notify_enter()
-                // a deliberate no-op (see desktop/xdg_shell.cpp's
-                // xdg_popup_map for the full explanation). Equivalent to the
-                // notify_* variant whenever no such grab is active, which
-                // covers every other case reaching here (the panel, a lock
-                // surface).
-                wlr_keyboard *keyboard = wlr_seat_get_keyboard(server->seat);
-                wlr_seat_keyboard_enter(server->seat, surface,
-                    keyboard ? keyboard->keycodes : nullptr,
-                    keyboard ? keyboard->num_keycodes : 0,
-                    keyboard ? &keyboard->modifiers : nullptr);
+                // This was the actual everyday trigger for windowlist
+                // showing a toplevel as permanently focused: an ordinary
+                // click on the panel reliably lands here (toplevel==nullptr,
+                // surface==the panel's), and this used to call
+                // wlr_seat_keyboard_enter() directly - see
+                // grant_keyboard_focus_to_non_toplevel()'s doc comment
+                // (desktop/toplevel.h) for the full incident and why this
+                // now goes through it instead.
+                grant_keyboard_focus_to_non_toplevel(server, surface);
             }
         }
         focus_toplevel(toplevel, surface);

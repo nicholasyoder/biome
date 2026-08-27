@@ -87,6 +87,36 @@ void set_toplevel_focused(BiomeToplevel *toplevel, bool focused) {
     foreign_toplevel_sync_state(toplevel);
 }
 
+void clear_focused_toplevel(BiomeServer *server) {
+    wlr_surface *prev_surface = server->seat->keyboard_state.focused_surface;
+    if (prev_surface == nullptr) {
+        return;
+    }
+    wlr_xdg_toplevel *prev_xdg_toplevel =
+        wlr_xdg_toplevel_try_from_wlr_surface(prev_surface);
+    if (prev_xdg_toplevel != nullptr) {
+        wlr_xdg_toplevel_set_activated(prev_xdg_toplevel, false);
+        set_toplevel_focused(toplevel_from_xdg(prev_xdg_toplevel), false);
+        return;
+    }
+    wlr_xwayland_surface *prev_xwayland_surface =
+        wlr_xwayland_surface_try_from_wlr_surface(prev_surface);
+    if (prev_xwayland_surface != nullptr) {
+        wlr_xwayland_surface_activate(prev_xwayland_surface, false);
+        set_toplevel_focused(toplevel_from_xwayland(prev_xwayland_surface), false);
+    }
+}
+
+void grant_keyboard_focus_to_non_toplevel(BiomeServer *server, wlr_surface *surface) {
+    clear_focused_toplevel(server);
+    wlr_seat *seat = server->seat;
+    wlr_keyboard *keyboard = wlr_seat_get_keyboard(seat);
+    wlr_seat_keyboard_enter(seat, surface,
+        keyboard ? keyboard->keycodes : nullptr,
+        keyboard ? keyboard->num_keycodes : 0,
+        keyboard ? &keyboard->modifiers : nullptr);
+}
+
 // Keyboard focus only (and, for Xwayland, the X11 stacking order with it).
 void focus_toplevel(BiomeToplevel *toplevel, wlr_surface *surface) {
     if (toplevel == nullptr) {
@@ -109,21 +139,7 @@ void focus_toplevel(BiomeToplevel *toplevel, wlr_surface *surface) {
     if (prev_surface == surface) {
         return;
     }
-    if (prev_surface) {
-        wlr_xdg_toplevel *prev_xdg_toplevel =
-            wlr_xdg_toplevel_try_from_wlr_surface(prev_surface);
-        if (prev_xdg_toplevel != nullptr) {
-            wlr_xdg_toplevel_set_activated(prev_xdg_toplevel, false);
-            set_toplevel_focused(toplevel_from_xdg(prev_xdg_toplevel), false);
-        } else {
-            wlr_xwayland_surface *prev_xwayland_surface =
-                wlr_xwayland_surface_try_from_wlr_surface(prev_surface);
-            if (prev_xwayland_surface != nullptr) {
-                wlr_xwayland_surface_activate(prev_xwayland_surface, false);
-                set_toplevel_focused(toplevel_from_xwayland(prev_xwayland_surface), false);
-            }
-        }
-    }
+    clear_focused_toplevel(server);
     wlr_keyboard *keyboard = wlr_seat_get_keyboard(seat);
     wlr_scene_node_raise_to_top(&toplevel->scene_tree->node);
     wl_list_remove(&toplevel->link);

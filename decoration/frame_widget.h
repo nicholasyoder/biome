@@ -31,12 +31,17 @@ void repolish_tree(QWidget *root);
 
 // Forces root's QLayout (and every descendant's) to recompute geometry
 // immediately, top-down. A QLayout normally reflows via a posted
-// QEvent::LayoutRequest, which needs a running Qt event loop to deliver -
-// Biome has none (everything offscreen, driven synchronously), so a widget
-// tree's layout would otherwise keep stale (default 100x30) geometry
-// forever. Shared by DecorationFrame::layoutFor() and switcher.cpp's
-// SwitcherPanel, which both resize() an offscreen top-level widget and need
-// its subtree to reflect that immediately.
+// QEvent::LayoutRequest, which needs the Qt event loop to actually run to
+// get delivered - decoration/ is driven synchronously off Biome's own
+// wl_display loop instead and deliberately doesn't rely on Qt event
+// delivery for correctness (ipc/global_shortcuts_portal.cpp does now pump
+// QCoreApplication::processEvents() periodically for its own D-Bus needs,
+// but that's a coarse, independently-timed poll this code must not depend
+// on - hence forcing this explicitly rather than trusting the event to
+// arrive promptly, or at all, between two calls here). Shared by
+// DecorationFrame::layoutFor() and switcher.cpp's SwitcherPanel, which both
+// resize() an offscreen top-level widget and need its subtree to reflect
+// that immediately.
 void force_activate_layouts(QWidget *root);
 
 // One left/right/bottom border strip - a plain styled widget rather than a

@@ -130,9 +130,13 @@ void DecorationFrame::layoutFor(int content_width, int content_height) {
 
     content_spacer_->setFixedSize(content_width, content_height);
     // setFixedSize() normally invalidates the layout via a posted
-    // QEvent::LayoutRequest, which never arrives since Biome has no running
-    // Qt event loop - force it instead, or minimumSizeHint() below could read
-    // a stale size left by this shared widget's previous render.
+    // QEvent::LayoutRequest, delivered whenever the Qt event loop next runs -
+    // this code can't assume that happens promptly (or between this call and
+    // the next), so force it synchronously instead. See force_activate_layouts()'s
+    // own doc comment (frame_widget.h) for why that's still true even though
+    // ipc/global_shortcuts_portal.cpp now pumps Qt's event loop periodically
+    // for D-Bus - otherwise minimumSizeHint() below could read a stale size
+    // left by this shared widget's previous render.
     force_activate_layouts(this);
     // QLayout::activate() on a top-level widget only ever grows it, never
     // shrinks - resize to the true minimum explicitly before the final
@@ -250,10 +254,11 @@ void DecorationFrame::setMaximizedState(bool maximized) {
     // can change border strips' min-/max-width/height - real geometry, not
     // just paint. repolish_tree() updates each border's minimum/maximumSize,
     // but the layout that actually resizes them to match only reflows via a
-    // posted QEvent::LayoutRequest, which never arrives (no running Qt event
-    // loop - see layoutFor()). A plain force_activate_layouts() alone isn't
-    // enough either: activate() on a top-level widget only ever grows it, so
-    // shrinking a border would just hand the freed space to the titlebar
+    // posted QEvent::LayoutRequest, which this code can't rely on arriving
+    // promptly (see layoutFor()'s own comment on why). A plain
+    // force_activate_layouts() alone isn't enough either: activate() on a
+    // top-level widget only ever grows it, so shrinking a border would just
+    // hand the freed space to the titlebar
     // instead of shrinking the frame. The explicit resize(minimumSizeHint())
     // below forces that shrink before the final re-activate.
     force_activate_layouts(this);

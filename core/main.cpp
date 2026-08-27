@@ -19,6 +19,7 @@
 #include "desktop/session_lock.h"
 #include "desktop/xdg_shell.h"
 #include "desktop/xwayland_shell.h"
+#include "ipc/global_shortcuts_portal.h"
 
 #include <QApplication>
 
@@ -110,6 +111,7 @@ int main(int argc, char *argv[]) {
     cursor_init(&server);
     input_init(&server);
     xwayland_init(&server, compositor);
+    global_shortcuts_portal_init(&server);
 
     const char *socket = wl_display_add_socket_auto(server.display);
     if (!socket) {

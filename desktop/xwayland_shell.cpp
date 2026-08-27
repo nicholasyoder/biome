@@ -175,12 +175,7 @@ static void unmanaged_associate(wl_listener *listener, void *data) {
         // nothing else may take it, so that grab still needs its own check.
         wlr_scene_node_raise_to_top(&s->scene_tree->node);
         if (!s->server->session_locked && wlr_xwayland_or_surface_wants_focus(s->xwayland_surface)) {
-            wlr_seat *seat = s->server->seat;
-            wlr_keyboard *keyboard = wlr_seat_get_keyboard(seat);
-            wlr_seat_keyboard_notify_enter(seat, s->xwayland_surface->surface,
-                keyboard ? keyboard->keycodes : nullptr,
-                keyboard ? keyboard->num_keycodes : 0,
-                keyboard ? &keyboard->modifiers : nullptr);
+            grant_keyboard_focus_to_non_toplevel(s->server, s->xwayland_surface->surface);
         }
     };
     wl_signal_add(&xsurface->surface->events.map, &surface->map);

@@ -325,11 +325,20 @@ static void xdg_popup_map(wl_listener *listener, void *data) {
         return;
     }
 
-    wlr_seat *seat = server->seat;
-    wlr_keyboard *keyboard = wlr_seat_get_keyboard(seat);
-    wlr_seat_keyboard_enter(seat, popup->xdg_popup->base->surface,
-        keyboard ? keyboard->keycodes : nullptr, keyboard ? keyboard->num_keycodes : 0,
-        keyboard ? &keyboard->modifiers : nullptr);
+    // This was the actual root cause of windowlist showing a toplevel as
+    // permanently focused: every Qt "Popup"-flagged widget (context menus,
+    // dropdowns, tooltips - anything using panel/panel-library's
+    // popup/popupmenu classes) maps as a plain xdg_popup, not a layer-shell
+    // surface, so it only ever went through this path - which needs the
+    // grab-bypassing wlr_seat_keyboard_enter() this function's own header
+    // comment explains, not wlr_seat_keyboard_notify_enter(), so a plain
+    // grep for the latter missed this site (and cursor.cpp's click-on-
+    // popup handler, which needs the same bypass) entirely on the first
+    // pass. See grant_keyboard_focus_to_non_toplevel()'s own doc comment
+    // (desktop/toplevel.h) for the full incident and why every such site
+    // now goes through it instead of calling wlr_seat_keyboard_enter()
+    // directly.
+    grant_keyboard_focus_to_non_toplevel(server, popup->xdg_popup->base->surface);
 }
 
 static void xdg_popup_unmap(wl_listener *listener, void *data) {
@@ -367,10 +376,7 @@ static void xdg_popup_unmap(wl_listener *listener, void *data) {
         return;
     }
     if (parent != nullptr) {
-        wlr_keyboard *keyboard = wlr_seat_get_keyboard(seat);
-        wlr_seat_keyboard_enter(seat, parent,
-            keyboard ? keyboard->keycodes : nullptr, keyboard ? keyboard->num_keycodes : 0,
-            keyboard ? &keyboard->modifiers : nullptr);
+        grant_keyboard_focus_to_non_toplevel(server, parent);
         return;
     }
     if (!wl_list_empty(&server->toplevels)) {

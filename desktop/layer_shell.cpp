@@ -139,11 +139,7 @@ static void handle_layer_surface_map(wl_listener *listener, void *data) {
     if (!wrapper->server->session_locked
         && layer_surface->current.keyboard_interactive
         != ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_NONE) {
-        wlr_seat *seat = wrapper->server->seat;
-        wlr_keyboard *keyboard = wlr_seat_get_keyboard(seat);
-        wlr_seat_keyboard_notify_enter(seat, layer_surface->surface,
-            keyboard ? keyboard->keycodes : nullptr, keyboard ? keyboard->num_keycodes : 0,
-            keyboard ? &keyboard->modifiers : nullptr);
+        grant_keyboard_focus_to_non_toplevel(wrapper->server, layer_surface->surface);
     }
 }
 

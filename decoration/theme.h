@@ -36,9 +36,12 @@ void load_decoration_theme();
 // BiomeToplevel::decoration_frame) rather than every window sharing one
 // process-wide instance - see desktop/decoration_bridge.h's
 // create_toplevel_decoration()/destroy_toplevel_decoration(). Caller takes
-// ownership; plain `delete` is fine (Biome never pumps a Qt event loop, so
-// deleteLater() would just leak - same reasoning as switcher.cpp's
-// SwitcherPanel teardown).
+// ownership; plain `delete` is fine - deleteLater() would need the Qt event
+// loop to actually run to take effect, and this code deliberately doesn't
+// lean on that (same reasoning as switcher.cpp's SwitcherPanel teardown -
+// see its own comment for why that's still true even though
+// ipc/global_shortcuts_portal.cpp now pumps Qt's event loop periodically
+// for D-Bus).
 DecorationFrame *create_decoration_frame();
 
 } // namespace biome_decoration

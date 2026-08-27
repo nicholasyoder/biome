@@ -84,8 +84,13 @@ void SwitcherPanel::setEntries(const std::vector<SwitcherEntry> &entries, int se
         QToolButton *icon = icons_.back();
         icons_.pop_back();
         icons_layout_->removeWidget(icon);
-        // Biome never pumps a Qt event loop, so deleteLater() would just
-        // leak - plain delete is safe since nothing else references these.
+        // deleteLater() posts a DeferredDelete event that only fires once
+        // the Qt event loop actually runs - ipc/global_shortcuts_portal.cpp
+        // does now pump it periodically for D-Bus, but decoration/
+        // deliberately doesn't lean on that timing (see frame_widget.h's
+        // force_activate_layouts() comment for the same principle). Plain
+        // delete is safe here regardless, since nothing else references
+        // these.
         delete icon;
     }
 

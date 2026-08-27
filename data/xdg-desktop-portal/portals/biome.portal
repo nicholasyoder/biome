@@ -1,0 +1,4 @@
+[portal]
+DBusName=org.freedesktop.impl.portal.desktop.biome
+Interfaces=org.freedesktop.impl.portal.GlobalShortcuts;
+UseIn=biome

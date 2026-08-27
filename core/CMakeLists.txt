@@ -1,4 +1,4 @@
-find_package(Qt6 REQUIRED COMPONENTS Core)
+find_package(Qt6 REQUIRED COMPONENTS Core DBus)
 
 add_executable(biome
     main.cpp
@@ -11,6 +11,8 @@ add_executable(biome
     output_config.cpp
     input.h
     input.cpp
+    keybindings.h
+    keybindings.cpp
     cursor.h
     cursor.cpp
     wlroots.hpp
@@ -29,10 +31,12 @@ target_include_directories(biome PRIVATE
 target_link_libraries(biome PRIVATE
     biome_desktop
     biome_decoration
+    biome_ipc
     PkgConfig::WLROOTS
     PkgConfig::WAYLAND_SERVER
     PkgConfig::XKBCOMMON
     Qt6::Core
+    Qt6::DBus
 )
 
 install(TARGETS biome RUNTIME DESTINATION bin)
