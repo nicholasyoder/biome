@@ -31,20 +31,29 @@ bool trigger_matches(const ParsedTrigger &trigger, xkb_keysym_t sym, uint32_t mo
     return trigger.keysym == sym && trigger.modmask == (modifiers & kMatchableModifierMask);
 }
 
-bool is_modifier_keysym(xkb_keysym_t sym) {
+// 0 for a non-modifier keysym; otherwise the single kMatchableModifierMask
+// bit that keysym corresponds to.
+uint32_t modifier_bit_for_keysym(xkb_keysym_t sym) {
     switch (sym) {
     case XKB_KEY_Shift_L:
     case XKB_KEY_Shift_R:
+        return WLR_MODIFIER_SHIFT;
     case XKB_KEY_Control_L:
     case XKB_KEY_Control_R:
+        return WLR_MODIFIER_CTRL;
     case XKB_KEY_Alt_L:
     case XKB_KEY_Alt_R:
+        return WLR_MODIFIER_ALT;
     case XKB_KEY_Super_L:
     case XKB_KEY_Super_R:
-        return true;
+        return WLR_MODIFIER_LOGO;
     default:
-        return false;
+        return 0;
     }
+}
+
+bool is_modifier_keysym(xkb_keysym_t sym) {
+    return modifier_bit_for_keysym(sym) != 0;
 }
 
 struct PortalBinding {
@@ -274,7 +283,19 @@ bool handle_modifier_tap(BiomeServer *server, xkb_keysym_t sym, uint32_t modifie
         return false;
     }
 
-    const uint32_t mods = modifiers & kMatchableModifierMask;
+    // wlr_keyboard_notify_key() emits events.key BEFORE applying that same
+    // event to its own xkb_state (types/wlr_keyboard.c) - so `modifiers`
+    // here is always one event behind for the key currently being
+    // processed. That's invisible for ordinary combos (a modifier key's
+    // own press already landed in xkb_state by the time some *later* key's
+    // event arrives), but fatal for a bare-tap trigger, which only ever
+    // looks at the modifier key's own press/release events. Patch in that
+    // key's own bit by hand rather than trusting `modifiers` for it.
+    const uint32_t ownBit = modifier_bit_for_keysym(sym);
+    uint32_t mods = modifiers & kMatchableModifierMask;
+    if (ownBit != 0) {
+        mods = pressed ? (mods | ownBit) : (mods & ~ownBit);
+    }
 
     if (pressed) {
         if (is_modifier_keysym(sym) && mods != 0 && (mods & (mods - 1)) == 0) {

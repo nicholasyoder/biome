@@ -208,13 +208,16 @@ in `desktop/toplevel.{h,cpp}`).
   add it if a concrete client that needs it ever comes up.
 
 ### C — Global hotkeys via `org.freedesktop.portal.GlobalShortcuts`
-**Status:** `[x]` done, both sides implemented; not yet manually confirmed
-by the user. Step 1
-(Biome-side prototype), step 2 (real `xdg-desktop-portal`/`portals.conf`
-broker wiring), and step 3 (`forest/`-side `foresthotkeys.cpp`/`hotkey.cpp`
-port off `XGrabKey`, plus the Biome-side `impl.portal.Session` object and
-modifier-only-trigger companion pieces it depends on) are all built. See
-`docs/phase4-session-log.md`'s dated entry for the full writeup.
+**Status:** `[x]` done, both sides implemented and manually confirmed
+end-to-end by the user (2026-08-31): normal combos, media keys, the bare
+`Meta` tap, `pauseHotkeys`/`resumeHotkeys` during a settings-UI key
+capture, and `reloadhotkeys()` all work. Step 1 (Biome-side prototype),
+step 2 (real `xdg-desktop-portal`/`portals.conf` broker wiring), and step 3
+(`forest/`-side `foresthotkeys.cpp`/`hotkey.cpp` port off `XGrabKey`, plus
+the Biome-side `impl.portal.Session` object and modifier-only-trigger
+companion pieces it depends on) are all built. See
+`docs/phase4-session-log.md`'s dated entries for the full writeup,
+including three bugs the manual pass caught and fixed.
 
 - Current interface (already transport-agnostic, good news): `foresthotkeys`
   exports DBus object `/org/forest/hotkeys` with slots `reloadhotkeys()`,
@@ -300,8 +303,8 @@ and D remain.
 
 1. ~~**A** (layer-shell) — foundational, unblocks B and D.~~ done.
 2. ~~**B** (windowlist/foreign-toplevel) — unblocked by A.~~ done.
-3. ~~**C** (hotkeys/portal) — independent, can run any time.~~ done, pending
-   manual confirmation.
+3. ~~**C** (hotkeys/portal) — independent, can run any time.~~ done, manually
+   confirmed.
 4. **D** (workspaces) — unblocked by A; gated on its own protocol decision
    (`ext-workspace-v1` vs a Biome-specific DBus interface).
 
@@ -329,10 +332,6 @@ to that file going forward, not here — same convention as before: one
 entry per work session, what was decided/built, what's still open, what
 to pick up next time.
 
-Latest status as of that file's last entry (2026-08-26): Workstreams A and
-B are done and manually confirmed on both sides. Workstream C is fully
-built (Biome-side portal prototype, real `xdg-desktop-portal` broker
-wiring, the `forest/`-side `foresthotkeys.cpp`/`hotkey.cpp` port, and the
-Biome-side `impl.portal.Session` object + modifier-only-trigger companion
-work it needed) but not yet manually confirmed end-to-end. Workstream D hasn't
-started (blocked on the workspace-protocol decision above).
+Latest status as of that file's last entry (2026-08-31): Workstreams A, B,
+and C are all done and manually confirmed on both sides. Workstream D
+hasn't started (blocked on the workspace-protocol decision above).

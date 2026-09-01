@@ -925,13 +925,121 @@ lasting value (the full blow-by-blow, for anything trimmed, is still in
   restriction as the Biome side prevented a destructive full clean rebuild
   this session.
 
-  **Not yet manually tested** - per
-  [[feedback_manual_interactive_testing]]: needs a real nested-Biome session
-  with a normal combo (`Meta+E` → file manager), a media key (`Volume
-  Mute`), the bare `Meta` tap (menu toggle), `pauseHotkeys`/`resumeHotkeys`
-  during a settings-UI key capture, and a `reloadhotkeys()` (edit+save in
-  `forest-settings`) all confirmed working end-to-end without leaking stale
-  bindings on repeated reloads. The local `~/.config/Forest-wayland/
-  Forest.conf` `[hotkeys]` section (deliberately emptied per
-  `WAYLAND-TESTING-NOTES.md`) needs restoring first - see that file's own
-  note to do this once this workstream lands.
+  **Manual test pass, same day, bare metal (tty1, not nested).** Biome
+  launched directly on a free VT (`./build/core/biome -s foot`); a
+  `--replace`d `XDG_CURRENT_DESKTOP=biome /usr/libexec/xdg-desktop-portal
+  --verbose` run from inside that session (the `.portal`/`.conf` symlinks
+  from step 2 were already in place, so no re-setup needed) took over
+  `org.freedesktop.portal.Desktop` from the host's normal instance -
+  confirmed via its log picking `biome.portal` for `GlobalShortcuts`
+  specifically ("Using biome.portal for org.freedesktop.impl.portal.
+  GlobalShortcuts (config)") while still falling back to `gtk.portal` for
+  everything else. The local `~/.config/Forest-wayland/Forest.conf`
+  `[hotkeys]` section was restored first, per `WAYLAND-TESTING-NOTES.md`'s
+  own note to do this once this workstream lands.
+
+  First attempt failed immediately: `BindShortcuts` errored client-side
+  with `Marshalling failed: Invalid object path passed in arguments`, even
+  though the daemon's own log showed `CreateSession` had succeeded
+  (`global shortcuts session owned by ':1.194' created`). Root cause:
+  `GlobalShortcutsPortal::createSession()` (`forest/services/services-app/
+  hotkeys/globalshortcutsportal.cpp`) tried to read `session_handle` back
+  out of `CreateSession`'s `Response` results - but per the portal spec's
+  session-handle convention, that path is never returned there at all; the
+  client is required to derive it itself from its own sender name and the
+  `session_handle_token` it chose (the same convention already used
+  correctly for the Request path, just missed for the Session path).
+  `m_sessionHandle` was silently left at its default-constructed, empty
+  `QDBusObjectPath()`, which is what `BindShortcuts` failed to marshal.
+  Fixed by computing `/org/freedesktop/portal/desktop/session/<escaped
+  sender>/<session_handle_token>` locally right after choosing the token,
+  the same way `libportal` and every other session-based portal client
+  do it, instead of trusting `results`. Rebuilt just `services-app`
+  incrementally, zero errors; restarting the test `forest` binary picked
+  up the fix immediately.
+
+  **Confirmed working after the fix:** a normal combo (`Meta+E` → file
+  manager). Still open at the end of this session: a media key, the bare
+  `Meta` tap, `pauseHotkeys`/`resumeHotkeys` during a settings-UI key
+  capture, and `reloadhotkeys()` - continued in the next entry. Also still
+  open: a destructive full clean rebuild of either tree, blocked both times
+  by the coding agent's own sandbox classifier - left for the user (or a
+  future session with that permission granted).
+
+- **2026-08-31 — Workstream C manual test pass continued, two more bugs
+  found and fixed; workstream now fully confirmed.** New session (after a
+  reboot/relogin) resumed testing on the same tty1 bare-metal setup. First
+  attempt failed with `GlobalShortcutsPortal: CreateSession call failed:
+  "No such interface \`org.freedesktop.portal.GlobalShortcuts\` on object
+  at path /org/freedesktop/portal/desktop"` - not a code bug, just that the
+  `--replace`d `xdg-desktop-portal` instance from the prior session doesn't
+  persist (it's a foreground process, not a service) and needed relaunching
+  the same way as before; the `.portal`/`biome-portals.conf` symlinks
+  themselves were still in place from step 2 and needed no re-setup.
+
+  With that running, forest's new per-hotkey `GlobalShortcutsPortal:
+  binding <id> -> <trigger>` log line (added as a diagnostic during this
+  investigation, left in) showed every trigger string generated correctly,
+  including `"LOGO"` for the bare Meta tap - narrowing the still-open items
+  down to two real bugs, both in runtime behavior rather than trigger
+  parsing:
+
+  1. **The bare `Meta` tap never fired**, even though every combo including
+     `LOGO+`-prefixed ones worked fine. Root-caused by reading
+     wlroots' actual source rather than assuming
+     (`~/Misc/wlroots/types/wlr_keyboard.c:110-131`, the local checkout
+     with real `.c` sources, not the headers-only `misc/wlroots` in this
+     repo): `wlr_keyboard_notify_key()` emits `events.key` (what
+     `keyboard_handle_key()` listens to) *before* calling
+     `xkb_state_update_key()` for that same event - so
+     `wlr_keyboard_get_modifiers()` read during a modifier key's own
+     press/release event is always one event behind, missing that key's
+     own contribution. Invisible for ordinary combos (the modifier's own
+     press already landed in `xkb_state` by the time some *later* key's
+     event arrives - a separate, earlier call to
+     `wlr_keyboard_notify_key()`), but fatal for a bare-tap trigger, which
+     only ever looks at the modifier key's own press/release events: at
+     Super_L's press, `modifiers` still read `0` (LOGO not yet applied) so
+     the arm condition never matched; at release, `modifiers` still read
+     `LOGO` (not yet cleared) so the fire condition never matched either -
+     the tap silently never armed or fired, either direction, for the
+     structurally same reason. Fixed in `core/keybindings.cpp` by adding
+     `modifier_bit_for_keysym()` (`is_modifier_keysym()` now just checks it
+     against `0`) and having `handle_modifier_tap()` patch that key's own
+     bit into `mods` by hand (OR it in on press, AND-NOT it out on release)
+     instead of trusting `modifiers` for the key currently being processed.
+     Required restarting `biome` itself, not just `forest` - the compositor
+     process, so the whole nested session - since the fix is in `biome`'s
+     own binary.
+  2. **`pauseHotkeys` didn't actually let a new hotkey be captured** -
+     `edithotkeywidget::keyPressEvent()`
+     (`forest/services/services-settings/hotkeys/edithotkeywidget.cpp`)
+     calls `pauseHotkeys()` right before it needs to see a raw keypress
+     (e.g. re-binding the Meta key to something else), but Biome kept
+     swallowing the key at the compositor level regardless, because
+     `foresthotkeys::pauseHotkeys()` (this workstream's own step 3 change)
+     had simplified pause/resume down to a pure `paused` flag toggle - per
+     the original plan's own reasoning, quoted in the plan doc, that "no
+     portal calls needed at all now that dispatch is centralized." That
+     reasoning was wrong: the flag only gates whether `dispatch()` *acts*
+     on an `Activated` signal client-side, but Biome's compositor-side
+     `portal_bindings()` table still matches and swallows the raw key
+     before it ever reaches the focused client - unlike the old
+     `XGrabKey`-based pause, which released the actual OS-level grab. Fixed
+     by making `pauseHotkeys()`/`resumeHotkeys()` (`forest/services/
+     services-app/hotkeys/foresthotkeys.cpp`) actually call
+     `portal->closeSession()` / `portal->createSession()` +
+     `portal->bindShortcuts()` - the same close/recreate/rebind machinery
+     `reloadhotkeys()` already used - rather than only toggling the flag.
+     Forest-only fix, `services-app` rebuilt incrementally, zero errors;
+     picked up by restarting just the test `forest` binary.
+
+  **All items on the manual test checklist now confirmed working**: a
+  normal combo (`Meta+E`), media keys (`Volume Mute` and friends, which
+  turned out to have been working correctly since the first fix - the
+  earlier "not yet tried" note was just untested, not broken),
+  the bare `Meta` tap, `pauseHotkeys`/`resumeHotkeys` during a real
+  settings-UI key capture, and `reloadhotkeys()` (confirmed live via the
+  reload log line appearing in forest's terminal on edit+save, no stale
+  bindings). Workstream C is done. Still open: the destructive full clean
+  rebuild of either tree, same sandbox-classifier restriction as before.
