@@ -214,30 +214,41 @@ void place_new_toplevel(BiomeToplevel *toplevel) {
         vis_y = parent_vis_y + (parent_geo.height - height) / 2;
         toplevel->workspace = parent->workspace;
     } else {
-        wlr_box layout_box;
-        wlr_output_layout_get_box(server->output_layout, nullptr, &layout_box);
-        if (wlr_box_empty(&layout_box)) {
+        // Center on the output under the cursor (falling back to the whole
+        // layout's box - see output_target_box - if the cursor isn't over
+        // any output yet). Centering in the *combined* multi-output layout
+        // box instead, as this used to, places the raw center point wherever
+        // it falls in the whole virtual desktop - on a multi-monitor rig
+        // with differently-sized outputs, that's frequently near a seam
+        // between two outputs rather than the middle of either one, and the
+        // old code only discovered which single output to clamp against
+        // *after* computing that already-wrong center.
+        wlr_output *wlr_output = wlr_output_layout_output_at(
+            server->output_layout, server->cursor->x, server->cursor->y);
+        wlr_box target = output_target_box(server, wlr_output);
+        if (wlr_box_empty(&target)) {
             return;
         }
         int index = static_cast<int>(wl_list_length(&server->toplevels)) % 8;
         int cascade = index * 24;
-        vis_x = layout_box.x + (layout_box.width - width) / 2 + cascade;
-        vis_y = layout_box.y + (layout_box.height - height) / 2 + cascade;
+        vis_x = target.x + (target.width - width) / 2 + cascade;
+        vis_y = target.y + (target.height - height) / 2 + cascade;
         toplevel->workspace = server->active_workspace;
 
-        // Clamp away from whichever single output's reserved (exclusive-zone)
-        // edge this cascade position landed on or under - doesn't change the
-        // cascade algorithm itself (still centered in the whole multi-output
-        // layout box above), just keeps the result from starting a window
-        // partly behind a panel.
-        wlr_output *wlr_output = wlr_output_layout_output_at(server->output_layout, vis_x, vis_y);
-        if (wlr_output != nullptr) {
-            wlr_box target = output_target_box(server, wlr_output);
-            if (!wlr_box_empty(&target)) {
-                vis_x = std::clamp(vis_x, target.x, std::max(target.x, target.x + target.width - width));
-                vis_y = std::clamp(vis_y, target.y, std::max(target.y, target.y + target.height - height));
-            }
-        }
+        // Clamp so the *decorated* frame (content plus border/titlebar, not
+        // just the content's top-left) stays on this output - otherwise a
+        // window whose remembered/default content size approaches the
+        // output's size ends up with its titlebar and/or trailing border
+        // pushed off-screen even though its content technically still
+        // starts on-screen.
+        int border = decoration_border_width(toplevel, false);
+        int border_right = decoration_border_right_width(toplevel, false);
+        int titlebar = decoration_titlebar_height(toplevel, false);
+        int border_bottom = decoration_border_bottom_height(toplevel, false);
+        int min_x = target.x + border;
+        int min_y = target.y + titlebar;
+        vis_x = std::clamp(vis_x, min_x, std::max(min_x, target.x + target.width - width - border_right));
+        vis_y = std::clamp(vis_y, min_y, std::max(min_y, target.y + target.height - height - border_bottom));
     }
 
     // A freshly placed toplevel is never already maximized.
