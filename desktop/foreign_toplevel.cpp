@@ -4,6 +4,8 @@
 
 #include "desktop/toplevel.h"
 
+#include <cstring>
+
 // Per-BiomeToplevel wrapper around wlr_foreign_toplevel_handle_v1 - not
 // exposed outside this file, same shape as session_lock.cpp's
 // BiomeLockSurface. toplevel is kept so the request_* listeners (which only
@@ -12,6 +14,14 @@
 struct BiomeForeignToplevel {
     BiomeToplevel *toplevel = nullptr;
     wlr_foreign_toplevel_handle_v1 *handle = nullptr;
+    // ext-foreign-toplevel-list-v1's handle for the same toplevel, created
+    // immediately alongside `handle` above so Forest's windowlist can pair
+    // the two client-side objects by creation order - see
+    // BiomeServer::ext_foreign_toplevel_list's doc comment in
+    // core/server.h. Only exists to hand out ext_identifier below; no
+    // request listeners of its own (the list protocol has no requests
+    // beyond destroy).
+    wlr_ext_foreign_toplevel_handle_v1 *ext_handle = nullptr;
     wl_listener request_maximize = {};
     wl_listener request_minimize = {};
     wl_listener request_activate = {};
@@ -54,6 +64,7 @@ static void handle_request_close(wl_listener *listener, void *data) {
 
 void foreign_toplevel_init(BiomeServer *server) {
     server->foreign_toplevel_manager = wlr_foreign_toplevel_manager_v1_create(server->display);
+    server->ext_foreign_toplevel_list = wlr_ext_foreign_toplevel_list_v1_create(server->display, 1);
 }
 
 void foreign_toplevel_create(BiomeToplevel *toplevel) {
@@ -87,6 +98,18 @@ void foreign_toplevel_create(BiomeToplevel *toplevel) {
     if (output != nullptr) {
         wlr_foreign_toplevel_handle_v1_output_enter(wrapper->handle, output);
     }
+
+    if (server->ext_foreign_toplevel_list != nullptr) {
+        wlr_ext_foreign_toplevel_handle_v1_state ext_state = {};
+        ext_state.title = "";
+        ext_state.app_id = "";
+        wrapper->ext_handle =
+            wlr_ext_foreign_toplevel_handle_v1_create(server->ext_foreign_toplevel_list, &ext_state);
+    }
+
+    if (server->window_workspaces_changed != nullptr) {
+        server->window_workspaces_changed(server);
+    }
 }
 
 void foreign_toplevel_destroy(BiomeToplevel *toplevel) {
@@ -94,6 +117,7 @@ void foreign_toplevel_destroy(BiomeToplevel *toplevel) {
     if (wrapper == nullptr) {
         return;
     }
+    BiomeServer *server = toplevel->server;
     toplevel->foreign_toplevel = nullptr;
 
     wl_list_remove(&wrapper->request_maximize.link);
@@ -104,7 +128,14 @@ void foreign_toplevel_destroy(BiomeToplevel *toplevel) {
 
     // Sends the `closed` event to any client still holding this handle.
     wlr_foreign_toplevel_handle_v1_destroy(wrapper->handle);
+    if (wrapper->ext_handle != nullptr) {
+        wlr_ext_foreign_toplevel_handle_v1_destroy(wrapper->ext_handle);
+    }
     free(wrapper);
+
+    if (server->window_workspaces_changed != nullptr) {
+        server->window_workspaces_changed(server);
+    }
 }
 
 void foreign_toplevel_update_title_app_id(BiomeToplevel *toplevel) {
@@ -124,6 +155,33 @@ void foreign_toplevel_update_title_app_id(BiomeToplevel *toplevel) {
     }
     wlr_foreign_toplevel_handle_v1_set_title(wrapper->handle, title);
     wlr_foreign_toplevel_handle_v1_set_app_id(wrapper->handle, app_id);
+
+    if (wrapper->ext_handle != nullptr) {
+        wlr_ext_foreign_toplevel_handle_v1_state ext_state = {};
+        ext_state.title = title;
+        ext_state.app_id = app_id;
+        wlr_ext_foreign_toplevel_handle_v1_update_state(wrapper->ext_handle, &ext_state);
+    }
+}
+
+BiomeToplevel *foreign_toplevel_find_by_identifier(BiomeServer *server, const char *identifier) {
+    BiomeToplevel *pos;
+    wl_list_for_each(pos, &server->toplevels, link) {
+        BiomeForeignToplevel *wrapper = pos->foreign_toplevel;
+        if (wrapper != nullptr && wrapper->ext_handle != nullptr && wrapper->ext_handle->identifier != nullptr &&
+                strcmp(wrapper->ext_handle->identifier, identifier) == 0) {
+            return pos;
+        }
+    }
+    return nullptr;
+}
+
+const char *foreign_toplevel_identifier(BiomeToplevel *toplevel) {
+    BiomeForeignToplevel *wrapper = toplevel->foreign_toplevel;
+    if (wrapper == nullptr || wrapper->ext_handle == nullptr) {
+        return nullptr;
+    }
+    return wrapper->ext_handle->identifier;
 }
 
 void foreign_toplevel_sync_state(BiomeToplevel *toplevel) {

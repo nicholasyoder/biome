@@ -2,6 +2,8 @@
 
 #include "desktop/workspace.h"
 
+#include "desktop/ext_workspace.h"
+
 void update_toplevel_visibility(BiomeToplevel *toplevel) {
     // No session_locked check here (Phase 3.5 added one; removed now that
     // Workstream A's real per-output layer stack exists - see
@@ -29,18 +31,18 @@ void focus_topmost_on_active_workspace(BiomeServer *server) {
     wlr_seat_keyboard_notify_clear_focus(server->seat);
 }
 
-static int wrap_workspace(int index) {
+static int wrap_workspace(BiomeServer *server, int index) {
     if (index < 0) {
-        return kWorkspaceCount - 1;
+        return server->workspace_count - 1;
     }
-    if (index >= kWorkspaceCount) {
+    if (index >= server->workspace_count) {
         return 0;
     }
     return index;
 }
 
 void switch_workspace(BiomeServer *server, int index) {
-    index = wrap_workspace(index);
+    index = wrap_workspace(server, index);
     if (index == server->active_workspace) {
         return;
     }
@@ -54,11 +56,12 @@ void switch_workspace(BiomeServer *server, int index) {
     // its focus so stale events don't reach it, re-resolved on next motion.
     wlr_seat_pointer_clear_focus(server->seat);
     focus_topmost_on_active_workspace(server);
+    ext_workspace_sync_active(server);
 }
 
 void move_toplevel_to_workspace(BiomeToplevel *toplevel, int index) {
     BiomeServer *server = toplevel->server;
-    index = wrap_workspace(index);
+    index = wrap_workspace(server, index);
     if (index == toplevel->workspace) {
         return;
     }
@@ -68,5 +71,8 @@ void move_toplevel_to_workspace(BiomeToplevel *toplevel, int index) {
             index != server->active_workspace) {
         wlr_seat_pointer_clear_focus(server->seat);
         focus_topmost_on_active_workspace(server);
+    }
+    if (server->window_workspaces_changed != nullptr) {
+        server->window_workspaces_changed(server);
     }
 }

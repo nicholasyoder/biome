@@ -5,6 +5,8 @@ set(CMAKE_AUTOMOC ON)
 add_library(biome_ipc STATIC
     global_shortcuts_portal.h
     global_shortcuts_portal.cpp
+    workspace_bridge.h
+    workspace_bridge.cpp
 )
 
 add_dependencies(biome_ipc biome_wlroots_cxx_shim
@@ -19,6 +21,7 @@ target_include_directories(biome_ipc PUBLIC
 )
 
 target_link_libraries(biome_ipc PUBLIC
+    biome_desktop
     Qt6::Core
     Qt6::DBus
     PkgConfig::WLROOTS

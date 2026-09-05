@@ -251,8 +251,20 @@ including three bugs the manual pass caught and fixed.
   `foresthotkeys.cpp` already uses for its own `/org/forest/hotkeys` object.
 
 ### D — Workspaces / deskswitch
-**Status:** `[ ]` not started. **Depends on:** A. **Blocked on a protocol
-decision** — this is the trickiest workstream in the phase.
+**Status:** `[x]` done — both sides implemented, building clean (zero
+warnings), and manually confirmed on real Wayland/Biome, including the
+multi-window creation-order-pairing stress test (several terminals opened
+in quick succession via the hotkey launcher, moved between desktops, and
+closed — no desync). Two bugs found in the first manual pass (windowlist
+showing all desktops instead of just the active one; deskswitch's dot
+indicator going stale on last-window-close) and fixed same day, plus a
+follow-up to make the "move to desktop" menu match the old X11 UI exactly
+(item order/wording/icon, "Desktop N" labels). **Depends on:** A (done).
+See `phase4-session-log.md`'s 2026-09-05 entries for the full
+implementation writeup and both bugfixes.
+
+**Phase 4 is now fully done** — Workstreams A, B, C, and D are all
+implemented and manually confirmed on both sides.
 
 - Current (X11): Pure raw-XCB EWMH, no KWindowSystem — reads
   `_NET_NUMBER_OF_DESKTOPS` once, tracks `_NET_CLIENT_LIST` +
@@ -261,28 +273,66 @@ decision** — this is the trickiest workstream in the phase.
   (decision 2 above). Switching sends a `_NET_CURRENT_DESKTOP` ClientMessage
   that xfwm4 listens for. No per-window "move to desktop N" logic lives here
   — that's in windowlist's context menu.
-- **`[?]` Open question:** wlroots/Wayland core has no virtual-desktop
-  concept at all; `docs/plan.md`'s protocol table was missing a row for
-  this (fixed 2026-08-22). Biome already has its own internal
-  4-workspace model (`desktop/workspace.h`, `kWorkspaceCount`,
-  `switch_workspace()`, `move_toplevel_to_workspace()`), it just has no
-  external protocol exposing it yet. Two directions, need a decision before
-  implementing: (a) `ext-workspace-v1` — the closest thing to a standard
-  protocol, but still unstable/draft and needs checking against wlroots
-  0.18's actual support; picking it fits the Decoupling goal's
-  standard-protocols-first bias. (b) a Biome-specific DBus interface under
-  `org.biome` (the `ipc/` module) — simpler, guaranteed to work, but a
-  deliberate exception to the decoupling default and needs justifying the
-  same way the plan already justifies the `GlobalShortcuts` portal choice
-  going the *other* way. Given `docs/plan.md`'s explicit stance ("treat a
-  Biome-specific or Forest-specific shortcut as something to justify, not
-  the default"), default assumption should be to seriously evaluate (a)
-  first and only fall back to (b) with a documented reason, mirroring how
-  the hotkey decision was made.
-- Biome-side work: depends on the decision above.
-- Forest-side work: replace the three EWMH atom read paths and the
-  `_NET_CURRENT_DESKTOP` ClientMessage send with the chosen protocol/DBus
-  equivalent.
+- **Resolved 2026-09-05 — hybrid `ext-workspace-v1` + a narrow `org.biome`
+  DBus addition.** Full research: `ext-workspace-v1` has no wlroots
+  server-side helper (unlike `wlr_layer_shell_v1.h`/
+  `wlr_foreign_toplevel_management_v1.h`, which did the heavy lifting for
+  Workstreams A/B) — it's hand-rolled server-side from the raw XML (three
+  interfaces: manager/group/handle), the highest from-scratch effort of any
+  Phase 4 protocol. It fully covers switching/listing, and its wire format
+  is inherently dynamic-count (`workspace`/`removed` events, no fixed
+  number baked in) — adopting it forces `kWorkspaceCount` to become a
+  runtime `BiomeServer::workspace_count` field instead of a compile-time
+  constant, which is a deliberate improvement, not incidental.
+
+  But it has **no toplevel↔workspace linkage at all** — checked both
+  `ext-workspace-v1.xml` and `wlr-foreign-toplevel-management-unstable-v1.xml`
+  (Workstream B's protocol); neither ties a window to a workspace. That
+  breaks two real Forest features with no standard-protocol path: the
+  per-desktop window-count dots and windowlist's "move to desktop" menu
+  item (currently stubbed — see `windowbutton.cpp`'s `desk_menu` comment).
+  Decided with the user: use `ext-workspace-v1` for everything it covers,
+  and add one small `org.biome.Workspaces` DBus interface (in `ipc/`,
+  alongside Workstream C's `GlobalShortcutsPortal`) purely for the
+  toplevel↔workspace relationship — the same "justify the exception, don't
+  make it the default" bar the `GlobalShortcuts` portal choice was held to,
+  just landing on the DBus side for this one narrow piece instead.
+
+  A second finding falls out of that: correlating a `windowlist` toplevel
+  (identified via its `wlr_foreign_toplevel_handle_v1` object, no stable
+  string identity) with the new DBus interface's toplevel argument needs a
+  shared identifier. `ext-foreign-toplevel-list-v1` — Workstream B's
+  "later, optional, add it if a concrete client needs it" companion
+  protocol — is exactly that (wlroots helper confirmed present,
+  `wlr_ext_foreign_toplevel_list_v1.h`, auto-generates a stable
+  `identifier` string per toplevel). A concrete need now exists, so it's
+  being adopted now instead of staying deferred. The two protocols have no
+  cross-reference on the wire, so Biome creates both handles for a toplevel
+  back-to-back in `foreign_toplevel_create()` and Forest's windowlist pairs
+  them by creation-order arrival — the same approach other wlr-ecosystem
+  clients use for this exact gap. **Needs manual multi-window stress
+  testing** to confirm the pairing never desyncs, same spirit as the real
+  focus bug Workstream B's manual pass caught.
+- Biome-side work: `workspace_count` field (`core/server.h`,
+  `desktop/workspace.{h,cpp}`); new `desktop/ext_workspace.{h,cpp}`
+  (hand-rolled `ext_workspace_manager_v1` server, single group spanning all
+  outputs, only `activate` capability advertised — no dynamic
+  create/remove/assign, matching Biome's fixed-policy identity);
+  `desktop/foreign_toplevel.cpp` extended to also create/destroy a
+  `wlr_ext_foreign_toplevel_handle_v1` alongside the existing
+  `wlr_foreign_toplevel_handle_v1`; new `ipc/workspace_bridge.{h,cpp}`
+  exporting `org.biome.Workspaces` (`GetWindowWorkspaces`,
+  `WindowWorkspacesChanged`, `MoveToplevelToWorkspace`) — identifier ->
+  workspace index for every open window, not just aggregate counts, so
+  windowlist can filter its own button list down to the active workspace
+  (deskswitch tallies the same map into per-desktop counts client-side).
+- Forest-side work: `deskswitch` rewritten onto an `ext-workspace-v1`
+  client binding (`QWaylandClientExtensionTemplate`, same mechanism as
+  Workstream B) for switching/listing/active-highlight, plus a
+  `QDBusInterface` to `org.biome.Workspaces` for the per-desktop dot
+  counts (the XCB atom reads/filter go away entirely); `windowlist` gets a
+  small `ext-foreign-toplevel-list-v1` binding for stable identifiers and
+  wires its stubbed `desk_menu` to `MoveToplevelToWorkspace`.
 
 ## Phase 6 (net-new capabilities — tracked in `docs/plan.md`, not here)
 
@@ -298,20 +348,23 @@ Workstream A.
 
 ## Suggested sequencing
 
-Workstreams A and B are done (both sides landed and manually confirmed). C
-and D remain.
+All four workstreams are done — both sides landed and manually confirmed
+for each. Phase 4 is complete.
 
 1. ~~**A** (layer-shell) — foundational, unblocks B and D.~~ done.
 2. ~~**B** (windowlist/foreign-toplevel) — unblocked by A.~~ done.
 3. ~~**C** (hotkeys/portal) — independent, can run any time.~~ done, manually
    confirmed.
-4. **D** (workspaces) — unblocked by A; gated on its own protocol decision
-   (`ext-workspace-v1` vs a Biome-specific DBus interface).
+4. ~~**D** (workspaces) — unblocked by A.~~ done, manually confirmed
+   2026-09-05 (including the multi-window creation-order-pairing stress
+   test).
 
 ## Open questions log
 
-- [ ] Workspace protocol: `ext-workspace-v1` vs Biome-specific DBus — see
-      Workstream D.
+- [x] Workspace protocol: `ext-workspace-v1` vs Biome-specific DBus — see
+      Workstream D. Decided 2026-09-05: hybrid, `ext-workspace-v1` for
+      switching/listing plus a narrow `org.biome.Workspaces` DBus addition
+      for the toplevel↔workspace linkage no standard protocol covers.
 - [x] Windowlist thumbnail fallback once client-window pixel capture is
       gone — see Workstream B. Decided 2026-08-23: icon-only for now
       (`imagepopup.cpp`'s popup/timer/positioning/shadow scaffolding kept
@@ -332,6 +385,6 @@ to that file going forward, not here — same convention as before: one
 entry per work session, what was decided/built, what's still open, what
 to pick up next time.
 
-Latest status as of that file's last entry (2026-08-31): Workstreams A, B,
-and C are all done and manually confirmed on both sides. Workstream D
-hasn't started (blocked on the workspace-protocol decision above).
+Latest status as of that file's last entry (2026-09-05): Workstreams A, B,
+C, and D are all done and manually confirmed on both sides. **Phase 4 is
+complete.**

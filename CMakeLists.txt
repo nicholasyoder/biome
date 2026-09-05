@@ -1,5 +1,10 @@
 cmake_minimum_required(VERSION 3.16)
-project(biome VERSION 0.1.0 LANGUAGES CXX)
+# C is only needed for wayland-scanner's generated ext-workspace-v1-protocol.c
+# (biome_ext_workspace_protocol below, desktop/ext_workspace.cpp) - without
+# it enabled here, CMake silently emits no compile rule for that source at
+# all rather than erroring, so the OBJECT library looks like it built but
+# is actually empty.
+project(biome VERSION 0.1.0 LANGUAGES CXX C)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -32,6 +37,27 @@ biome_generate_protocol_header(XDG_SHELL_PROTOCOL_HEADER XDG_SHELL_PROTOCOL_HEAD
 # nothing in Biome's own code includes it directly.
 biome_generate_protocol_header(LAYER_SHELL_PROTOCOL_HEADER LAYER_SHELL_PROTOCOL_HEADER_TARGET
     "${CMAKE_SOURCE_DIR}/protocol/wlr-layer-shell-unstable-v1.xml")
+
+# ext-workspace-v1 (desktop/ext_workspace.cpp) has no wlroots-provided C
+# type - unlike xdg-shell/layer-shell above, wlroots doesn't implement this
+# protocol at all, so Biome needs the generated private-code source (the
+# wl_interface/wl_message tables), not just the header. It IS part of the
+# wayland-protocols package (staging/), so no vendoring needed, unlike
+# layer-shell above.
+biome_generate_protocol_source(EXT_WORKSPACE_PROTOCOL_HEADER EXT_WORKSPACE_PROTOCOL_SOURCE
+    EXT_WORKSPACE_PROTOCOL_SOURCE_TARGET
+    "${WAYLAND_PROTOCOLS_DATADIR}/staging/ext-workspace/ext-workspace-v1.xml")
+
+# Wrapped in its own OBJECT library (rather than listing the generated .c
+# directly in biome_desktop's add_library, which lives in a different
+# directory scope) since a target's name is visible project-wide in CMake
+# while a bare generated-file path from another directory's custom command
+# is not reliably so pre-CMP0118 - see BiomeProtocols.cmake's header-target
+# comment for the same underlying caveat.
+add_library(biome_ext_workspace_protocol OBJECT ${EXT_WORKSPACE_PROTOCOL_SOURCE})
+add_dependencies(biome_ext_workspace_protocol ${EXT_WORKSPACE_PROTOCOL_SOURCE_TARGET})
+target_link_libraries(biome_ext_workspace_protocol PUBLIC PkgConfig::WAYLAND_SERVER)
+target_include_directories(biome_ext_workspace_protocol PUBLIC ${BIOME_PROTOCOL_DIR})
 
 add_subdirectory(decoration)
 add_subdirectory(desktop)

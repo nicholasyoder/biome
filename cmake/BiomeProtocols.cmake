@@ -41,3 +41,38 @@ function(biome_generate_protocol_header out_var target_out_var xml_path)
     set(${out_var} ${output} PARENT_SCOPE)
     set(${target_out_var} ${target_name} PARENT_SCOPE)
 endfunction()
+
+# Generates both the server-side header AND the private-code source (the
+# wl_interface/wl_message marshalling tables) from a protocol XML file.
+# Needed only for protocols with no wlroots-provided C type wrapping them -
+# biome_generate_protocol_header() above is enough when wlroots implements
+# the protocol itself (xdg-shell, layer-shell) and Biome only needs the
+# generated interface/enum symbols its headers reference. ext-workspace-v1
+# (desktop/ext_workspace.cpp) has no such wlroots type, so Biome's own code
+# has to call wl_global_create()/wl_resource_create() directly, which needs
+# the private-code translation unit linked in as well as the header.
+# Returns the header path, the source path, and a target depending on both.
+function(biome_generate_protocol_source header_out_var source_out_var target_out_var xml_path)
+    get_filename_component(name ${xml_path} NAME_WE)
+    set(header "${BIOME_PROTOCOL_DIR}/${name}-protocol.h")
+    set(source "${BIOME_PROTOCOL_DIR}/${name}-protocol.c")
+    add_custom_command(
+        OUTPUT ${header}
+        COMMAND ${WAYLAND_SCANNER_EXECUTABLE} server-header ${xml_path} ${header}
+        DEPENDS ${xml_path}
+        COMMENT "Generating ${name}-protocol.h"
+        VERBATIM
+    )
+    add_custom_command(
+        OUTPUT ${source}
+        COMMAND ${WAYLAND_SCANNER_EXECUTABLE} private-code ${xml_path} ${source}
+        DEPENDS ${xml_path}
+        COMMENT "Generating ${name}-protocol.c"
+        VERBATIM
+    )
+    set(target_name "${name}_protocol_source")
+    add_custom_target(${target_name} DEPENDS ${header} ${source})
+    set(${header_out_var} ${header} PARENT_SCOPE)
+    set(${source_out_var} ${source} PARENT_SCOPE)
+    set(${target_out_var} ${target_name} PARENT_SCOPE)
+endfunction()

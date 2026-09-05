@@ -14,12 +14,14 @@
 #include "decoration/theme.h"
 #include "desktop/app_icon.h"
 #include "desktop/decoration_bridge.h"
+#include "desktop/ext_workspace.h"
 #include "desktop/foreign_toplevel.h"
 #include "desktop/layer_shell.h"
 #include "desktop/session_lock.h"
 #include "desktop/xdg_shell.h"
 #include "desktop/xwayland_shell.h"
 #include "ipc/global_shortcuts_portal.h"
+#include "ipc/workspace_bridge.h"
 
 #include <QApplication>
 
@@ -106,12 +108,14 @@ int main(int argc, char *argv[]) {
     session_lock_init(&server);
     layer_shell_init(&server);
     foreign_toplevel_init(&server);
+    ext_workspace_init(&server);
     decoration_bridge_init(&server);
     xdg_shell_init(&server);
     cursor_init(&server);
     input_init(&server);
     xwayland_init(&server, compositor);
     global_shortcuts_portal_init(&server);
+    workspace_bridge_init(&server);
 
     const char *socket = wl_display_add_socket_auto(server.display);
     if (!socket) {

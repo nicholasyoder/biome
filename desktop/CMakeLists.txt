@@ -23,10 +23,14 @@ add_library(biome_desktop STATIC
     layer_shell.cpp
     foreign_toplevel.h
     foreign_toplevel.cpp
+    ext_workspace.h
+    ext_workspace.cpp
+    $<TARGET_OBJECTS:biome_ext_workspace_protocol>
 )
 
 add_dependencies(biome_desktop biome_wlroots_cxx_shim
-    ${XDG_SHELL_PROTOCOL_HEADER_TARGET} ${LAYER_SHELL_PROTOCOL_HEADER_TARGET})
+    ${XDG_SHELL_PROTOCOL_HEADER_TARGET} ${LAYER_SHELL_PROTOCOL_HEADER_TARGET}
+    ${EXT_WORKSPACE_PROTOCOL_SOURCE_TARGET})
 
 # BIOME_WLROOTS_SHIM_DIR must come before PkgConfig::WLROOTS's own include
 # dir so the patched copies of wlr_scene.h/wlr_matrix.h are the ones found.
@@ -38,6 +42,7 @@ target_include_directories(biome_desktop PUBLIC
 
 target_link_libraries(biome_desktop PUBLIC
     biome_decoration
+    biome_ext_workspace_protocol
     PkgConfig::WLROOTS
     PkgConfig::WAYLAND_SERVER
     PkgConfig::XCB_EWMH

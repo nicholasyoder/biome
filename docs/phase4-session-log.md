@@ -1043,3 +1043,154 @@ lasting value (the full blow-by-blow, for anything trimmed, is still in
   reload log line appearing in forest's terminal on edit+save, no stale
   bindings). Workstream C is done. Still open: the destructive full clean
   rebuild of either tree, same sandbox-classifier restriction as before.
+- **2026-09-05 — Workstream D: protocol decision resolved, both sides
+  implemented.** Full session: researched `ext-workspace-v1` directly
+  (checked installed wlroots headers, read the protocol XML, ran
+  `wayland-scanner`/`qtwaylandscanner` locally to confirm exact generated
+  symbol names before writing code against them) rather than assuming.
+  Confirmed with the user up front that workspace count must be runtime,
+  never hardcoded to 4 anywhere in new code — `BiomeServer::workspace_count`
+  and every loop that touches it use that field throughout, not a compile-
+  time constant. Landed the hybrid decision recorded above in this file's
+  Workstream D section (`ext-workspace-v1` + `org.biome.Workspaces`).
+
+  **Biome-side** (built clean, zero warnings, confirmed via `rm -rf build &&
+  cmake -B build && cmake --build build`): new hand-rolled
+  `desktop/ext_workspace.{h,cpp}` server (`ext_workspace_manager_v1`/
+  `_group_handle_v1`/`_handle_v1` — no wlroots helper exists for this
+  protocol, unlike layer-shell/foreign-toplevel-management); `core/
+  CMakeLists.txt` needed `LANGUAGES CXX C` added explicitly (CMake silently
+  skips compiling a generated `.c` protocol source with no error if C isn't
+  an enabled project language — the OBJECT library looked built but was
+  actually empty until this was found via `nm`/`ar t` on the built
+  archive); a CMake OBJECT-library-into-STATIC-library linker gotcha (the
+  object never propagated into the final executable via `target_link_
+  libraries` alone — needed `$<TARGET_OBJECTS:...>` listed directly in
+  `biome_desktop`'s own sources). `desktop/foreign_toplevel.cpp` extended to
+  also create/destroy a `wlr_ext_foreign_toplevel_handle_v1` per toplevel
+  (for windowlist's identifier pairing). New `ipc/workspace_bridge.{h,cpp}`
+  exporting `org.biome.Workspaces`. Self-caught and fixed one use-after-free
+  in code review: `manager_handle_stop()` destroyed the manager resource
+  without nulling `c->manager_resource`, so a later `sync_active()` could
+  send to a freed resource — fixed with a null + guard.
+
+  **Forest-side** (built clean, zero warnings, full incremental
+  `cmake --build build/Desktop-Debug`; per this project's `build/Desktop-
+  Debug`-only convention, no `rm -rf` since Qt Creator owns that directory
+  live): new shared `ExtWorkspaceManager`/`ExtWorkspaceHandle`
+  (`panel/panel-library/extworkspacemanager.{h,cpp}`,
+  `extworkspacehandle.{h,cpp}`) — put in `panel-library` rather than
+  duplicated between `deskswitch` and `windowlist` (both need the live
+  workspace list), which meant adding `Qt6::WaylandClient` and the
+  generated `ext-workspace-v1` client bindings to that static library, with
+  `qt6_generate_wayland_protocol_client_sources()`'s generated-header
+  include path re-exposed as `PUBLIC` (it's `PRIVATE` by default, which
+  would've hidden it from `panel-library`'s own consumers). `deskswitch`
+  rewritten off XCB entirely: `Xcbutills::getNumDesktops/getCurrentDesktop/
+  setCurrentDesktop/getClientList/getWindowDesktop/moveWindowToDesktop`
+  calls replaced with the new binding for switching/listing/active-
+  highlight, plus a `QDBusInterface`/signal connection to
+  `org.biome.Workspaces` for the per-desktop dot counts; `deskbutton.{h,cpp}`
+  needed no changes at all (it never displayed desktop numbers, so
+  switching to 0-based indexing throughout was a free simplification). New
+  `windowlist/extforeigntoplevellist.{h,cpp}`/`extforeigntoplevelhandle.
+  {h,cpp}` bind `ext-foreign-toplevel-list-v1` for stable identifiers;
+  `windowlist.cpp` pairs each with its `ForeignToplevelHandle` by creation-
+  order arrival (`tryPairPendingHandles()`, two FIFO queues) since the two
+  protocols share no identifier on the wire. `windowbutton.cpp`'s
+  previously-stubbed `desk_menu` now populates one item per workspace,
+  wired to `org.biome.Workspaces.MoveToplevelToWorkspace` via
+  `QDBusInterface`; the stale comment pointing at this workstream is gone.
+  Found and removed the now-fully-orphaned XCB desktop/client-list helpers
+  from `library/xcbutills` (`getNumDesktops`, `getCurrentDesktop`,
+  `setCurrentDesktop`, `getClientList`, `isWindow4Taskbar`,
+  `getWindowDesktop`, `moveWindowToDesktop`) after grepping the whole tree
+  to confirm `deskswitch` was their only caller.
+
+  **Still open, deliberately not done this session:** manual end-to-end
+  testing on real Wayland/Biome — workspace switching, dot-count updates,
+  move-to-desktop from windowlist's context menu, and specifically a
+  multi-window open/close stress test to confirm the creation-order
+  toplevel pairing never desyncs (flagged in the plan itself as the one
+  part of this design with no protocol-level guarantee behind it, same
+  spirit as the real focus bug Workstream B's own manual pass caught).
+  Left for the user to run interactively, per this project's established
+  convention of manual keyboard/mouse verification rather than input-
+  injection tooling. `phase4-plan.md`'s Workstream D status left at `[~]`
+  pending that pass, not flipped to `[x]` yet.
+- **2026-09-05 (same day) — Two bugs found in manual testing, both fixed.**
+  User ran the manual pass and reported: (1) `windowlist` showed every open
+  window regardless of desktop, when it should only show the active
+  workspace's; (2) `deskswitch`'s per-desktop dot indicator didn't always
+  update on window close - especially closing the last window on a
+  desktop, which kept showing a stale dot.
+
+  **Bug 2 root cause (Biome-side):** `toplevel_unmap()` (`desktop/
+  toplevel.cpp`) called `foreign_toplevel_destroy(toplevel)` - which
+  synchronously fires `window_workspaces_changed`, recomputed by walking
+  `server->toplevels` - *before* `wl_list_remove(&toplevel->link)`. The
+  closing toplevel was therefore still linked in for that walk, so the
+  snapshot org.biome.Workspaces sent out still counted it; nothing
+  recomputed it correctly afterward unless some unrelated window
+  opened/closed elsewhere. Fixed by swapping the two lines - unlink first,
+  destroy (and fire the callback) second.
+
+  **Bug 1 root cause:** the `org.biome.Workspaces` interface only ever
+  exposed aggregate occupancy counts (`GetWorkspaceOccupancy` - workspace
+  index -> window count), which was enough for deskswitch's dots but gave
+  windowlist no way to know *which* windows belonged to the active
+  workspace to filter by. Fixed by replacing the interface's shape:
+  `GetWorkspaceOccupancy`/`WorkspaceOccupancyChanged` (counts) became
+  `GetWindowWorkspaces`/`WindowWorkspacesChanged` (identifier -> workspace
+  index for every open window) - a strict superset of the old data.
+  `ipc/workspace_bridge.cpp` now needs each toplevel's ext-foreign-
+  toplevel-list identifier to key the map; added
+  `foreign_toplevel_identifier(BiomeToplevel*)` to `desktop/
+  foreign_toplevel.{h,cpp}` for that (mirrors the existing reverse-lookup
+  `foreign_toplevel_find_by_identifier`). Also renamed
+  `BiomeServer::workspace_occupancy_changed` to `window_workspaces_changed`
+  (core/server.h) since it no longer just signals an occupancy change, and
+  documented the ordering requirement bug 2 violated directly on that
+  field's doc comment so it doesn't recur.
+
+  Forest-side: `deskswitch.cpp` now tallies per-desktop counts from the
+  identifier->workspace map client-side (`applyWindowWorkspaces()`)
+  instead of receiving pre-computed counts - net simplification, one
+  fewer thing for Biome to compute. `windowlist.cpp` gained the actual
+  filtering: caches the map (`window_workspaces`), refreshes it via both
+  an initial `GetWindowWorkspaces()` call and the `WindowWorkspacesChanged`
+  signal, and calls a new `refreshVisibility()` (`wbt->setVisible(...)`,
+  which `QHBoxLayout` already collapses correctly with no manual add/
+  remove-from-layout needed) on that signal, on `ExtWorkspaceManager`'s own
+  `workspacesChanged()` (so switching desktops re-filters immediately, not
+  just when a window happens to open/close), and once right after a button
+  is created (defaults to visible if not yet classified, to avoid a new
+  window flashing hidden for a moment). Added `ExtWorkspaceManager::
+  activeWorkspaceIndex()` (`panel-library/extworkspacemanager.{h,cpp}`) as
+  a small shared convenience, used by both `deskswitch` and `windowlist`
+  instead of each re-deriving it inline.
+
+  Both sides rebuilt clean, zero warnings (Biome: incremental
+  `cmake --build build`; Forest: incremental `cmake --build
+  build/Desktop-Debug`, full project, not just the three touched targets).
+  Sent back to the user for another manual pass - not yet re-confirmed.
+- **2026-09-05 (same day) — Both bugfixes confirmed; "move to desktop" menu
+  UI mismatch found and fixed; Workstream D done, Phase 4 complete.** User
+  re-tested and confirmed both bugs above are fixed, but noted the "move to
+  desktop" context-menu item didn't look like the old X11 one. Checked
+  `git log`/`git show` on `windowbutton.cpp` (commit `56cb190`, "Support
+  moving windows between desktops") rather than guessing: the X11 version
+  put "Move to desktop" (lowercase "d") *first* in the menu, before Raise/
+  Maximize/Demaximize/Minimize/Close, with icon `window-next`, and labeled
+  each submenu entry "Desktop N" (1-based). The Wayland rewrite had put it
+  *last* with text "Move to Desktop" and icon `go-jump`, and labeled
+  entries with Biome's raw workspace name (which happens to also just be
+  the number, but isn't guaranteed to be). Reordered/relabeled to match the
+  original exactly. Rebuilt clean, zero warnings.
+
+  User then ran the one outstanding manual test the plan flagged — the
+  multi-window creation-order-pairing stress test (several terminals
+  opened in quick succession via the hotkey launcher, then moved between
+  desktops and closed) — and confirmed no desync. That was the last open
+  item for Workstream D: `phase4-plan.md` updated to `[x]` done, and since
+  A/B/C were already done, **Phase 4 is now complete.**

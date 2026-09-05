@@ -81,6 +81,16 @@ struct BiomeServer {
     // every BiomeForeignToplevel handle lives on its owning BiomeToplevel.
     wlr_foreign_toplevel_manager_v1 *foreign_toplevel_manager = nullptr;
 
+    // ext-foreign-toplevel-list-v1 (desktop/foreign_toplevel.cpp) - created
+    // alongside foreign_toplevel_manager above for every BiomeToplevel,
+    // purely to hand out ext_foreign_toplevel_handle_v1's auto-generated
+    // stable `identifier` string. Forest's windowlist pairs that identifier
+    // with the corresponding wlr_foreign_toplevel_handle_v1 by creation
+    // order (see Workstream D notes in docs/phase4-plan.md) since it's the
+    // only cross-transport handle org.biome.Workspaces (ipc/workspace_bridge.cpp)
+    // can name a toplevel by.
+    wlr_ext_foreign_toplevel_list_v1 *ext_foreign_toplevel_list = nullptr;
+
     // wlr-layer-shell-unstable-v1 (desktop/layer_shell.cpp). Holds every
     // live BiomeLayerSurface across all outputs - arrange_layers() filters
     // this by output+layer rather than each BiomeOutput keeping its own
@@ -170,6 +180,38 @@ struct BiomeServer {
     BiomeToplevel *pressed_decoration_toplevel = nullptr;
 
     int active_workspace = 0;
+    // Number of workspaces. Was a compile-time kWorkspaceCount constant
+    // (desktop/workspace.h) until Workstream D's ext-workspace-v1 binding
+    // made the count inherently dynamic on the wire - no config/UI to
+    // change this at runtime exists yet, but nothing should hardcode "4"
+    // now that the protocol doesn't. desktop/ext_workspace.cpp reads this
+    // to know how many ext_workspace_handle_v1 objects to advertise.
+    int workspace_count = 4;
+
+    // ext-workspace-v1 (desktop/ext_workspace.cpp) - hand-rolled server
+    // implementation (wlroots has no C type for this protocol, unlike
+    // layer-shell/foreign-toplevel-management above). One global group
+    // spanning all outputs, one handle per workspace index; only
+    // `activate` is exposed (no dynamic create/remove/assign - matches
+    // Biome's fixed-policy identity).
+    struct BiomeExtWorkspace *ext_workspace = nullptr;
+
+    // Set by ipc/workspace_bridge.cpp's workspace_bridge_init() - called by
+    // desktop/workspace.cpp's move_toplevel_to_workspace() and
+    // desktop/foreign_toplevel.cpp's create/destroy whenever a toplevel's
+    // workspace membership or existence changes, so org.biome.Workspaces
+    // can re-emit WindowWorkspacesChanged. A plain callback field rather
+    // than desktop/ including an ipc/ header keeps desktop/ (the model)
+    // decoupled from ipc/ (an observer of it) - left null if the bridge
+    // never initialized (e.g. no session bus), callers must guard for that.
+    //
+    // Callers that mutate server->toplevels membership (toplevel_unmap's
+    // wl_list_remove) must do so *before* invoking this - it synchronously
+    // walks server->toplevels to build its snapshot, so firing it while the
+    // list is stale (e.g. a just-closed toplevel still linked in) reports
+    // wrong occupancy until some unrelated later change happens to
+    // recompute a fresh one.
+    void (*window_workspaces_changed)(BiomeServer *server) = nullptr;
 
     // Graphical Alt-Tab switcher overlay. switcher_active tracks whether
     // Alt is currently held with the switcher shown (set on the first

@@ -1,14 +1,12 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 //
-// The 4-workspace model (matches workspace_count in
-// forest/usr/share/forest/xfwm4.xml) and the visibility bookkeeping that
-// goes with it.
+// The workspace model (count lives at BiomeServer::workspace_count, default
+// 4 - matches workspace_count in forest/usr/share/forest/xfwm4.xml) and the
+// visibility bookkeeping that goes with it.
 
 #pragma once
 
 #include "desktop/toplevel.h"
-
-constexpr int kWorkspaceCount = 4;
 
 // A toplevel's scene node should be enabled iff it's on the active
 // workspace AND not minimized - the two hide-mechanisms are independent

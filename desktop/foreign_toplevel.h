@@ -45,3 +45,19 @@ void foreign_toplevel_update_title_app_id(BiomeToplevel *toplevel);
 // called from set_toplevel_maximized/set_toplevel_minimized/
 // set_toplevel_focused (desktop/toplevel.cpp).
 void foreign_toplevel_sync_state(BiomeToplevel *toplevel);
+
+// Finds the toplevel whose ext-foreign-toplevel-list-v1 identifier matches
+// (see BiomeServer::ext_foreign_toplevel_list's doc comment in
+// core/server.h) - used by ipc/workspace_bridge.cpp's
+// MoveToplevelToWorkspace to resolve the identifier a DBus caller passed
+// back to a real BiomeToplevel. Returns nullptr if no live toplevel has
+// that identifier (already closed, or a stale/malformed identifier).
+BiomeToplevel *foreign_toplevel_find_by_identifier(BiomeServer *server, const char *identifier);
+
+// Returns this toplevel's ext-foreign-toplevel-list-v1 identifier, or
+// nullptr if it doesn't have one (no ext_foreign_toplevel_list global, or
+// wlroots hasn't assigned one yet). Used by ipc/workspace_bridge.cpp to key
+// its per-window workspace map by the same identifier Forest's windowlist
+// pairs against - see foreign_toplevel_find_by_identifier's doc comment
+// above for the reverse direction.
+const char *foreign_toplevel_identifier(BiomeToplevel *toplevel);

@@ -416,8 +416,15 @@ void toplevel_unmap(wl_listener *listener, void *data) {
 
     bool was_focused = server->seat->keyboard_state.focused_surface == toplevel_surface(toplevel);
 
-    foreign_toplevel_destroy(toplevel);
+    // Unlink before foreign_toplevel_destroy(): it synchronously fires
+    // window_workspaces_changed, and org.biome.Workspaces' handler
+    // (ipc/workspace_bridge.cpp) recomputes its snapshot by walking
+    // server->toplevels right then - with the old order, this toplevel was
+    // still linked in for that walk, so a closed window kept counting
+    // against its workspace until some unrelated later event recomputed a
+    // fresh (correct) snapshot.
     wl_list_remove(&toplevel->link);
+    foreign_toplevel_destroy(toplevel);
 
     if (was_focused) {
         wlr_seat_pointer_clear_focus(server->seat);
