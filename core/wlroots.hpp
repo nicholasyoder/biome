@@ -14,7 +14,11 @@ extern "C" {
 #include <wlr/backend/session.h>
 #include <wlr/interfaces/wlr_buffer.h>
 #include <wlr/render/allocator.h>
+#include <wlr/render/drm_format_set.h>
+#include <wlr/render/pass.h>
+#include <wlr/render/swapchain.h>
 #include <wlr/render/wlr_renderer.h>
+#include <wlr/render/wlr_texture.h>
 #include <wlr/types/wlr_compositor.h>
 #include <wlr/types/wlr_cursor.h>
 #include <wlr/types/wlr_data_device.h>

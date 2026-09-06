@@ -48,12 +48,20 @@ static void output_frame(wl_listener *listener, void *data) {
     BiomeServer *server = output->server;
     wlr_scene *scene = server->scene;
 
+    bool still_fading = update_layer_surface_fades(output);
+
     wlr_scene_output *scene_output = wlr_scene_get_scene_output(scene, output->wlr);
     wlr_scene_output_commit(scene_output, nullptr);
-
     timespec now;
     clock_gettime(CLOCK_MONOTONIC, &now);
     wlr_scene_output_send_frame_done(scene_output, &now);
+
+    // Biome's rendering is otherwise damage-driven, not continuous - an
+    // in-progress layer-surface fade (desktop/layer_shell.cpp) needs to
+    // explicitly keep the frame loop alive for its duration.
+    if (still_fading) {
+        wlr_output_schedule_frame(output->wlr);
+    }
 
     // ext-session-lock-v1: the `locked` event must not be sent until a
     // locked frame has actually been presented on every output (not just

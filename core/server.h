@@ -10,6 +10,7 @@
 
 #pragma once
 
+#include "core/fade_config.h"
 #include "core/output_config.h"
 #include "wlroots.hpp"
 
@@ -99,6 +100,15 @@ struct BiomeServer {
     wlr_layer_shell_v1 *layer_shell = nullptr;
     wl_listener new_layer_surface = {};
     wl_list layer_surfaces = {};
+
+    // Loaded once at startup by layer_shell_init() - see core/fade_config.h.
+    // A namespace in fade_config's sets fades in on map / out on unmap (see
+    // FadeKind in desktop/layer_shell.cpp). The two lists below hold
+    // fading-out content that has outlived its own BiomeLayerSurface
+    // wrapper, one per fade mechanism.
+    FadeConfig fade_config;
+    wl_list fading_out_layer_surfaces = {};
+    wl_list scanout_fading_surfaces = {};
 
     // Biome draws its own decoration (see decoration/) by default, but honors
     // a client's own request for client-side decoration instead - see

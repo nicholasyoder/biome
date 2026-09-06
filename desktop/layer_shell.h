@@ -26,3 +26,15 @@ void layer_shell_init(BiomeServer *server);
 // add/resolution-change (core/output.cpp) and on any layer surface's own
 // commit/map/unmap/destroy (this file).
 void arrange_layers(BiomeOutput *output);
+
+// Advances this output's in-progress layer-surface fades (map-triggered
+// fade-in, unmap-triggered fade-out - see core/fade_config.h for which
+// namespaces are eligible, and FadeKind in layer_shell.cpp for the two
+// mechanisms) by one step: fading_namespaces surfaces via
+// wlr_scene_buffer_set_opacity(), scanout_fading_namespaces surfaces via a
+// compositor-rendered opaque buffer swap. Returns true if at least one fade
+// on this output is still in progress, in which case the caller
+// (core/output.cpp's output_frame()) must call wlr_output_schedule_frame()
+// to keep the frame loop alive - Biome's rendering is otherwise
+// damage-driven, not continuous.
+bool update_layer_surface_fades(BiomeOutput *output);

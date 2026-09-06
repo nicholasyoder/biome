@@ -151,6 +151,12 @@ int main(int argc, char *argv[]) {
     wlr_allocator_destroy(server.allocator);
     wlr_renderer_destroy(server.renderer);
     wlr_backend_destroy(server.backend);
+    // wlr_session_lock_v1's own display-destroy handler asserts that
+    // nothing is still listening on its new_lock signal - session_lock_init()
+    // (desktop/session_lock.cpp) registers server.new_session_lock on it for
+    // the whole process lifetime with no matching teardown, so it has to be
+    // removed explicitly here before wl_display_destroy() runs.
+    wl_list_remove(&server.new_session_lock.link);
     wl_display_destroy(server.display);
     return 0;
 }

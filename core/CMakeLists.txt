@@ -9,6 +9,8 @@ add_executable(biome
     output.cpp
     output_config.h
     output_config.cpp
+    fade_config.h
+    fade_config.cpp
     input.h
     input.cpp
     keybindings.h
