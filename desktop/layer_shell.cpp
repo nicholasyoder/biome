@@ -81,10 +81,15 @@ struct BiomeScanoutFade {
     // scene_layer_surface->tree, same parent, positioned to match it. Its
     // buffer is replaced every render tick via wlr_scene_buffer_set_buffer().
     wlr_scene_buffer *scene_buffer = nullptr;
-    // The pre-overlay desktop, captured once at map time and reused for
-    // this instance's whole lifetime. Accepted trade-off: a background that
-    // keeps changing during the fade won't be reflected - fine for a
-    // logout dim, would need reconsidering for other uses.
+    // The pre-overlay desktop. Captured at map time for the fade-in, and
+    // re-captured fresh in scanout_fade_start_fade_out() right as fade-out
+    // begins - a surface like forest-startup's cover maps before anything
+    // meaningful is behind it and only reveals the real desktop once other
+    // clients have mapped in the meantime, so reusing the map-time capture
+    // for fade-out would reveal a stale, mostly-empty frame instead. For a
+    // logout dim (background already static for the surface's whole
+    // lifetime) the re-capture is a no-op in practice - same image either
+    // way.
     wlr_texture *snapshot_texture = nullptr;
     // A frozen copy of the client's content, captured right as fade-out
     // begins, used instead of a live wlr_surface_get_texture() lookup.
@@ -360,10 +365,66 @@ static void scanout_fade_render_tick(BiomeScanoutFade *fade, float fraction) {
     wlr_buffer_unlock(frame_buffer);
 }
 
+// Captures a fresh, fully opaque snapshot of everything on `fade`'s output
+// except this surface's own content (kept disabled in the scene graph for
+// the surface's whole mapped lifetime - see scanout_fade_create()).
+// wlr_output_lock_attach_render() brackets the render because the rest of
+// the scene might already be scanout-eligible on its own - without it,
+// build_state() could take the direct-scanout branch instead of rendering
+// into our swapchain at all. Returns nullptr on any allocation/format
+// failure - callers must not assume it succeeded.
+static wlr_texture *capture_background_snapshot(BiomeScanoutFade *fade) {
+    // fade->scene_buffer doesn't exist yet on the very first (map-time)
+    // call. On a fade-out re-capture it's the currently-visible overlay -
+    // showing our own last-rendered tick - and must be hidden for this
+    // capture the same way the client's own content is hidden below, or
+    // "the background" ends up being our own overlay instead of what's
+    // actually behind it.
+    if (fade->scene_buffer != nullptr) {
+        wlr_scene_node_set_enabled(&fade->scene_buffer->node, false);
+    }
+
+    wlr_scene_output *scene_output = wlr_scene_get_scene_output(fade->output->server->scene, fade->output->wlr);
+    wlr_output_lock_attach_render(fade->output->wlr, true);
+
+    wlr_output_state state;
+    wlr_output_state_init(&state);
+    wlr_scene_output_state_options options = {};
+    options.swapchain = fade->swapchain;
+    bool built = wlr_scene_output_build_state(scene_output, &state, &options);
+
+    wlr_output_lock_attach_render(fade->output->wlr, false);
+
+    if (fade->scene_buffer != nullptr) {
+        wlr_scene_node_set_enabled(&fade->scene_buffer->node, true);
+    }
+
+    wlr_buffer *snapshot_buffer = nullptr;
+    if (built) {
+        // Take our own reference before wlr_output_state_finish() drops
+        // build_state's own lock on state.buffer - reversing this order is
+        // a use-after-free.
+        snapshot_buffer = wlr_buffer_lock(state.buffer);
+    }
+    wlr_output_state_finish(&state);
+
+    if (snapshot_buffer == nullptr) {
+        return nullptr;
+    }
+
+    wlr_texture *texture = wlr_texture_from_buffer(fade->output->server->renderer, snapshot_buffer);
+    // wlr_texture_from_buffer() locks the buffer itself if it still needs
+    // it, so dropping our reference immediately is safe.
+    wlr_buffer_unlock(snapshot_buffer);
+    return texture;
+}
+
 // Starts the ScanoutSnapshot fade for a newly-mapped surface: disables the
-// client's own scene content, captures the pre-overlay desktop once, and
-// renders tick 0 synchronously so the node is never briefly empty. Returns
-// nullptr (treat like FadeKind::None) on any allocation/format failure.
+// client's own scene content, captures the initial pre-overlay snapshot for
+// the fade-in (re-captured fresh in scanout_fade_start_fade_out() when
+// fade-out begins - see BiomeScanoutFade::snapshot_texture), and renders
+// tick 0 synchronously so the node is never briefly empty. Returns nullptr
+// (treat like FadeKind::None) on any allocation/format failure.
 static BiomeScanoutFade *scanout_fade_create(BiomeLayerSurface *wrapper) {
     BiomeOutput *output = wrapper->output;
     BiomeServer *server = wrapper->server;
@@ -393,46 +454,10 @@ static BiomeScanoutFade *scanout_fade_create(BiomeLayerSurface *wrapper) {
         return nullptr;
     }
 
-    // Capture the pre-overlay desktop, node already disabled above so it
-    // contributes nothing. wlr_output_lock_attach_render() brackets this
-    // because the rest of the scene might already be scanout-eligible on
-    // its own - without it, build_state() could take the direct-scanout
-    // branch instead of rendering into our swapchain at all.
-    wlr_scene_output *scene_output = wlr_scene_get_scene_output(server->scene, output->wlr);
-    wlr_output_lock_attach_render(output->wlr, true);
-
-    wlr_output_state state;
-    wlr_output_state_init(&state);
-    wlr_scene_output_state_options options = {};
-    options.swapchain = fade->swapchain;
-    bool built = wlr_scene_output_build_state(scene_output, &state, &options);
-
-    wlr_output_lock_attach_render(output->wlr, false);
-
-    wlr_buffer *snapshot_buffer = nullptr;
-    if (built) {
-        // Take our own reference before wlr_output_state_finish() drops
-        // build_state's own lock on state.buffer - reversing this order is
-        // a use-after-free.
-        snapshot_buffer = wlr_buffer_lock(state.buffer);
-    }
-    wlr_output_state_finish(&state);
-
-    if (snapshot_buffer == nullptr) {
-        wlr_log(WLR_ERROR, "Biome: failed to capture pre-overlay snapshot for '%s', skipping scanout fade",
-            wrapper->layer_surface->namespace_);
-        wlr_scene_node_set_enabled(&client_tree->node, true);
-        wlr_swapchain_destroy(fade->swapchain);
-        delete fade;
-        return nullptr;
-    }
-
-    fade->snapshot_texture = wlr_texture_from_buffer(server->renderer, snapshot_buffer);
-    // wlr_texture_from_buffer() locks the buffer itself if it still needs
-    // it, so dropping our reference immediately is safe.
-    wlr_buffer_unlock(snapshot_buffer);
+    // Node already disabled above so it contributes nothing to this capture.
+    fade->snapshot_texture = capture_background_snapshot(fade);
     if (fade->snapshot_texture == nullptr) {
-        wlr_log(WLR_ERROR, "Biome: failed to import snapshot texture for '%s', skipping scanout fade",
+        wlr_log(WLR_ERROR, "Biome: failed to capture pre-overlay snapshot for '%s', skipping scanout fade",
             wrapper->layer_surface->namespace_);
         wlr_scene_node_set_enabled(&client_tree->node, true);
         wlr_swapchain_destroy(fade->swapchain);
@@ -483,6 +508,16 @@ static void scanout_fade_start_fade_out(BiomeScanoutFade *fade) {
         ? wlr_surface_get_texture(fade->wrapper->layer_surface->surface) : nullptr;
     fade->frozen_client_texture = capture_frozen_client_texture(
         fade->output->server, live_texture, fade->buffer_width, fade->buffer_height);
+
+    // Re-capture the background right as the reveal begins rather than
+    // trusting the one taken at map time - see snapshot_texture's comment.
+    // Falls back to the map-time capture on failure rather than leaving
+    // nothing to show.
+    wlr_texture *fresh_snapshot = capture_background_snapshot(fade);
+    if (fresh_snapshot != nullptr) {
+        wlr_texture_destroy(fade->snapshot_texture);
+        fade->snapshot_texture = fresh_snapshot;
+    }
 
     fade->phase = ScanoutFadePhase::Out;
     fade->fade_from = current;

@@ -4,11 +4,18 @@
 // - fade_config.cpp is the only file in core/ (besides output_config.cpp)
 // that includes Qt headers. Config lives at ~/.config/Forest/Biome.conf
 // (QSettings("Forest", "Biome")), group "LayerShell", two keys - each a
-// single comma-separated string (not QSettings' own QStringList encoding,
-// which isn't natural to hand-type), e.g.:
+// comma-separated string when hand-typed with more than one namespace, e.g.:
 //   [LayerShell]
 //   fadingNamespaces=forest-logout
-//   scanoutFadingNamespaces=forest-logout-dim
+//   scanoutFadingNamespaces=forest-logout-dim,forest-startup
+//
+// QSettings' IniFormat auto-detects an unescaped comma on read-back and
+// hands the value back as a QStringList rather than a plain QString - a
+// single namespace (no comma) still round-trips as a plain string. Read
+// via QVariant::toStringList() (see parse_namespace_list() in
+// fade_config.cpp), which normalizes both shapes; do not switch back to
+// QVariant::toString(), which silently returns an empty string for a
+// multi-element QStringList instead of rejoining it.
 //
 // Two independent fade mechanisms exist (see FadeKind in
 // desktop/layer_shell.cpp): fadingNamespaces gets the original per-pixel
