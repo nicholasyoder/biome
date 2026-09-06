@@ -33,10 +33,17 @@ struct BiomeExtWorkspaceHandle {
     int index = 0;
 };
 
-// One of these per client that has bound ext_workspace_manager_v1. Torn
-// down from the wl_client destroy listener below rather than from any one
-// resource's destructor, since libwayland doesn't guarantee an order among
-// a disconnecting client's own resources - see this file's header comment.
+// One of these per client that has bound ext_workspace_manager_v1. Freed
+// via reference counting (live_resources) from each of its own resources'
+// destroy callbacks rather than from a single wl_client destroy listener -
+// wl_client_destroy() fires that signal *before* tearing down the client's
+// own resources (manager/group/workspace handles), so a listener that
+// deletes this struct runs too early and left every resource destructor
+// use-after-freeing it on a disconnecting client (e.g. one killed by
+// SIGINT, which tears everything down in one wl_client_destroy() call
+// instead of one resource at a time). libwayland also doesn't guarantee an
+// order among the resources themselves, hence the refcount rather than
+// picking one resource to own the delete.
 struct BiomeExtWorkspaceClient {
     BiomeServer *server = nullptr;
     wl_resource *manager_resource = nullptr;
@@ -51,8 +58,22 @@ struct BiomeExtWorkspaceClient {
     // file's header comment. -1 means nothing pending.
     int pending_activate = -1;
     wl_list link = {};
-    wl_listener client_destroy = {};
+    // manager_resource + group_resource + one per workspace_resources entry -
+    // see release_client_resource().
+    int live_resources = 0;
 };
+
+// Called from each of a client's own resource destroy callbacks
+// (manager/group/workspace handle). Only the last one to fire actually
+// frees `client` and unlinks it from ext_workspace->clients - see
+// BiomeExtWorkspaceClient's doc comment for why no single resource can own
+// this unconditionally.
+void release_client_resource(BiomeExtWorkspaceClient *client) {
+    if (--client->live_resources == 0) {
+        wl_list_remove(&client->link);
+        delete client;
+    }
+}
 
 void resource_handle_destroy(wl_client *client, wl_resource *resource) {
     (void)client;
@@ -63,8 +84,10 @@ void resource_handle_destroy(wl_client *client, wl_resource *resource) {
 
 void workspace_handle_resource_destroy(wl_resource *resource) {
     auto *handle = static_cast<BiomeExtWorkspaceHandle *>(wl_resource_get_user_data(resource));
-    handle->client->workspace_resources[handle->index] = nullptr;
+    BiomeExtWorkspaceClient *client = handle->client;
+    client->workspace_resources[handle->index] = nullptr;
     delete handle;
+    release_client_resource(client);
 }
 
 void workspace_handle_activate(wl_client *client, wl_resource *resource) {
@@ -95,6 +118,7 @@ const struct ext_workspace_handle_v1_interface workspace_handle_impl = {
 void group_handle_resource_destroy(wl_resource *resource) {
     auto *client = static_cast<BiomeExtWorkspaceClient *>(wl_resource_get_user_data(resource));
     client->group_resource = nullptr;
+    release_client_resource(client);
 }
 
 // Unsupported - no create_workspace capability is ever advertised (Biome's
@@ -130,6 +154,9 @@ void manager_handle_stop(wl_client *client, wl_resource *resource) {
     auto *c = static_cast<BiomeExtWorkspaceClient *>(wl_resource_get_user_data(resource));
     c->manager_resource = nullptr;
     ext_workspace_manager_v1_send_finished(resource);
+    // Triggers manager_handle_resource_destroy below (wl_resource_destroy()
+    // always runs the resource's destroy callback, explicit call or not),
+    // which is what actually releases this client's share of live_resources.
     wl_resource_destroy(resource);
 }
 
@@ -138,6 +165,15 @@ const struct ext_workspace_manager_v1_interface manager_impl = {
     .stop = manager_handle_stop,
 };
 
+// manager_resource's own share of live_resources - see
+// BiomeExtWorkspaceClient's doc comment. Reached either via manager_handle_stop
+// above or, on a disconnecting client, directly from wl_client_destroy().
+void manager_handle_resource_destroy(wl_resource *resource) {
+    auto *client = static_cast<BiomeExtWorkspaceClient *>(wl_resource_get_user_data(resource));
+    client->manager_resource = nullptr;
+    release_client_resource(client);
+}
+
 void manager_bind(wl_client *wl_client_ptr, void *data, uint32_t version, uint32_t id) {
     auto *ext_workspace = static_cast<BiomeExtWorkspace *>(data);
     BiomeServer *server = ext_workspace->server;
@@ -145,6 +181,8 @@ void manager_bind(wl_client *wl_client_ptr, void *data, uint32_t version, uint32
     auto *c = new BiomeExtWorkspaceClient();
     c->server = server;
     c->workspace_resources.resize(server->workspace_count, nullptr);
+    // manager + group + one per workspace handle - see release_client_resource().
+    c->live_resources = 2 + server->workspace_count;
 
     c->manager_resource = wl_resource_create(wl_client_ptr, &ext_workspace_manager_v1_interface, version, id);
     if (c->manager_resource == nullptr) {
@@ -152,7 +190,7 @@ void manager_bind(wl_client *wl_client_ptr, void *data, uint32_t version, uint32
         delete c;
         return;
     }
-    wl_resource_set_implementation(c->manager_resource, &manager_impl, c, nullptr);
+    wl_resource_set_implementation(c->manager_resource, &manager_impl, c, manager_handle_resource_destroy);
 
     c->group_resource = wl_resource_create(wl_client_ptr, &ext_workspace_group_handle_v1_interface, version, 0);
     wl_resource_set_implementation(c->group_resource, &group_handle_impl, c, group_handle_resource_destroy);
@@ -186,12 +224,6 @@ void manager_bind(wl_client *wl_client_ptr, void *data, uint32_t version, uint32
     ext_workspace_manager_v1_send_done(c->manager_resource);
 
     wl_list_insert(&ext_workspace->clients, &c->link);
-    c->client_destroy.notify = [](wl_listener *listener, void *) {
-        BiomeExtWorkspaceClient *dying = wl_container_of(listener, dying, client_destroy);
-        wl_list_remove(&dying->link);
-        delete dying;
-    };
-    wl_client_add_destroy_listener(wl_client_ptr, &c->client_destroy);
 }
 
 } // namespace
