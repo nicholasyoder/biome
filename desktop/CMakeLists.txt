@@ -30,7 +30,7 @@ add_library(biome_desktop STATIC
 
 add_dependencies(biome_desktop biome_wlroots_cxx_shim
     ${XDG_SHELL_PROTOCOL_HEADER_TARGET} ${LAYER_SHELL_PROTOCOL_HEADER_TARGET}
-    ${EXT_WORKSPACE_PROTOCOL_SOURCE_TARGET})
+    ${CURSOR_SHAPE_PROTOCOL_HEADER_TARGET} ${EXT_WORKSPACE_PROTOCOL_SOURCE_TARGET})
 
 # BIOME_WLROOTS_SHIM_DIR must come before PkgConfig::WLROOTS's own include
 # dir so the patched copies of wlr_scene.h/wlr_matrix.h are the ones found.

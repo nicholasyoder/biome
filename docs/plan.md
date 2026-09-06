@@ -430,6 +430,23 @@ Wayland compositor speaking the same protocols, per the Decoupling goal)
 from Phase 4 onward; there's no X11-fallback code path to design or keep
 working.
 
+**Cursor theme/size at session startup** (found while porting
+`system/system-settings/cursorthemesettings.cpp` off X11 - see that file
+and `biome/ipc/cursor_bridge.h`): the new session-launch script should
+export `XCURSOR_THEME`/`XCURSOR_SIZE` from the user's saved cursor choice
+before launching Biome and any Wayland clients. Not strictly required for
+Biome itself or for Qt/GTK apps that fall back to the `~/.icons/default`
+theme-name convention (`wlr_xcursor_theme_load(NULL, size)` resolves to
+literal theme `"default"`, and `cursorthemesettings.cpp` already maintains
+`~/.icons/default/index.theme` as a side effect of applying a theme) — but
+it's still the convention every wlroots compositor (sway, river, Hyprland)
+follows, and it's the only thing anything that reads the env vars directly
+(SDL, some GTK contexts) will honor. There is no live-reload path for
+already-running clients beyond Biome's own compositor-drawn cursor and any
+`cursor-shape-v1` client (`org.biome.Cursor` handles that case) - a known,
+ecosystem-wide Wayland limitation (confirmed against sway's own
+`xcursor_theme` command), not something to solve here.
+
 **Phase 6 — New capabilities.** *(added 2026-08-22, split out of Phase 4)*
 Screenshots (`wlr-screencopy-unstable-v1` or `ext-image-copy-capture-v1`),
 a session-locker UI (a new Forest lock-screen client speaking

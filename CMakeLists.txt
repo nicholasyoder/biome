@@ -38,6 +38,14 @@ biome_generate_protocol_header(XDG_SHELL_PROTOCOL_HEADER XDG_SHELL_PROTOCOL_HEAD
 biome_generate_protocol_header(LAYER_SHELL_PROTOCOL_HEADER LAYER_SHELL_PROTOCOL_HEADER_TARGET
     "${CMAKE_SOURCE_DIR}/protocol/wlr-layer-shell-unstable-v1.xml")
 
+# cursor-shape-v1 - like xdg-shell/layer-shell above, wlroots implements this
+# protocol itself (wlr/types/wlr_cursor_shape_v1.h, included via
+# core/wlroots.hpp), it just needs the generated interface/enum header on the
+# include path. Part of the wayland-protocols package (staging/), no
+# vendoring needed.
+biome_generate_protocol_header(CURSOR_SHAPE_PROTOCOL_HEADER CURSOR_SHAPE_PROTOCOL_HEADER_TARGET
+    "${WAYLAND_PROTOCOLS_DATADIR}/staging/cursor-shape/cursor-shape-v1.xml")
+
 # ext-workspace-v1 (desktop/ext_workspace.cpp) has no wlroots-provided C
 # type - unlike xdg-shell/layer-shell above, wlroots doesn't implement this
 # protocol at all, so Biome needs the generated private-code source (the

@@ -7,16 +7,34 @@
 
 #include <linux/input-event-codes.h>
 
+#include <cstdlib>
+
 static void server_cursor_motion(wl_listener *listener, void *data);
 static void server_cursor_motion_absolute(wl_listener *listener, void *data);
 static void server_cursor_button(wl_listener *listener, void *data);
 static void server_cursor_axis(wl_listener *listener, void *data);
 static void server_cursor_frame(wl_listener *listener, void *data);
+static void cursor_shape_manager_request_set_shape(wl_listener *listener, void *data);
+
+// wlr_xcursor_theme_load(NULL, size) falls back to the literal theme name
+// "default" (resolved via ~/.icons/default/index.theme's Inherits= line) -
+// it does not consult XCURSOR_THEME itself, so that env var is read here to
+// match the convention every other wlroots compositor (sway, river,
+// Hyprland) follows for clients that rely on it directly.
+static uint32_t xcursor_size_from_env() {
+    const char *size_env = getenv("XCURSOR_SIZE");
+    if (size_env == nullptr) {
+        return 24;
+    }
+    int parsed = atoi(size_env);
+    return parsed > 0 ? static_cast<uint32_t>(parsed) : 24;
+}
 
 void cursor_init(BiomeServer *server) {
     server->cursor = wlr_cursor_create();
     wlr_cursor_attach_output_layout(server->cursor, server->output_layout);
-    server->cursor_mgr = wlr_xcursor_manager_create(nullptr, 24);
+    server->cursor_mgr = wlr_xcursor_manager_create(getenv("XCURSOR_THEME"), xcursor_size_from_env());
+    wlr_xcursor_manager_load(server->cursor_mgr, 1);
 
     server->cursor_mode = BiomeCursorMode::Passthrough;
     server->cursor_motion.notify = server_cursor_motion;
@@ -29,6 +47,38 @@ void cursor_init(BiomeServer *server) {
     wl_signal_add(&server->cursor->events.axis, &server->cursor_axis);
     server->cursor_frame.notify = server_cursor_frame;
     wl_signal_add(&server->cursor->events.frame, &server->cursor_frame);
+
+    server->cursor_shape_manager = wlr_cursor_shape_manager_v1_create(server->display, 1);
+    server->request_set_shape.notify = cursor_shape_manager_request_set_shape;
+    wl_signal_add(&server->cursor_shape_manager->events.request_set_shape, &server->request_set_shape);
+}
+
+void cursor_reload_theme(BiomeServer *server, const char *theme, uint32_t size) {
+    wlr_xcursor_manager *new_mgr = wlr_xcursor_manager_create(theme, size);
+    wlr_xcursor_manager_load(new_mgr, 1);
+    wlr_xcursor_manager_destroy(server->cursor_mgr);
+    server->cursor_mgr = new_mgr;
+    // The pointer's on-screen image only repaints on the next motion event -
+    // matches sway's own historical behavior for its `xcursor_theme`
+    // command (a live compositor-side reload with no forced immediate
+    // redraw), not worth extra plumbing to force here.
+}
+
+static void cursor_shape_manager_request_set_shape(wl_listener *listener, void *data) {
+    BiomeServer *server = wl_container_of(listener, server, request_set_shape);
+    auto *event = static_cast<wlr_cursor_shape_manager_v1_request_set_shape_event *>(data);
+    if (event->device_type != WLR_CURSOR_SHAPE_MANAGER_V1_DEVICE_TYPE_POINTER) {
+        // Biome has no tablet-tool support elsewhere either.
+        return;
+    }
+    // Same focused-client check as seat_request_cursor (core/input.cpp) for
+    // the wl_pointer.set_cursor path this parallels - any client can send
+    // this request, so only honor it from the one that actually has
+    // pointer focus.
+    if (server->seat->pointer_state.focused_client != event->seat_client) {
+        return;
+    }
+    wlr_cursor_set_xcursor(server->cursor, server->cursor_mgr, wlr_cursor_shape_v1_name(event->shape));
 }
 
 void reset_cursor_mode(BiomeServer *server) {

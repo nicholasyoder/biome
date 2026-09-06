@@ -21,7 +21,8 @@ add_executable(biome
 )
 
 add_dependencies(biome biome_wlroots_cxx_shim
-    ${XDG_SHELL_PROTOCOL_HEADER_TARGET} ${LAYER_SHELL_PROTOCOL_HEADER_TARGET})
+    ${XDG_SHELL_PROTOCOL_HEADER_TARGET} ${LAYER_SHELL_PROTOCOL_HEADER_TARGET}
+    ${CURSOR_SHAPE_PROTOCOL_HEADER_TARGET})
 
 # BIOME_WLROOTS_SHIM_DIR must come before PkgConfig::WLROOTS's own include
 # dir so the patched copies of wlr_scene.h/wlr_matrix.h are the ones found.
