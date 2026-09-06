@@ -414,7 +414,8 @@ window escaping the lock) - a structural layer stack is not just cleaner,
 it's the thing that would have made that bug impossible rather than merely
 fixed.
 
-**Phase 5 — Cutover.**
+**Phase 5 — Cutover.** *(done, manually confirmed 2026-09-06 — login via
+the new wayland-sessions entry works)*
 New `forest-session` variant that execs Biome instead of `xfwm4`, a Wayland
 session entry for the greeter. **Decided 2026-08-22: this is a hard switch,
 not a dual-maintained transition** — Phase 4's X11 mechanisms (struts,
@@ -430,7 +431,43 @@ Wayland compositor speaking the same protocols, per the Decoupling goal)
 from Phase 4 onward; there's no X11-fallback code path to design or keep
 working.
 
-**Cursor theme/size at session startup** (found while porting
+**Status:** done. The process model inverts from the X11 flow: Biome (not
+`forest-session`) is now the top-level process, since it owns the seat/DRM.
+`forest/usr/share/forest/startforest-wayland` sets up session env and
+`exec`s `biome -s /usr/bin/forest-session`; Biome's existing sway/tinywl-style
+`-s` flag (`biome/core/main.cpp`) forks that command once its Wayland socket
+is live, so `forest-session` inherits `WAYLAND_DISPLAY` and just launches
+`forest` + autostart, no longer the WM itself. `forest-session`'s old
+`window_manager` QSettings key and its General-settings text box were
+removed outright rather than left inert — compositor choice now lives at
+the session/`.desktop`-file layer (swap `wayland-sessions/Forest.desktop`'s
+`Exec=` line to point at a different compositor), which fits the
+Decoupling goal better than an in-app setting anyway. The old
+`usr/share/xsessions/Forest.desktop`, `startforest`, and its `xfwm4.xml`
+seeding were deleted, not kept alongside — Forest's shell plugins no longer
+have a working X11 path post-Phase-4, so a session entry that still
+launched one would silently produce a half-broken desktop.
+
+**Follow-up fix (2026-09-06):** first login worked, but global hotkeys
+didn't fire. Root cause: `biome/data/xdg-desktop-portal/biome-portals.conf`
+and `.../portals/biome.portal` (which tell the system's xdg-desktop-portal
+frontend to route `org.freedesktop.impl.portal.GlobalShortcuts` to Biome's
+own backend, per `ipc/global_shortcuts_portal.cpp`) existed in the repo but
+were never installed anywhere, and `startforest-wayland` set
+`XDG_CURRENT_DESKTOP="Forest"` instead of including `biome` - the portal's
+desktop-specific config lookup (see `portals.conf(5)`) only checks
+`<desktop-name>-portals.conf` for names actually listed in
+`XDG_CURRENT_DESKTOP`, so `biome-portals.conf` was never found regardless.
+Fixed by adding `install(FILES ...)` rules for both files to
+`biome/CMakeLists.txt`, and changing `startforest-wayland` to export
+`XDG_CURRENT_DESKTOP="Forest:biome"`. The manual dev-testing script at the
+top-level `start_xdg_desktop_portal.sh` (`XDG_CURRENT_DESKTOP=biome
+xdg-desktop-portal --replace --verbose`) had been working around exactly
+this gap by hand, which is why hotkeys worked in prior manual Phase 4
+testing but not through the real session path until now.
+
+**Cursor theme/size at session startup** *(done — implemented in
+`startforest-wayland`)* (found while porting
 `system/system-settings/cursorthemesettings.cpp` off X11 - see that file
 and `biome/ipc/cursor_bridge.h`): the new session-launch script should
 export `XCURSOR_THEME`/`XCURSOR_SIZE` from the user's saved cursor choice
@@ -483,6 +520,21 @@ protocol directly when this phase starts.
   Phase 4 since it touches both Biome and Forest and the portal's exact
   semantics (binding registration, conflict handling) aren't yet validated
   against Biome's architecture.
-- **Greeter/session integration** (LightDM Wayland session support, a new
-  `.desktop` session entry) is Phase 5 infra work, not a blocker for early
-  development, but should be scoped before Phase 5 starts.
+- **Greeter/session integration** — done as part of Phase 5 (2026-09-06).
+  Forest's greeter is actually a custom `greetd`-based one
+  (`forest/greeter/greeter-app`, see `forest/docs/greeter-plan.md`), not
+  LightDM as this bullet originally assumed — it just execs whatever
+  `Exec=` line the user picks, so no LightDM-specific Wayland-session
+  handling was needed. `sessionlistmodel.cpp` already scanned both
+  `/usr/share/xsessions` and `/usr/share/wayland-sessions`, so the new
+  `wayland-sessions/Forest.desktop` entry was picked up with no greeter
+  changes at all.
+- **Biome has no Debian packaging yet.** `forest/debian/control`'s
+  `Depends:` still hard-lists `xfwm4, gtk2-engines-murrine, ..., xinit,
+  xserver-xorg, x11-xserver-utils` from the X11 era — that's now wrong
+  post-cutover (nothing in this list is required, and Biome is), but it
+  can't simply become `Depends: biome` since there's no `debian/` directory
+  in the `biome` repo at all yet, i.e. no installable `.deb` to depend on.
+  Needs a dedicated packaging pass (control file, install rules, changelog)
+  before `forest`'s own packaging can be corrected to match the Wayland-only
+  reality.

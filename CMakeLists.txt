@@ -71,3 +71,13 @@ add_subdirectory(decoration)
 add_subdirectory(desktop)
 add_subdirectory(ipc)
 add_subdirectory(core)
+
+# Registers biome as an org.freedesktop.impl.portal.GlobalShortcuts backend
+# with the system's xdg-desktop-portal frontend - biome itself owns the
+# org.freedesktop.impl.portal.desktop.biome bus name at runtime (see
+# ipc/global_shortcuts_portal.cpp), these two files just make the frontend
+# aware it exists and should be preferred for that interface.
+install(FILES data/xdg-desktop-portal/biome-portals.conf
+    DESTINATION /usr/share/xdg-desktop-portal)
+install(FILES data/xdg-desktop-portal/portals/biome.portal
+    DESTINATION /usr/share/xdg-desktop-portal/portals)
