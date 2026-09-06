@@ -296,8 +296,86 @@ static void xdg_popup_destroy(wl_listener *listener, void *data) {
     wl_list_remove(&popup->unmap.link);
     wl_list_remove(&popup->commit.link);
     wl_list_remove(&popup->destroy.link);
+    wl_list_remove(&popup->reposition.link);
 
     free(popup);
+}
+
+// Slides xdg_popup back on-screen against whichever output its ROOT ancestor
+// surface currently sits on - shared by the initial new_popup handling below
+// and by xdg_popup_reposition() (a client re-running its positioner, e.g.
+// once a menu's real content size is known, needs the exact same treatment
+// or the corrected geometry sails through unconstrained).
+//
+// wlr_xdg_popup_unconstrain_from_box()'s own doc comment requires the box to
+// be in "the popup's root toplevel parent surface" coordinate system - NOT
+// just its immediate parent. For a plain one-level popup (a normal menu, or
+// the tray's own context menu attached to the panel) those are the same
+// surface, so using the immediate parent happened to work. For a submenu
+// (popup-on-popup, e.g. nm-applet's Wi-Fi list under the tray menu) they're
+// not: the immediate parent is another popup, not the root, and using its
+// position instead of the true root's silently shifts every flip/slide
+// computation by the gap between them - confirmed as the cause of a Wi-Fi
+// submenu landing nowhere near where it should, on both axes.
+//
+// xdg_popup->parent (a real xdg-shell popup-parent link) is what actually
+// distinguishes "another popup" from "the root" - a layer-shell-owned
+// popup's root has xdg_popup->parent == nullptr since that attachment
+// happens out-of-band via zwlr_layer_surface_v1.get_popup (see
+// desktop/layer_shell.cpp), so walking that link (rather than the scene
+// tree, which looks structurally identical at every level) naturally stops
+// at the right place for both a real xdg_toplevel root and a layer-shell
+// one. Once at the root popup, its own scene node's parent is the true root
+// surface (a toplevel's tree or a layer surface's tree either way).
+static void constrain_popup_to_output(BiomeServer *server, wlr_xdg_popup *xdg_popup) {
+    wlr_xdg_popup *root_popup = xdg_popup;
+    while (root_popup->parent != nullptr) {
+        wlr_xdg_surface *parent_surface = wlr_xdg_surface_try_from_wlr_surface(root_popup->parent);
+        if (parent_surface == nullptr || parent_surface->role != WLR_XDG_SURFACE_ROLE_POPUP) {
+            break;
+        }
+        root_popup = parent_surface->popup;
+    }
+
+    auto *root_scene_tree = static_cast<wlr_scene_tree *>(root_popup->base->data);
+    if (root_scene_tree == nullptr || root_scene_tree->node.parent == nullptr) {
+        return;
+    }
+
+    int root_lx = 0, root_ly = 0;
+    wlr_scene_node_coords(&root_scene_tree->node.parent->node, &root_lx, &root_ly);
+    wlr_output *wlr_output = wlr_output_layout_output_at(server->output_layout, root_lx, root_ly);
+    if (wlr_output == nullptr) {
+        return;
+    }
+
+    wlr_box output_box = {};
+    wlr_output_layout_get_box(server->output_layout, wlr_output, &output_box);
+    if (wlr_box_empty(&output_box)) {
+        return;
+    }
+
+    wlr_box unconstrain_box = output_box;
+    unconstrain_box.x -= root_lx;
+    unconstrain_box.y -= root_ly;
+    wlr_xdg_popup_unconstrain_from_box(xdg_popup, &unconstrain_box);
+}
+
+// xdg_popup.reposition (wlr_xdg_popup::events.reposition) fires when a
+// client re-runs its positioner against the same popup, most commonly to
+// correct an initial size guess once a menu's real content/layout is known
+// (Qt's QMenu on Wayland does exactly this: create the popup, then
+// immediately reposition once its true size is settled - confirmed via
+// WAYLAND_DEBUG trace against Forest's system tray menu). Without this
+// listener, that corrected positioner - the one actually shown to the user -
+// never gets run through constrain_popup_to_output() at all, since the
+// new_popup-time call below only ever runs once; a tall menu anchored near a
+// bottom-docked panel would keep the exact off-screen geometry the client
+// asked for.
+static void xdg_popup_reposition(wl_listener *listener, void *data) {
+    (void)data;
+    BiomePopup *popup = wl_container_of(listener, popup, reposition);
+    constrain_popup_to_output(popup->server, popup->xdg_popup);
 }
 
 // A client that calls xdg_popup.grab (every toolkit menu/combo box does, to
@@ -415,27 +493,11 @@ static void server_new_xdg_popup(wl_listener *listener, void *data) {
 
         // Constrain to whichever output the parent surface is actually on,
         // so an anchor near the screen edge gets slid back on-screen instead
-        // of hanging off it (mirrors desktop/layer_shell.cpp's identical fix
-        // for layer-shell-owned popups - see that file for why this call is
-        // necessary at all: without it, the positioner's own
-        // constraint_adjustment has no box to slide within and is a no-op).
-        // wlr_scene_node_coords() walks the scene tree for the parent's
-        // absolute position regardless of whether it's a toplevel or (for a
-        // nested popup-on-popup) another popup, so this works uniformly
-        // rather than assuming a specific parent shape.
-        int parent_lx = 0, parent_ly = 0;
-        wlr_scene_node_coords(&parent_tree->node, &parent_lx, &parent_ly);
-        wlr_output *wlr_output = wlr_output_layout_output_at(server->output_layout, parent_lx, parent_ly);
-        if (wlr_output != nullptr) {
-            wlr_box output_box = {};
-            wlr_output_layout_get_box(server->output_layout, wlr_output, &output_box);
-            if (!wlr_box_empty(&output_box)) {
-                wlr_box unconstrain_box = output_box;
-                unconstrain_box.x -= parent_lx;
-                unconstrain_box.y -= parent_ly;
-                wlr_xdg_popup_unconstrain_from_box(xdg_popup, &unconstrain_box);
-            }
-        }
+        // of hanging off it - without this, the positioner's own
+        // constraint_adjustment has no box to slide within and is a no-op.
+        // See xdg_popup_reposition() below for why this same call also has
+        // to run again on every later reposition, not just here.
+        constrain_popup_to_output(server, xdg_popup);
     }
 
     popup->map.notify = xdg_popup_map;
@@ -446,6 +508,9 @@ static void server_new_xdg_popup(wl_listener *listener, void *data) {
 
     popup->commit.notify = xdg_popup_commit;
     wl_signal_add(&xdg_popup->base->surface->events.commit, &popup->commit);
+
+    popup->reposition.notify = xdg_popup_reposition;
+    wl_signal_add(&xdg_popup->events.reposition, &popup->reposition);
 
     popup->destroy.notify = xdg_popup_destroy;
     wl_signal_add(&xdg_popup->events.destroy, &popup->destroy);

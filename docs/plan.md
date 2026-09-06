@@ -141,9 +141,11 @@ biome/
 **Phase 0 — Skeleton & dev loop.**
 CMake project, wayland-scanner protocol codegen, link wlroots 0.18 +
 wayland-server. Get a `tinywl`-equivalent running: one output, black screen,
-quit on keypress. Run it *nested* inside the current session (wlroots
-auto-detects a nested Wayland/X11 backend) as the fast iteration loop; test
-from a raw TTY via DRM/KMS only occasionally.
+quit on keypress. *Nested* (wlroots auto-detects a nested Wayland/X11
+backend) is the loop for quick, disposable checks — e.g. an agent verifying
+a build actually runs without crashing. The user's own manual verification
+normally runs from a raw TTY via DRM/KMS instead, not nested — see the
+Phase 3 note below.
 
 **Phase 1 — Minimal functional compositor.** *(done)*
 `xdg-shell` surfaces, pointer/keyboard input via libinput, floating window
@@ -215,9 +217,10 @@ damage-tracking tuning, a window-operations menu, drop shadows, and live
 theme-switch reload.
 
 Per established preference, visual/interactive verification (drag, keyboard
-cycling, hover/press states) is left to the user's own manual testing in
-the nested dev loop rather than agent-driven screenshots or synthetic
-input.
+cycling, hover/press states) is left to the user's own manual testing rather
+than agent-driven screenshots or synthetic input. The user normally runs
+this from a real TTY session (DRM/KMS), not nested — nested is for an
+agent's own quick, disposable checks (see Phase 0).
 
 **Phase 3.5 — Input & session completeness.** *(added 2026-08-22; all three
 items done - the two clipboard-shaped ones confirmed by manual testing,

@@ -173,6 +173,7 @@ struct BiomePopup {
     wl_listener unmap = {};
     wl_listener commit = {};
     wl_listener destroy = {};
+    wl_listener reposition = {};
 };
 
 wlr_surface *toplevel_surface(BiomeToplevel *toplevel);
