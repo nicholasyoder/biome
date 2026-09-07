@@ -42,16 +42,33 @@ struct BiomeToplevel {
     bool maximized = false;
     wlr_box restore_box = {};
 
-    // Set by set_toplevel_maximized for xdg-shell toplevels only: applying
-    // the scene node's new position right away would put it ahead of the
-    // client's own matching commit (xdg-shell resizes asynchronously), showing
-    // the old, wrong-sized buffer at the new position for a frame or more.
-    // Deferred until xdg_toplevel_commit sees the buffer's size actually
-    // change, same idea as process_cursor_resize's deferred edge reposition.
-    // Xwayland configures x/y/width/height together, so left unset for it.
-    bool maximize_reposition_pending = false;
-    int maximize_pending_x = 0, maximize_pending_y = 0;
-    int maximize_pending_old_width = 0, maximize_pending_old_height = 0;
+    // Set by set_toplevel_fullscreen. fullscreen_restore_box is the
+    // pre-fullscreen visible content box (position + size), in
+    // output-layout coordinates - reapplied on un-fullscreen. Independent of
+    // maximized/restore_box above: fullscreening a maximized window and then
+    // un-fullscreening it restores the maximized fill, not the floating
+    // size, since toplevel->maximized itself is never touched by
+    // set_toplevel_fullscreen. While true, scene_tree is also reparented
+    // into BiomeServer::layers.fullscreen (above every layer-shell layer,
+    // still below layers.session_lock) instead of its usual
+    // layers.toplevels - see that field's declaration in core/server.h.
+    bool fullscreen = false;
+    wlr_box fullscreen_restore_box = {};
+
+    // Set by set_toplevel_maximized/set_toplevel_fullscreen for xdg-shell
+    // toplevels only: applying the scene node's new position right away
+    // would put it ahead of the client's own matching commit (xdg-shell
+    // resizes asynchronously), showing the old, wrong-sized buffer at the
+    // new position for a frame or more. Deferred until xdg_toplevel_commit
+    // sees the buffer's size actually change, same idea as
+    // process_cursor_resize's deferred edge reposition. Xwayland configures
+    // x/y/width/height together, so left unset for it. Shared between the
+    // two callers (whichever one fires last wins, which is fine - only one
+    // resize can be in flight at a time since both are synchronous calls
+    // into this same struct).
+    bool reposition_pending = false;
+    int reposition_pending_x = 0, reposition_pending_y = 0;
+    int reposition_pending_old_width = 0, reposition_pending_old_height = 0;
 
     // Set by set_toplevel_minimized. No taskbar exists under Biome yet, so
     // the only way to restore a minimized window is the Alt-Tab switcher.
@@ -184,13 +201,17 @@ void close_toplevel(BiomeToplevel *toplevel);
 
 void toplevel_get_geometry(BiomeToplevel *toplevel, wlr_box *box);
 
-// False for an Xwayland surface that set _MOTIF_WM_HINTS asking for no
-// border/title - e.g. a GTK3 app already drawing its own CSD titlebar. For
-// an xdg-shell toplevel, false once either negotiation protocol (xdg-
-// decoration or the legacy KDE one) settled on client-side, or once neither
-// protocol was negotiated at all - see xdg_client_side_decorated. A live
-// query rather than a cached flag on the Xwayland side - wlroots may not
-// have parsed the property yet when a toplevel is first created.
+// Always false while toplevel->fullscreen is set - a fullscreen window
+// fills the whole output with no border/titlebar regardless of what it
+// would otherwise negotiate, same convention as every other compositor.
+// Otherwise: false for an Xwayland surface that set _MOTIF_WM_HINTS asking
+// for no border/title - e.g. a GTK3 app already drawing its own CSD
+// titlebar. For an xdg-shell toplevel, false once either negotiation
+// protocol (xdg-decoration or the legacy KDE one) settled on client-side, or
+// once neither protocol was negotiated at all - see
+// xdg_client_side_decorated. A live query rather than a cached flag on the
+// Xwayland side - wlroots may not have parsed the property yet when a
+// toplevel is first created.
 bool toplevel_decorated(const BiomeToplevel *toplevel);
 
 // content_tree->node.data is set to the owning BiomeToplevel for both xdg
@@ -265,6 +286,15 @@ void place_new_toplevel(BiomeToplevel *toplevel);
 // Real maximize/restore: no work-area reservation yet (no panel exists
 // under Biome), so this simply fills the current output.
 void set_toplevel_maximized(BiomeToplevel *toplevel, bool maximized);
+
+// Real fullscreen/restore: fills the *entire* current output (unlike
+// set_toplevel_maximized, not just its usable area - a fullscreen window
+// covers a panel/dock rather than reserving space around it), with the
+// decorated frame's border/titlebar forced off for the duration (see
+// toplevel_decorated) and the scene node raised above every layer-shell
+// layer for the same reason (see BiomeServer::layers.fullscreen).
+// Independent of maximized state - see fullscreen_restore_box's declaration.
+void set_toplevel_fullscreen(BiomeToplevel *toplevel, bool fullscreen);
 
 // Minimize just hides the toplevel and moves focus elsewhere if it was
 // focused - there's no taskbar under Biome yet for the usual "click to

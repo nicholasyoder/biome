@@ -9,15 +9,12 @@
 // lifetime shape as decoration_bridge.h's create_toplevel_decoration/
 // destroy_toplevel_decoration. State (maximized/minimized/activated) is
 // never tracked independently here - foreign_toplevel_sync_state() just
-// re-pushes BiomeToplevel's own flags, and wlroots itself dedups a no-op
-// set against the handle's current state, so callers don't need to guard
-// against redundant calls either.
-//
-// No fullscreen support: Biome has none anywhere (xdg/xwayland fullscreen
-// requests are unconditionally denied - see xdg_toplevel_request_fullscreen/
-// xwayland_toplevel_request_fullscreen in xdg_shell.cpp/xwayland_shell.cpp),
-// so the protocol's fullscreen bit and set_fullscreen/unset_fullscreen
-// requests are permanently unset/no-ops here.
+// re-pushes BiomeToplevel's own flags (maximized/minimized/activated/
+// fullscreen), and wlroots itself dedups a no-op set against the handle's
+// current state, so callers don't need to guard against redundant calls
+// either. handle_request_fullscreen forwards straight to
+// set_toplevel_fullscreen (desktop/toplevel.h), same as
+// handle_request_maximize does for set_toplevel_maximized.
 
 #pragma once
 

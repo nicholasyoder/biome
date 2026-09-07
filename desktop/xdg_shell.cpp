@@ -120,18 +120,19 @@ static void xdg_toplevel_commit(wl_listener *listener, void *data) {
         wlr_scene_node_set_position(&toplevel->scene_tree->node, x, y);
     }
 
-    if (toplevel->maximize_reposition_pending) {
+    if (toplevel->reposition_pending) {
         // Same idea as the resize case above: wait for a commit whose size
-        // actually differs from before set_toplevel_maximized requested the
-        // change - see maximize_reposition_pending's declaration.
+        // actually differs from before set_toplevel_maximized/
+        // set_toplevel_fullscreen requested the change - see
+        // reposition_pending's declaration.
         wlr_box geo;
         toplevel_get_geometry(toplevel, &geo);
-        bool resolves = geo.width != toplevel->maximize_pending_old_width ||
-            geo.height != toplevel->maximize_pending_old_height;
+        bool resolves = geo.width != toplevel->reposition_pending_old_width ||
+            geo.height != toplevel->reposition_pending_old_height;
         if (resolves) {
             wlr_scene_node_set_position(&toplevel->scene_tree->node,
-                toplevel->maximize_pending_x, toplevel->maximize_pending_y);
-            toplevel->maximize_reposition_pending = false;
+                toplevel->reposition_pending_x, toplevel->reposition_pending_y);
+            toplevel->reposition_pending = false;
             // The decoration (and its buttons) just moved out from under a
             // cursor that may not have moved since the click that requested
             // this - see refresh_decoration_hover's comment.
@@ -212,12 +213,20 @@ static void xdg_toplevel_request_maximize(wl_listener *listener, void *data) {
     }
 }
 
-// Just as with request_maximize, a configure reply is required here.
+// Same shape as xdg_toplevel_request_maximize just above: a configure reply
+// is required even when the request no-ops because it asks for the state
+// the toplevel is already in.
 static void xdg_toplevel_request_fullscreen(wl_listener *listener, void *data) {
     (void)data;
     BiomeToplevel *toplevel = wl_container_of(listener, toplevel, request_fullscreen);
-    if (toplevel->xdg_toplevel->base->initialized) {
-        wlr_xdg_surface_schedule_configure(toplevel->xdg_toplevel->base);
+    if (!toplevel->xdg_toplevel->base->initialized) {
+        return;
+    }
+    bool requested = toplevel->xdg_toplevel->requested.fullscreen;
+    bool was_fullscreen = toplevel->fullscreen;
+    set_toplevel_fullscreen(toplevel, requested);
+    if (was_fullscreen == requested) {
+        wlr_xdg_toplevel_set_fullscreen(toplevel->xdg_toplevel, requested);
     }
 }
 

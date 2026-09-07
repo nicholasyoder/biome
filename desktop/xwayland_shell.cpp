@@ -118,7 +118,7 @@ static void xwayland_toplevel_request_maximize(wl_listener *listener, void *data
 static void xwayland_toplevel_request_fullscreen(wl_listener *listener, void *data) {
     (void)data;
     BiomeToplevel *toplevel = wl_container_of(listener, toplevel, request_fullscreen);
-    wlr_xwayland_surface_set_fullscreen(toplevel->xwayland_surface, false);
+    set_toplevel_fullscreen(toplevel, toplevel->xwayland_surface->fullscreen);
 }
 
 static void xwayland_toplevel_request_minimize(wl_listener *listener, void *data) {

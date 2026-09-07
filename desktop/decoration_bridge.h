@@ -76,8 +76,8 @@ void set_decoration_pressed(BiomeServer *server, BiomeToplevel *toplevel,
 // (so no motion event will arrive to trigger the usual update_decoration_hover
 // call in server_cursor_motion). Callers: the decoration button release
 // itself, and - the case that actually matters, since xdg-shell maximize/
-// restore only moves the scene node once the client's matching-size buffer
-// lands - wherever maximize_reposition_pending gets resolved.
+// fullscreen/restore only moves the scene node once the client's
+// matching-size buffer lands - wherever reposition_pending gets resolved.
 void refresh_decoration_hover(BiomeServer *server);
 
 // Called from both toplevel destroy handlers, before free(). Unlike

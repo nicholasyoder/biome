@@ -8,10 +8,12 @@ void update_toplevel_visibility(BiomeToplevel *toplevel) {
     // No session_locked check here (Phase 3.5 added one; removed now that
     // Workstream A's real per-output layer stack exists - see
     // BiomeServer::layers' doc comment in server.h). toplevel->scene_tree is
-    // always a child of server->layers.toplevels, which is structurally
-    // below server->layers.session_lock for every toplevel that will ever
-    // exist, not just the ones that existed when a lock began - so while
-    // locked, layers.session_lock's opaque per-output rect (desktop/
+    // always a child of one of the fixed server->layers trees
+    // (layers.toplevels normally, layers.fullscreen while fullscreen - see
+    // set_toplevel_fullscreen), both structurally below
+    // server->layers.session_lock for every toplevel that will ever exist,
+    // not just the ones that existed when a lock began - so while locked,
+    // layers.session_lock's opaque per-output rect (desktop/
     // session_lock.cpp) already covers every toplevel for both rendering
     // and hit-testing (desktop_toplevel_at/decoration_toplevel_at stop at
     // the first node they hit, topmost first) with no need to separately

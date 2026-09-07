@@ -561,3 +561,23 @@ protocol directly when this phase starts.
   eventual display-settings UI — that UI will consume Biome's resolved
   layout via `wlr-output-management-unstable-v1`, which assumes the
   compositor is the source of truth for a valid arrangement, not the UI.
+- **An Xwayland override-redirect popup from a fullscreen window can render
+  behind it (found 2026-09-07, while adding fullscreen support).**
+  `set_toplevel_fullscreen` (`desktop/toplevel.h`) reparents a fullscreen
+  toplevel's `scene_tree` into the new `BiomeServer::layers.fullscreen`
+  layer (above every layer-shell layer, so a panel/dock in `layers.top`
+  doesn't cover it — see that field's doc comment in `core/server.h`). A
+  Wayland-native `xdg_popup` isn't affected, since it's created as a scene
+  child of its parent toplevel's own tree (`wlr_scene_xdg_surface_create`
+  in `desktop/xdg_shell.cpp`) and so is carried along by the reparent
+  automatically. But an Xwayland override-redirect surface (an X11-native
+  context menu/tooltip/dropdown — `desktop/xwayland_shell.cpp`'s
+  `unmanaged_associate`) is a separate `BiomeUnmanaged` object parented
+  directly to `layers.toplevels`, not nested under whichever toplevel
+  "owns" it, so it stays below `layers.fullscreen` even when its owning
+  window is fullscreen. Not yet confirmed against a real app (no Xwayland
+  client on hand that both fullscreens and opens an override-redirect
+  popup while doing so) - worth a real fix if it turns out to matter in
+  practice, likely by also raising unmanaged surfaces above
+  `layers.fullscreen` whenever at least one toplevel is currently
+  fullscreen.

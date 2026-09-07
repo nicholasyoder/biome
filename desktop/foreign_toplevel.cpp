@@ -47,13 +47,10 @@ static void handle_request_activate(wl_listener *listener, void *data) {
     focus_toplevel(wrapper->toplevel);
 }
 
-// Biome has no fullscreen support anywhere (see this module's header
-// comment) - a request here can't be honored, so it's just ignored. The
-// handle's fullscreen state bit is never set in the first place, so no
-// reply/no-op signal is needed either.
 static void handle_request_fullscreen(wl_listener *listener, void *data) {
-    (void)listener;
-    (void)data;
+    BiomeForeignToplevel *wrapper = wl_container_of(listener, wrapper, request_fullscreen);
+    auto *event = static_cast<wlr_foreign_toplevel_handle_v1_fullscreen_event *>(data);
+    set_toplevel_fullscreen(wrapper->toplevel, event->fullscreen);
 }
 
 static void handle_request_close(wl_listener *listener, void *data) {
@@ -192,4 +189,5 @@ void foreign_toplevel_sync_state(BiomeToplevel *toplevel) {
     wlr_foreign_toplevel_handle_v1_set_maximized(wrapper->handle, toplevel->maximized);
     wlr_foreign_toplevel_handle_v1_set_minimized(wrapper->handle, toplevel->minimized);
     wlr_foreign_toplevel_handle_v1_set_activated(wrapper->handle, toplevel->focused);
+    wlr_foreign_toplevel_handle_v1_set_fullscreen(wrapper->handle, toplevel->fullscreen);
 }

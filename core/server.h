@@ -49,13 +49,18 @@ struct BiomeServer {
     // server->scene->tree, in this order bottom to top - order is z-order in
     // wlr_scene, so this list *is* the compositor's global stacking policy,
     // not just a naming convenience:
-    //   background -> bottom -> toplevels -> top -> overlay -> session_lock
+    //   background -> bottom -> toplevels -> top -> overlay -> fullscreen -> session_lock
     // background/bottom/top/overlay correspond 1:1 to wlr-layer-shell's own
     // four zwlr_layer_shell_v1_layer values (desktop/layer_shell.cpp);
     // toplevels is where every normal window's scene_tree lives (previously
     // a direct child of scene->tree - see desktop/xdg_shell.cpp,
-    // desktop/xwayland_shell.cpp); session_lock is what used to be the
-    // ad-hoc, separately-raised BiomeServer::lock_tree (desktop/session_lock.cpp).
+    // desktop/xwayland_shell.cpp). fullscreen is where set_toplevel_fullscreen
+    // (desktop/toplevel.h) reparents a toplevel's scene_tree for the duration
+    // of being fullscreen, and back to toplevels on restore - above every
+    // layer-shell layer (a fullscreen window must cover a panel/dock sitting
+    // in top, same convention as every other desktop) but still below
+    // session_lock. session_lock is what used to be the ad-hoc,
+    // separately-raised BiomeServer::lock_tree (desktop/session_lock.cpp).
     // Because nothing can be created as a *later* sibling of scene->tree
     // than session_lock (every other tree in this stack is created here,
     // once, at startup, before any client ever connects), session_lock is
@@ -68,6 +73,7 @@ struct BiomeServer {
         wlr_scene_tree *toplevels = nullptr;
         wlr_scene_tree *top = nullptr;
         wlr_scene_tree *overlay = nullptr;
+        wlr_scene_tree *fullscreen = nullptr;
         wlr_scene_tree *session_lock = nullptr;
     } layers;
 

@@ -8,6 +8,7 @@ void scene_layers_init(BiomeServer *server) {
     server->layers.toplevels = wlr_scene_tree_create(&server->scene->tree);
     server->layers.top = wlr_scene_tree_create(&server->scene->tree);
     server->layers.overlay = wlr_scene_tree_create(&server->scene->tree);
+    server->layers.fullscreen = wlr_scene_tree_create(&server->scene->tree);
     server->layers.session_lock = wlr_scene_tree_create(&server->scene->tree);
     // Starts disabled - only enabled for the duration of a lock (mirrors
     // the old BiomeServer::lock_tree's own initial-disabled convention).

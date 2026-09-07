@@ -185,14 +185,14 @@ static void process_cursor_move(BiomeServer *server, uint32_t time) {
     }
     int x = static_cast<int>(server->cursor->x - server->grab_x);
     int y = static_cast<int>(server->cursor->y - server->grab_y);
-    if (toplevel->maximize_reposition_pending) {
+    if (toplevel->reposition_pending) {
         // set_toplevel_maximized() above requested the restore but (xdg-shell)
         // hasn't heard back yet - moving the frame now would show its
         // still-maximized-size buffer following the cursor. Track the target
         // without moving anything; xdg_toplevel_commit applies it once the
         // matching buffer lands.
-        toplevel->maximize_pending_x = x;
-        toplevel->maximize_pending_y = y;
+        toplevel->reposition_pending_x = x;
+        toplevel->reposition_pending_y = y;
         return;
     }
     wlr_scene_node_set_position(&toplevel->scene_tree->node, x, y);

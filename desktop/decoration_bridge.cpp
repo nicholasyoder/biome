@@ -135,7 +135,7 @@ void render_toplevel_decoration(BiomeToplevel *toplevel) {
 
     // toplevel->maximized flips the instant set_toplevel_maximized() is
     // called, but for xdg-shell the frame's actual size/position lags behind
-    // until the resized buffer lands (maximize_reposition_pending - see its
+    // until the resized buffer lands (reposition_pending - see its
     // declaration). Rendering the border/titlebar art with the new state
     // while geo/scene_tree are still the old ones bakes in the wrong border
     // thickness (border painted 0px one render, then N px the next, while
@@ -146,8 +146,13 @@ void render_toplevel_decoration(BiomeToplevel *toplevel) {
     // offset) using the state that matches whatever's still on screen until
     // xdg_toplevel_commit resolves the pending move and calls back in here
     // with the flag already clear, at which point both the art and the
-    // frame's real position/size update together.
-    bool render_maximized = toplevel->maximize_reposition_pending
+    // frame's real position/size update together. Fullscreen doesn't need
+    // the same treatment: toplevel_decorated() already forces border/
+    // titlebar to 0 the instant toplevel->fullscreen flips, which is a
+    // one-frame content_tree offset glitch rather than a wrong-border-
+    // thickness one - not worth the extra plumbing this same trick would
+    // need to also cover it.
+    bool render_maximized = toplevel->reposition_pending
         ? !toplevel->maximized
         : toplevel->maximized;
 

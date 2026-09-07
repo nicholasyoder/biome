@@ -38,6 +38,9 @@ void toplevel_get_geometry(BiomeToplevel *toplevel, wlr_box *box) {
 }
 
 bool toplevel_decorated(const BiomeToplevel *toplevel) {
+    if (toplevel->fullscreen) {
+        return false;
+    }
     if (toplevel->type == BiomeToplevelType::Xdg) {
         return !toplevel->xdg_client_side_decorated;
     }
@@ -128,9 +131,10 @@ void focus_toplevel(BiomeToplevel *toplevel) {
     // click-to-focus and auto-focus-on-map go through, so gating it here is
     // enough (see desktop/session_lock.h). Doesn't need to also guard
     // against raising the scene node above the lock anymore: toplevel->
-    // scene_tree's parent is now the fixed server->layers.toplevels tree
-    // (see BiomeServer::layers in server.h), which is structurally below
-    // server->layers.session_lock regardless of sibling order within it.
+    // scene_tree's parent is always one of the fixed server->layers trees
+    // (layers.toplevels normally, layers.fullscreen while fullscreen - see
+    // set_toplevel_fullscreen), both structurally below
+    // server->layers.session_lock regardless of sibling order within them.
     if (server->session_locked) {
         return;
     }
@@ -334,12 +338,12 @@ void set_toplevel_maximized(BiomeToplevel *toplevel, bool maximized) {
     int node_y = target.y - decoration_titlebar_height(toplevel, toplevel->maximized);
     if (toplevel->type == BiomeToplevelType::Xdg) {
         // Picked up by xdg_toplevel_commit once the resized buffer lands -
-        // see maximize_reposition_pending's declaration.
-        toplevel->maximize_reposition_pending = true;
-        toplevel->maximize_pending_x = node_x;
-        toplevel->maximize_pending_y = node_y;
-        toplevel->maximize_pending_old_width = old_geo.width;
-        toplevel->maximize_pending_old_height = old_geo.height;
+        // see reposition_pending's declaration.
+        toplevel->reposition_pending = true;
+        toplevel->reposition_pending_x = node_x;
+        toplevel->reposition_pending_y = node_y;
+        toplevel->reposition_pending_old_width = old_geo.width;
+        toplevel->reposition_pending_old_height = old_geo.height;
     } else {
         wlr_scene_node_set_position(&toplevel->scene_tree->node, node_x, node_y);
     }
@@ -350,6 +354,87 @@ void set_toplevel_maximized(BiomeToplevel *toplevel, bool maximized) {
         wlr_xdg_toplevel_set_maximized(toplevel->xdg_toplevel, maximized);
     } else {
         wlr_xwayland_surface_set_maximized(toplevel->xwayland_surface, maximized);
+    }
+    render_toplevel_decoration(toplevel);
+    foreign_toplevel_sync_state(toplevel);
+}
+
+// The output the toplevel is currently (mostly) on, by its visible
+// content's top-left corner - same lookup maximize_target_box does, just
+// without subtracting usable_area (or the border/titlebar inset, since a
+// fullscreen frame has neither - see toplevel_decorated): a fullscreen
+// window fills the output's full box, panels and all.
+static wlr_box fullscreen_target_box(BiomeToplevel *toplevel) {
+    BiomeServer *server = toplevel->server;
+    double vis_x = toplevel->scene_tree->node.x + decoration_border_width(toplevel, toplevel->maximized);
+    double vis_y = toplevel->scene_tree->node.y + decoration_titlebar_height(toplevel, toplevel->maximized);
+
+    wlr_output *output = wlr_output_layout_output_at(server->output_layout, vis_x, vis_y);
+    wlr_box box = {};
+    if (output == nullptr) {
+        return box;
+    }
+    wlr_output_layout_get_box(server->output_layout, output, &box);
+    return box;
+}
+
+void set_toplevel_fullscreen(BiomeToplevel *toplevel, bool fullscreen) {
+    if (toplevel->fullscreen == fullscreen) {
+        return;
+    }
+
+    wlr_box old_geo;
+    toplevel_get_geometry(toplevel, &old_geo);
+
+    wlr_box target;
+    if (fullscreen) {
+        toplevel->fullscreen_restore_box.x =
+            static_cast<int>(toplevel->scene_tree->node.x) + decoration_border_width(toplevel, toplevel->maximized);
+        toplevel->fullscreen_restore_box.y =
+            static_cast<int>(toplevel->scene_tree->node.y) + decoration_titlebar_height(toplevel, toplevel->maximized);
+        toplevel->fullscreen_restore_box.width = old_geo.width;
+        toplevel->fullscreen_restore_box.height = old_geo.height;
+
+        target = fullscreen_target_box(toplevel);
+        if (wlr_box_empty(&target)) {
+            return;
+        }
+        // Flipped before the decoration_border_width/decoration_titlebar_height
+        // calls below so they (via toplevel_decorated) already see the
+        // borderless fullscreen state - node_x/node_y then land exactly on
+        // target's top-left, with no border to offset for.
+        toplevel->fullscreen = true;
+        // Above every layer-shell layer (a fullscreen window must cover a
+        // panel/dock sitting in the top layer) - see BiomeServer::layers'
+        // declaration. Reparenting always lands as the topmost child of the
+        // new parent (wlr_scene_node_reparent appends), so this also raises
+        // the window above any other already-fullscreen toplevel.
+        wlr_scene_node_reparent(&toplevel->scene_tree->node, toplevel->server->layers.fullscreen);
+    } else {
+        target = toplevel->fullscreen_restore_box;
+        toplevel->fullscreen = false;
+        wlr_scene_node_reparent(&toplevel->scene_tree->node, toplevel->server->layers.toplevels);
+    }
+
+    int node_x = target.x - decoration_border_width(toplevel, toplevel->maximized);
+    int node_y = target.y - decoration_titlebar_height(toplevel, toplevel->maximized);
+    if (toplevel->type == BiomeToplevelType::Xdg) {
+        // See reposition_pending's declaration.
+        toplevel->reposition_pending = true;
+        toplevel->reposition_pending_x = node_x;
+        toplevel->reposition_pending_y = node_y;
+        toplevel->reposition_pending_old_width = old_geo.width;
+        toplevel->reposition_pending_old_height = old_geo.height;
+    } else {
+        wlr_scene_node_set_position(&toplevel->scene_tree->node, node_x, node_y);
+    }
+    toplevel_set_size(toplevel, target.x, target.y, target.width, target.height);
+    toplevel_sync_position(toplevel, target.x, target.y);
+
+    if (toplevel->type == BiomeToplevelType::Xdg) {
+        wlr_xdg_toplevel_set_fullscreen(toplevel->xdg_toplevel, fullscreen);
+    } else {
+        wlr_xwayland_surface_set_fullscreen(toplevel->xwayland_surface, fullscreen);
     }
     render_toplevel_decoration(toplevel);
     foreign_toplevel_sync_state(toplevel);

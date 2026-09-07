@@ -176,13 +176,14 @@ static void handle_new_session_lock(wl_listener *listener, void *data) {
 
     // No toplevel visibility sweep needed here either, for the same
     // structural reason handle_lock_unlock's comment above gives: every
-    // toplevel's scene_tree is a child of the fixed server->layers.toplevels
-    // tree (server.h's BiomeServer::layers doc comment), which is
-    // structurally below server->layers.session_lock for the lifetime of
-    // the compositor - including for a toplevel mapped for the first time
-    // *while* locked, since place_new_toplevel() parents it there too, not
-    // as a fresh sibling of scene->tree. That's what closes the gap Phase
-    // 3.5's original ad-hoc single-raised-tree design had (a brand new
+    // toplevel's scene_tree is a child of one of the fixed server->layers
+    // trees (layers.toplevels normally, layers.fullscreen while fullscreen -
+    // see set_toplevel_fullscreen; server.h's BiomeServer::layers doc
+    // comment), both structurally below server->layers.session_lock for the
+    // lifetime of the compositor - including for a toplevel mapped for the
+    // first time *while* locked, since place_new_toplevel() parents it there
+    // too, not as a fresh sibling of scene->tree. That's what closes the gap
+    // Phase 3.5's original ad-hoc single-raised-tree design had (a brand new
     // scene node always becomes the newest topmost sibling of *its own*
     // parent, which used to be scene->tree itself for every toplevel).
 
