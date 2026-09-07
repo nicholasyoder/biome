@@ -187,6 +187,11 @@ struct BiomeServer {
     wlr_box grab_geobox = {};
     uint32_t resize_edges = 0;
 
+    // Layout-space origin of the pointer-focused surface's local (0,0),
+    // cached on each enter (core/cursor.cpp) so a button-held drag can keep
+    // targeting that surface past its edge without re-hit-testing.
+    double pointer_focus_origin_x = 0, pointer_focus_origin_y = 0;
+
     // For double-click-titlebar-to-maximize detection in server_cursor_button.
     uint32_t last_left_click_time = 0;
     BiomeToplevel *last_left_click_toplevel = nullptr;

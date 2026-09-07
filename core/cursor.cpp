@@ -271,8 +271,22 @@ static void process_cursor_motion(BiomeServer *server, uint32_t time) {
         return;
     }
 
-    double sx, sy;
     wlr_seat *seat = server->seat;
+
+    if (seat->pointer_state.button_count > 0 && seat->pointer_state.focused_surface != nullptr &&
+            seat->drag == nullptr) {
+        // Implicit grab: while a button is held, keep routing motion to the
+        // already-focused surface via its cached origin instead of
+        // re-hit-testing, so a drag (e.g. text selection) isn't cut short at
+        // the surface edge. Skipped during DnD (seat->drag set), which needs
+        // the hit test below to track the drop target across windows.
+        double sx = server->cursor->x - server->pointer_focus_origin_x;
+        double sy = server->cursor->y - server->pointer_focus_origin_y;
+        wlr_seat_pointer_notify_motion(seat, time, sx, sy);
+        return;
+    }
+
+    double sx, sy;
     wlr_surface *surface = nullptr;
     BiomeToplevel *toplevel = desktop_toplevel_at(server,
         server->cursor->x, server->cursor->y, &surface, &sx, &sy);
@@ -291,6 +305,9 @@ static void process_cursor_motion(BiomeServer *server, uint32_t time) {
     if (surface) {
         wlr_seat_pointer_notify_enter(seat, surface, sx, sy);
         wlr_seat_pointer_notify_motion(seat, time, sx, sy);
+        // Cached for the implicit-grab branch above.
+        server->pointer_focus_origin_x = server->cursor->x - sx;
+        server->pointer_focus_origin_y = server->cursor->y - sy;
     } else {
         // Clear pointer focus so future button events and such are not sent
         // to the last client to have the cursor over it. The _notify_
