@@ -287,6 +287,12 @@ struct BiomeServer {
     // that case, so this is the one field that has to survive a crash.
     bool session_locked = false;
     wlr_scene_tree *lock_tree = nullptr;
+
+    // STOPGAP(idle-blank): see core/idle_blank.h. Delete this block plus
+    // that module and its two call sites (input.cpp, cursor.cpp) once
+    // Phase 6's real idle-notify/output-management lands (docs/plan.md).
+    wl_event_source *idle_blank_timer = nullptr;
+    bool idle_blanked = false;
 };
 
 struct BiomeOutput {

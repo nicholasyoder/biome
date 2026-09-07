@@ -8,6 +8,7 @@
 #include "wlroots.hpp"
 
 #include "core/cursor.h"
+#include "core/idle_blank.h" // STOPGAP(idle-blank)
 #include "core/input.h"
 #include "core/output.h"
 #include "core/server.h"
@@ -128,6 +129,7 @@ int main(int argc, char *argv[]) {
     xdg_shell_init(&server);
     cursor_init(&server);
     input_init(&server);
+    idle_blank_init(&server); // STOPGAP(idle-blank)
     xwayland_init(&server, compositor);
     global_shortcuts_portal_init(&server);
     workspace_bridge_init(&server);

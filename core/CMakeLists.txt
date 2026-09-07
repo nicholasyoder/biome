@@ -17,6 +17,8 @@ add_executable(biome
     keybindings.cpp
     cursor.h
     cursor.cpp
+    idle_blank.h # STOPGAP(idle-blank)
+    idle_blank.cpp # STOPGAP(idle-blank)
     wlroots.hpp
 )
 
