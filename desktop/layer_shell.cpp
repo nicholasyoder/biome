@@ -781,6 +781,19 @@ static void handle_layer_surface_destroy(wl_listener *listener, void *data) {
     arrange_layers(output);
 }
 
+void layer_shell_handle_output_destroy(BiomeOutput *output) {
+    BiomeLayerSurface *wrapper, *tmp;
+    wl_list_for_each_safe(wrapper, tmp, &output->server->layer_surfaces, link) {
+        if (wrapper->output == output) {
+            // Fires handle_layer_surface_destroy() synchronously (unmap first
+            // if mapped), which frees `wrapper` - safe here since `output`
+            // itself is still valid until the caller frees it after this
+            // returns.
+            wlr_layer_surface_v1_destroy(wrapper->layer_surface);
+        }
+    }
+}
+
 static void handle_layer_surface_new_popup(wl_listener *listener, void *data) {
     BiomeLayerSurface *wrapper = wl_container_of(listener, wrapper, new_popup);
     auto *xdg_popup = static_cast<wlr_xdg_popup *>(data);

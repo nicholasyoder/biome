@@ -123,6 +123,13 @@ static void output_destroy(wl_listener *listener, void *data) {
     (void)data;
     BiomeOutput *output = wl_container_of(listener, output, destroy);
 
+    // Must run before this output is freed below - any layer surface still
+    // bound to it (BiomeLayerSurface::output) would otherwise dangle until
+    // its own destroy listener fires later (e.g. its client disconnecting),
+    // which then dereferences freed memory via arrange_layers(). See
+    // desktop/layer_shell.cpp for the full explanation.
+    layer_shell_handle_output_destroy(output);
+
     wl_list_remove(&output->frame.link);
     wl_list_remove(&output->request_state.link);
     wl_list_remove(&output->destroy.link);

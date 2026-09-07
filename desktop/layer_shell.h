@@ -38,3 +38,11 @@ void arrange_layers(BiomeOutput *output);
 // to keep the frame loop alive - Biome's rendering is otherwise
 // damage-driven, not continuous.
 bool update_layer_surface_fades(BiomeOutput *output);
+
+// Destroys every layer surface still bound to this output (via
+// wlr_layer_surface_v1_destroy(), which sends the client a `closed` event
+// first). Must be called before core/output.cpp's output_destroy() frees the
+// output - otherwise a bound BiomeLayerSurface::output is left dangling until
+// its own destroy listener fires later (e.g. its client disconnecting),
+// which then dereferences freed memory in arrange_layers().
+void layer_shell_handle_output_destroy(BiomeOutput *output);
