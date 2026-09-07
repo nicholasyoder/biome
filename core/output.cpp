@@ -210,6 +210,25 @@ static void server_new_output(wl_listener *listener, void *data) {
     wlr_output_commit_state(wlr_output, &state);
     wlr_output_state_finish(&state);
 
+    // STOPGAP(idle-blank): a connector can bounce its HPD line (disconnect
+    // then immediately reconnect) when its CRTC is disabled - some DP
+    // monitors/docks do this on every blank. Left alone, that reconnect
+    // would come up via the normal cfg.enabled=true commit above and
+    // instantly re-light a screen that's supposed to be dark. Committing
+    // enabled=false as this connector's very first-ever state (mode included
+    // or not) crashes the backend, so this always brings it up normally
+    // first and only then blanks it with a second commit - the same
+    // enabled-false-only shape idle_blank.cpp already uses successfully on
+    // every other output. See core/idle_blank.h - delete this whole block
+    // once Phase 6 lands.
+    if (cfg.enabled && server->idle_blanked) {
+        wlr_output_state blank_state;
+        wlr_output_state_init(&blank_state);
+        wlr_output_state_set_enabled(&blank_state, false);
+        wlr_output_commit_state(wlr_output, &blank_state);
+        wlr_output_state_finish(&blank_state);
+    }
+
     auto *output = static_cast<BiomeOutput *>(calloc(1, sizeof(BiomeOutput)));
     output->wlr = wlr_output;
     output->server = server;

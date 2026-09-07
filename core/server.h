@@ -293,6 +293,12 @@ struct BiomeServer {
     // Phase 6's real idle-notify/output-management lands (docs/plan.md).
     wl_event_source *idle_blank_timer = nullptr;
     bool idle_blanked = false;
+    // One-shot; re-attempts a wlr_output_commit_state() that failed for some
+    // output (this can happen transiently even for a valid state - see
+    // idle_blank.cpp). Target state lives in idle_blank_retry_target since
+    // the timer callback has no other way to know which way it was headed.
+    wl_event_source *idle_blank_retry_timer = nullptr;
+    bool idle_blank_retry_target = false;
 };
 
 struct BiomeOutput {

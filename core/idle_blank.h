@@ -17,6 +17,8 @@
 //   - the idle_blank_notify_activity() calls in core/input.cpp and
 //     core/cursor.cpp
 //   - the idle_blank.cpp entry in core/CMakeLists.txt
+//   - the idle_blanked check in core/output.cpp's server_new_output()
+//     (stops a hotplug reconnect during a blank from re-lighting the screen)
 
 #pragma once
 
