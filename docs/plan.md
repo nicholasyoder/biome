@@ -19,13 +19,13 @@ plugins, the hotkeys service). See `forest/CLAUDE.md` for the full shell
 architecture (plugin system, DBus `org.forest`, QSS theming via
 `fstyleloader`).
 
-An earlier assessment (`forest/docs/wayland_AI_assessment.md`) laid out two
-paths: pair Forest with an existing compositor (KWin/Wayfire) and keep
-Forest as a pure shell, or write Forest's own compositor to get real control
-over window decorations. That doc rated writing a compositor "Very High"
-effort and leaned toward the pragmatic middle ground. Biome is the deliberate
-decision to take the harder path (Path B) anyway, in order to keep full
-control over decorations and the desktop's look/feel long-term.
+An earlier internal assessment weighed two paths: pair Forest with an
+existing compositor (KWin/Wayfire) and keep Forest as a pure shell, or write
+Forest's own compositor to get real control over window decorations. That
+assessment rated writing a compositor "Very High" effort and leaned toward
+the pragmatic middle ground. Biome is the deliberate decision to take the
+harder path (Path B) anyway, in order to keep full control over decorations
+and the desktop's look/feel long-term.
 
 ## Language & rendering decision
 
@@ -127,7 +127,7 @@ biome/
 | Existing unmodified X11 apps during migration | XWayland (built into wlroots) |
 | Panel dock / desktop background | `wlr-layer-shell-unstable-v1` |
 | `windowlist` panel plugin (taskbar) | `wlr-foreign-toplevel-management-unstable-v1` (check whether `ext-foreign-toplevel-list-v1` is available/preferable once on 0.18/later) |
-| `deskswitch` panel plugin (workspaces) | No standard protocol chosen yet — `ext-workspace-v1` vs. a Biome-specific `org.biome` DBus interface, open decision (see `docs/phase4-plan.md` Workstream D) |
+| `deskswitch` panel plugin (workspaces) | Hybrid, decided 2026-09-05: `ext-workspace-v1` for switching/listing/active-highlight, plus a narrow `org.biome.Workspaces` DBus interface for toplevel↔workspace linkage (no standard protocol covers that) |
 | Title bars / borders | `xdg-decoration-unstable-v1` (negotiate SSD) |
 | Screenshots *(Phase 6 — net-new, not a port)* | `wlr-screencopy-unstable-v1` (or `ext-image-copy-capture-v1`); PipeWire + `xdg-desktop-portal` ScreenCast is the alternative if portal-based capture is ever needed |
 | Session locker / screensaver *(Phase 6 — net-new, not a port)* | `ext-idle-notify-v1` |
@@ -223,8 +223,7 @@ this from a real TTY session (DRM/KMS), not nested — nested is for an
 agent's own quick, disposable checks (see Phase 0).
 
 **Phase 3.5 — Input & session completeness.** *(added 2026-08-22; all three
-items done - the two clipboard-shaped ones confirmed by manual testing,
-`ext-session-lock-v1` not yet manually tested)* Found by
+items done and confirmed working by manual testing)* Found by
 auditing the codebase for gaps a basic usable desktop needs, ahead of
 starting Phase 4 — none require touching `forest/`, so they belong before
 the phase that does:
@@ -255,164 +254,50 @@ the phase that does:
   same `wlr_xwayland_set_seat()` call the regular clipboard path uses.
   Confirmed working by the user's own manual interactive testing.
 - **`ext-session-lock-v1`.** *(done)* New `desktop/session_lock.{h,cpp}`
-  module wiring `wlr_session_lock_manager_v1`. A single `server->lock_tree`
-  scene node, raised to the top of `server->scene->tree` and enabled for the
-  duration of a lock, is the one invariant the whole implementation leans
-  on: `desktop_toplevel_at`/`decoration_toplevel_at` already stop their
-  scene-graph hit-test at the first node under the cursor, so an opaque
-  full-output `wlr_scene_rect` per output (created unconditionally at
-  output-add time, so a hotplugged monitor is blanked from its first frame
-  even mid-lock) makes every normal window and Biome's own decoration
-  unreachable to click/hover with no bespoke lock-aware hit-testing needed.
-  The only place a normal toplevel's scene node ever gets raised is
-  `focus_toplevel()` (both click-to-focus and auto-focus-on-map go through
-  it) - gating that one function on `server->session_locked` is what stops a
-  window from being raised above, or stealing keyboard focus from, the lock
-  surfaces. `handle_keybinding()` (`core/input.cpp`) swallows nothing while
-  locked except VT-switch, which stays live (kernel-level session handoff,
-  matches sway, not a Biome-content leak) - every other compositor keybind
-  (Escape-quit, Alt-Tab, workspace-switch) falls through as an ordinary key
-  event to the lock client instead.
+  module wiring `wlr_session_lock_manager_v1`, using an opaque full-output
+  scene rect raised above everything else to occlude input/output while
+  locked (same strategy sway and Hyprland both use — checked against their
+  source). Two real leaks were found and fixed during this work (a
+  newly-mapped window and an Xwayland override-redirect popup could each
+  still render, and the latter could still steal focus, over the lock
+  surface) — see `docs/architecture-notes.md`'s "Session lock" section for
+  the design invariants and both fixes in full. Confirmed working via
+  manual testing (real DRM/KMS session, swaylock as the test client).
 
-  `session_locked` (survives a lock client crash) and `active_lock` (nulled
-  the moment that lock's wl_resource is gone, crash or not) are deliberately
-  two separate fields: per spec, a client dying without calling
-  `unlock_and_destroy` must not unlock the session, so `session_locked` is
-  only ever cleared by a real `unlock` event. Since the reject-a-second-lock
-  check in `new_session_lock` tests `active_lock` (not `session_locked`), a
-  replacement client can `lock()` and take over recovery after a crash -
-  exactly the compositor-policy recovery path the spec names - with no
-  extra code for it.
-
-  `wlr_session_lock_v1_send_locked()` is deferred until every currently-
-  enabled output has actually committed a frame since the lock began
-  (tracked per-`BiomeOutput` via `pending_lock_frame`, checked in
-  `output_frame()`), not sent synchronously from the `new_lock` handler -
-  the spec's locked-event timing rule exists specifically to prevent a
-  suspend-races-resume race, and the compositor's own blanking is enough to
-  satisfy it without waiting on the client's own surface to render.
-  `output_request_state()` also keeps the blank rect and any live lock
-  surface's configured size in sync with a live output resolution change
-  (reachable on the nested dev backends), since a stale-sized rect would be
-  a real edge leak, not just cosmetic.
-
-  **Follow-up fix, same day:** the user's manual test (real DRM/KMS session,
-  swaylock) found a real leak the design above missed - a *new* window
-  mapped while locked (tested via a Wayland client launched against Biome's
-  socket from another VT) appeared on top of swaylock's UI and could be
-  dragged around, though it correctly never got keyboard focus. Root cause:
-  keeping `lock_tree` raised to the top only protects scene content that
-  already existed when the lock began - `wlr_scene_tree_create()` always
-  appends a *new* node as the topmost sibling regardless of history (the
-  same mechanism `lock_tree` itself relies on to get on top), so anything
-  mapped after the lock started re-topped itself automatically. Found two
-  independent instances: (1) `update_toplevel_visibility()`
-  (`desktop/workspace.cpp`, already called for every newly placed toplevel
-  via `place_new_toplevel()`) didn't factor in `session_locked` at all -
-  fixed by adding it to the visibility formula, plus re-running it over
-  every existing toplevel on both lock and unlock in `session_lock.cpp`
-  (replacing an initial unlock-focus implementation that hand-rolled "just
-  focus toplevels.next" with the existing, workspace-aware
-  `focus_topmost_on_active_workspace()` helper instead, avoiding a second,
-  separate bug where unlocking could've focused a toplevel on a hidden
-  workspace). (2) Xwayland override-redirect surfaces (X11
-  popups/menus/tooltips, `desktop/xwayland_shell.cpp`'s `BiomeUnmanaged`) are
-  a completely separate path with no `BiomeToplevel` at all, invisible to
-  fix (1) - and its map handler unconditionally raised to top *and grabbed
-  keyboard focus* with no lock check whatsoever, a worse gap than what the
-  user actually observed. Fixed by disabling the surface's scene node
-  outright (not just skipping the raise) when `session_locked`, which also
-  skips the focus grab. xdg-shell popups were checked and don't have this
-  problem - `wlr_scene_xdg_surface_create()` parents them under their
-  parent's own existing content_tree node, not the scene root, so they're
-  transitively hidden whenever their parent toplevel is. Full clean
-  incremental rebuild, zero warnings. Still needs a retest by the user to
-  confirm the fix.
-
-  **Research + small polish, same day:** user asked for a sanity check
-  against how other wlroots compositors actually implement this, worried the
-  approach above was "hacky." Compared against sway's real `sway/lock.c`
-  (fetched from `swaywm/sway` on GitHub - sway is the closer reference since
-  it's built on `wlr_scene` like Biome, unlike Hyprland which has its own
-  renderer) and the locally-checked-out Hyprland source
-  (`/home/nicholas/ForestProject/misc/Hyprland/src/{managers/SessionLockManager,protocols/SessionLock}.{cpp,hpp}`).
-  Conclusion: the core strategy (an opaque layer occluding everything else,
-  gated on a locked flag) matches both exactly - not a weird approach. Two
-  small, deliberate deviations, both fine, documented in a note added to
-  Phase 4 below regarding the real structural difference (no persistent
-  per-output layer stack yet). Borrowed one small polish from sway's own
-  precedent: `handle_lock_destroy` now tints every output's `lock_rect` red
-  (`kSessionLockAbandonedColor`, `desktop/session_lock.h`) when a lock is
-  abandoned (crashed without `unlock_and_destroy`) rather than staying the
-  same black as a normal in-progress lock, so a permanently-stuck-locked
-  screen is visually distinguishable - matches sway's own convention of
-  recoloring the background rect on `handle_abandon`. Reset back to black at
-  the start of every new lock (`handle_new_session_lock`), covering both a
-  replacement client recovering from a crash and the ordinary case (a
-  harmless no-op there). `output.cpp`'s original locally-scoped color
-  constant was promoted to `session_lock.h`'s new `kSessionLockColor` so
-  both files share the same literal instead of duplicating it. Full clean
-  incremental rebuild, zero warnings.
-
-  Deliberately out of scope this pass: restricting the session-lock global
-  to a privileged client (Biome has no client-allowlist mechanism anywhere
-  yet; the global is exposed unrestricted, same trust model as every other
-  global Biome currently exposes), cancelling an in-flight drag if a lock
-  starts mid-drag, and `idle-notify`/auto-lock-on-idle (now Phase 6, moved
-  there 2026-08-22 - this only makes a manually-triggered lock actually
-  secure).
-  Full clean rebuild, zero warnings. **Not yet manually tested interactively
-  by the user** - per [[feedback-manual-interactive-testing]]; needs a lock
-  client to drive it (Forest doesn't have one yet, and no throwaway test
-  client was written this pass).
-
-**Phase 4 — Forest shell integration.**
+**Phase 4 — Forest shell integration.** *(done, both sides manually
+confirmed 2026-09-05)*
 Layer-shell for panel + desktop (bundled with `xdg-output-unstable-v1`,
 since layer-shell clients commonly query it for per-output name/logical
 geometry), foreign-toplevel-management for the windowlist plugin, a DBus
 hotkey service implementing `org.freedesktop.portal.GlobalShortcuts`
 (replacing `qxtglobalshortcut` — see Decoupling goal), and a Wayland-native
-workspace-switching mechanism for the deskswitch plugin (protocol choice
-still open — see `docs/phase4-plan.md` Workstream D). This is where
-Forest's shell processes become Wayland-native instead of X11 clients —
-effectively executing the `xcbutills` replacement that
-`wayland_AI_assessment.md` flagged as the biggest chunk of shell-side work,
-and the first phase where any `forest/` code itself gets modified.
+workspace-switching mechanism for the deskswitch plugin. This is where
+Forest's shell processes became Wayland-native instead of X11 clients —
+effectively the `xcbutills` replacement, the biggest chunk of shell-side
+work — and the first phase where any `forest/` code itself was modified.
+
+Final protocol/architecture decisions from this phase, kept here since
+they're load-bearing for anything that touches these areas later:
+`wlr-foreign-toplevel-management-unstable-v1` was chosen over
+`ext-foreign-toplevel-list-v1` for windowlist (the `ext` protocol is
+identification-only, no control requests); Biome implements the
+`org.freedesktop.impl.portal.GlobalShortcuts` *backend* interface (brokered
+by the system's `xdg-desktop-portal`), not the frontend, per the Decoupling
+goal; workspaces landed as the `ext-workspace-v1` + `org.biome.Workspaces`
+hybrid described in the protocol table above, with `ext-foreign-toplevel-list-v1`
+also adopted (beyond windowlist's original need) purely to give Biome a
+stable per-toplevel identifier to correlate the two DBus/protocol surfaces
+by creation order. A real persistent per-output scene-layer stack
+(background/bottom/toplevels/top/overlay/session-lock, mirroring sway's
+`sway_output::layers`) was built as part of layer-shell support, which let
+Phase 3.5's runtime `session_locked` visibility checks be deleted in favor
+of structural z-order.
 
 Screenshots, the session locker, and display settings were originally
 scoped into this phase but moved out 2026-08-22: none of the three exist as
 Forest features today (X11 or otherwise), so building them is net-new app
 work, not a port — bundling that into an already-large port-focused phase
 just added scope for no dependency reason. See Phase 6 below.
-
-See `docs/phase4-plan.md` for the detailed, session-spanning breakdown of
-this phase (workstreams, cross-repo file touchpoints, sequencing, and open
-protocol/architecture decisions) — this phase is large enough to span many
-sessions across both repos, so the summary above stays high-level and that
-file is where progress is actually tracked.
-
-**Follow-up noted 2026-08-22, don't lose this:** when layer-shell lands
-here, build a real persistent per-output scene-layer stack (background /
-bottom / normal toplevels / top / overlay / session-lock, each a
-`wlr_scene_tree` created once at output-init in that fixed order - mirrors
-sway's own `sway_output::layers` in `include/sway/output.h` /
-`sway/tree/output.c`, and is the layer-shell protocol's own layer model
-anyway, so this isn't extra scope, it's building the thing layer-shell
-needs regardless). Once that exists, make `session_lock`'s tree the
-permanently-last layer instead of something raised at lock time - z-order
-becomes structural (nothing can ever be created above it, by construction)
-instead of a rule every content-creation site has to separately remember to
-respect. At that point, delete the `session_locked` checks added in Phase
-3.5's session-lock work: `update_toplevel_visibility()`
-(`desktop/workspace.cpp`), the override-redirect map handler
-(`desktop/xwayland_shell.cpp`), and `session_lock.cpp`'s two lock/unlock
-visibility sweeps - all of it becomes unnecessary once new content simply
-can't be inserted above the lock layer in the first place. Confirmed via
-research (see Phase 3.5's entry above) that the current runtime-check
-approach is exactly what caused a real bug this session (a newly-mapped
-window escaping the lock) - a structural layer stack is not just cleaner,
-it's the thing that would have made that bug impossible rather than merely
-fixed.
 
 **Phase 5 — Cutover.** *(done, manually confirmed 2026-09-06 — login via
 the new wayland-sessions entry works)*
@@ -489,7 +374,9 @@ Screenshots (`wlr-screencopy-unstable-v1` or `ext-image-copy-capture-v1`),
 a session-locker UI (a new Forest lock-screen client speaking
 `ext-session-lock-v1`, plus wiring `ext-idle-notify-v1` so idle timeout
 actually triggers it — Biome's compositor-side `ext-session-lock-v1`
-support landed in Phase 3.5 but has no client to drive it yet), and a
+support landed and was confirmed working in Phase 3.5, tested with
+swaylock, but Forest itself still has no lock-screen client of its own),
+and a
 display-settings plugin wired to `wlr-output-management-unstable-v1`
 (Biome-side protocol support for that still needs to land too, in Phase 3,
 Phase 4, or here, whichever comes first). None of these three are ports —
@@ -499,9 +386,7 @@ Wayland protocol as the target from day one. Deliberately sequenced after
 cutover since none of the three block Phase 5, but a lock-screen client is
 lightweight enough (fullscreen, single-purpose) that it's worth considering
 as an earlier pilot for whatever Forest-side Wayland-client plumbing Phase
-4 establishes — see `docs/phase4-plan.md` for that reasoning in more
-detail (it kept a de-scoped writeup of these three items when they were
-still Phase 4 workstreams E/F/G).
+4 established.
 
 **Display-settings implementation note (found 2026-08-22 while researching
 Phase 4's Qt/Wayland binding options):** `libkscreen`/KScreen already has a
@@ -511,24 +396,6 @@ protocol directly when this phase starts.
 
 ## Open risks
 
-- **Global hotkeys need a real rewrite, not a port.** Wayland has no
-  global-hotkey grab primitive by design (security model), so
-  `services/services-app/hotkeys` can't be mechanically translated. Decided
-  2026-08-22 (see Decoupling goal) to implement this as
-  `org.freedesktop.portal.GlobalShortcuts` rather than a bespoke schema, for
-  compatibility with other compositors/shells — worth prototyping early in
-  Phase 4 since it touches both Biome and Forest and the portal's exact
-  semantics (binding registration, conflict handling) aren't yet validated
-  against Biome's architecture.
-- **Greeter/session integration** — done as part of Phase 5 (2026-09-06).
-  Forest's greeter is actually a custom `greetd`-based one
-  (`forest/greeter/greeter-app`, see `forest/docs/greeter-plan.md`), not
-  LightDM as this bullet originally assumed — it just execs whatever
-  `Exec=` line the user picks, so no LightDM-specific Wayland-session
-  handling was needed. `sessionlistmodel.cpp` already scanned both
-  `/usr/share/xsessions` and `/usr/share/wayland-sessions`, so the new
-  `wayland-sessions/Forest.desktop` entry was picked up with no greeter
-  changes at all.
 - **Biome has no Debian packaging yet.** `forest/debian/control`'s
   `Depends:` still hard-lists `xfwm4, gtk2-engines-murrine, ..., xinit,
   xserver-xorg, x11-xserver-utils` from the X11 era — that's now wrong
