@@ -759,7 +759,7 @@ static void handle_layer_surface_unmap(wl_listener *listener, void *data) {
     // focus back to the topmost managed toplevel, if any.
     if (!wl_list_empty(&wrapper->server->toplevels)) {
         BiomeToplevel *top = wl_container_of(wrapper->server->toplevels.next, top, link);
-        focus_toplevel(top, toplevel_surface(top));
+        focus_toplevel(top);
     } else {
         wlr_seat_keyboard_notify_clear_focus(seat);
     }

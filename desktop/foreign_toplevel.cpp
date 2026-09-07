@@ -44,7 +44,7 @@ static void handle_request_minimize(wl_listener *listener, void *data) {
 static void handle_request_activate(wl_listener *listener, void *data) {
     (void)data;
     BiomeForeignToplevel *wrapper = wl_container_of(listener, wrapper, request_activate);
-    focus_toplevel(wrapper->toplevel, toplevel_surface(wrapper->toplevel));
+    focus_toplevel(wrapper->toplevel);
 }
 
 // Biome has no fullscreen support anywhere (see this module's header

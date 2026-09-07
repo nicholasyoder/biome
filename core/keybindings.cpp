@@ -111,7 +111,7 @@ bool handle_switcher_key(BiomeServer *server, xkb_keysym_t sym, uint32_t modifie
         if (target->minimized) {
             set_toplevel_minimized(target, false);
         }
-        focus_toplevel(target, toplevel_surface(target));
+        focus_toplevel(target);
     }
     server->switcher_active = true;
     update_switcher_overlay(server);

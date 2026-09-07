@@ -24,7 +24,7 @@ void focus_topmost_on_active_workspace(BiomeServer *server) {
     BiomeToplevel *pos;
     wl_list_for_each(pos, &server->toplevels, link) {
         if (pos->workspace == server->active_workspace && !pos->minimized) {
-            focus_toplevel(pos, toplevel_surface(pos));
+            focus_toplevel(pos);
             return;
         }
     }

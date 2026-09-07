@@ -5,6 +5,7 @@
 #include "core/idle_blank.h" // STOPGAP(idle-blank)
 #include "desktop/decoration_bridge.h"
 #include "desktop/toplevel.h"
+#include "desktop/xdg_shell.h"
 
 #include <linux/input-event-codes.h>
 
@@ -359,7 +360,7 @@ void server_cursor_button(wl_listener *listener, void *data) {
         BiomeToplevel *decoration_toplevel = decoration_toplevel_at(
             server, server->cursor->x, server->cursor->y, &region);
         if (decoration_toplevel != nullptr) {
-            focus_toplevel(decoration_toplevel, toplevel_surface(decoration_toplevel));
+            focus_toplevel(decoration_toplevel);
             if (event->button == BTN_LEFT) {
                 set_decoration_pressed(server, decoration_toplevel, region);
                 constexpr uint32_t kDoubleClickMs = 400;
@@ -397,7 +398,19 @@ void server_cursor_button(wl_listener *listener, void *data) {
             // have resolved via desktop_toplevel_at above, so reaching here
             // with one means it's unmanaged.
             bool unmanaged_xwayland = wlr_xwayland_surface_try_from_wlr_surface(surface) != nullptr;
-            if (!unmanaged_xwayland || server->session_locked) {
+
+            // Matches xdg_popup_map's guard (desktop/xdg_shell.cpp,
+            // popup_wants_keyboard_focus()). root_surface resolves through
+            // any subsurface (e.g. Chromium renders a popup's content as
+            // one) to the actual role surface, both for the check below and
+            // for what gets granted focus.
+            wlr_surface *root_surface = wlr_surface_get_root_surface(surface);
+            wlr_xdg_surface *xdg_surface = wlr_xdg_surface_try_from_wlr_surface(root_surface);
+            bool unwanted_popup_focus = xdg_surface != nullptr &&
+                xdg_surface->role == WLR_XDG_SURFACE_ROLE_POPUP &&
+                xdg_surface->popup != nullptr && !popup_wants_keyboard_focus(xdg_surface->popup);
+
+            if ((!unmanaged_xwayland || server->session_locked) && !unwanted_popup_focus) {
                 // This was the actual everyday trigger for windowlist
                 // showing a toplevel as permanently focused: an ordinary
                 // click on the panel reliably lands here (toplevel==nullptr,
@@ -406,10 +419,10 @@ void server_cursor_button(wl_listener *listener, void *data) {
                 // grant_keyboard_focus_to_non_toplevel()'s doc comment
                 // (desktop/toplevel.h) for the full incident and why this
                 // now goes through it instead.
-                grant_keyboard_focus_to_non_toplevel(server, surface);
+                grant_keyboard_focus_to_non_toplevel(server, root_surface);
             }
         }
-        focus_toplevel(toplevel, surface);
+        focus_toplevel(toplevel);
     }
 }
 

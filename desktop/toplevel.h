@@ -212,8 +212,12 @@ void toplevel_set_size(BiomeToplevel *toplevel, int x, int y, int width, int hei
 void toplevel_sync_position(BiomeToplevel *toplevel, int x, int y);
 
 // Keyboard focus (and, for Xwayland, the X11 stacking order that goes along
-// with it) only - not pointer focus.
-void focus_toplevel(BiomeToplevel *toplevel, wlr_surface *surface);
+// with it) only - not pointer focus. Always enters toplevel's own canonical
+// role surface (toplevel_surface(toplevel)), never a caller's hit-tested
+// surface (which can be a subsurface, e.g. a Chromium extension popup) -
+// entering that instead caused spurious keyboard leaves that closed such
+// popups on click.
+void focus_toplevel(BiomeToplevel *toplevel);
 void set_toplevel_focused(BiomeToplevel *toplevel, bool focused);
 
 // If a toplevel currently holds keyboard focus (per the seat's real

@@ -118,7 +118,7 @@ void grant_keyboard_focus_to_non_toplevel(BiomeServer *server, wlr_surface *surf
 }
 
 // Keyboard focus only (and, for Xwayland, the X11 stacking order with it).
-void focus_toplevel(BiomeToplevel *toplevel, wlr_surface *surface) {
+void focus_toplevel(BiomeToplevel *toplevel) {
     if (toplevel == nullptr) {
         return;
     }
@@ -134,6 +134,10 @@ void focus_toplevel(BiomeToplevel *toplevel, wlr_surface *surface) {
     if (server->session_locked) {
         return;
     }
+    // Always the toplevel's own canonical role surface, never whatever
+    // surface a caller's hit-test happened to land on - see this function's
+    // doc comment in desktop/toplevel.h for why that distinction matters.
+    wlr_surface *surface = toplevel_surface(toplevel);
     wlr_seat *seat = server->seat;
     wlr_surface *prev_surface = seat->keyboard_state.focused_surface;
     if (prev_surface == surface) {
@@ -366,7 +370,7 @@ void set_toplevel_minimized(BiomeToplevel *toplevel, bool minimized) {
             focus_topmost_on_active_workspace(server);
         }
     } else {
-        focus_toplevel(toplevel, toplevel_surface(toplevel));
+        focus_toplevel(toplevel);
     }
 
     // xdg-shell has no "minimized" configure state to ack, unlike
@@ -402,7 +406,7 @@ void toplevel_map(wl_listener *listener, void *data) {
     render_toplevel_decoration(toplevel);
     wl_list_insert(&toplevel->server->toplevels, &toplevel->link);
     foreign_toplevel_create(toplevel);
-    focus_toplevel(toplevel, toplevel_surface(toplevel));
+    focus_toplevel(toplevel);
 }
 
 void toplevel_unmap(wl_listener *listener, void *data) {
@@ -456,6 +460,17 @@ BiomeToplevel *desktop_toplevel_at(
     }
 
     *surface = scene_surface->surface;
+
+    // A popup off a real toplevel nests inside that toplevel's content_tree,
+    // whose scene node never gets node.data set (unlike the toplevel's own) -
+    // without this check the walk-up below would sail past it and
+    // misattribute the click/hover to the toplevel it's nested in.
+    wlr_xdg_surface *xdg_surface =
+        wlr_xdg_surface_try_from_wlr_surface(wlr_surface_get_root_surface(*surface));
+    if (xdg_surface != nullptr && xdg_surface->role == WLR_XDG_SURFACE_ROLE_POPUP) {
+        return nullptr;
+    }
+
     // Find the BiomeToplevel at the root of this surface tree - the only
     // node with its data field set. (Override-redirect Xwayland surfaces
     // never set this, so clicking one yields toplevel == nullptr; pointer

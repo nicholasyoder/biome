@@ -301,33 +301,16 @@ static void xdg_popup_destroy(wl_listener *listener, void *data) {
     free(popup);
 }
 
-// Slides xdg_popup back on-screen against whichever output its ROOT ancestor
-// surface currently sits on - shared by the initial new_popup handling below
-// and by xdg_popup_reposition() (a client re-running its positioner, e.g.
-// once a menu's real content size is known, needs the exact same treatment
-// or the corrected geometry sails through unconstrained).
+// Walks xdg_popup->parent up to the true root of a popup-on-popup chain
+// (e.g. a submenu) - not just the immediate parent. Shared by
+// constrain_popup_to_output() and the keyboard-focus decision below.
 //
-// wlr_xdg_popup_unconstrain_from_box()'s own doc comment requires the box to
-// be in "the popup's root toplevel parent surface" coordinate system - NOT
-// just its immediate parent. For a plain one-level popup (a normal menu, or
-// the tray's own context menu attached to the panel) those are the same
-// surface, so using the immediate parent happened to work. For a submenu
-// (popup-on-popup, e.g. nm-applet's Wi-Fi list under the tray menu) they're
-// not: the immediate parent is another popup, not the root, and using its
-// position instead of the true root's silently shifts every flip/slide
-// computation by the gap between them - confirmed as the cause of a Wi-Fi
-// submenu landing nowhere near where it should, on both axes.
-//
-// xdg_popup->parent (a real xdg-shell popup-parent link) is what actually
-// distinguishes "another popup" from "the root" - a layer-shell-owned
-// popup's root has xdg_popup->parent == nullptr since that attachment
-// happens out-of-band via zwlr_layer_surface_v1.get_popup (see
-// desktop/layer_shell.cpp), so walking that link (rather than the scene
-// tree, which looks structurally identical at every level) naturally stops
-// at the right place for both a real xdg_toplevel root and a layer-shell
-// one. Once at the root popup, its own scene node's parent is the true root
-// surface (a toplevel's tree or a layer surface's tree either way).
-static void constrain_popup_to_output(BiomeServer *server, wlr_xdg_popup *xdg_popup) {
+// root_popup->parent is never null once attached: either a real
+// xdg_toplevel's surface, or (per wlroots' layer_surface_handle_get_popup())
+// a layer surface's own wl_surface. Resolve which via
+// wlr_layer_surface_v1_try_from_wlr_surface()/wlr_xdg_toplevel_try_from_
+// wlr_surface() - don't assume null means layer-shell-owned.
+static wlr_xdg_popup *find_root_popup(wlr_xdg_popup *xdg_popup) {
     wlr_xdg_popup *root_popup = xdg_popup;
     while (root_popup->parent != nullptr) {
         wlr_xdg_surface *parent_surface = wlr_xdg_surface_try_from_wlr_surface(root_popup->parent);
@@ -336,6 +319,23 @@ static void constrain_popup_to_output(BiomeServer *server, wlr_xdg_popup *xdg_po
         }
         root_popup = parent_surface->popup;
     }
+    return root_popup;
+}
+
+// Slides xdg_popup back on-screen against whichever output its ROOT ancestor
+// surface currently sits on - shared by the initial new_popup handling below
+// and by xdg_popup_reposition() (a client re-running its positioner, e.g.
+// once a menu's real content size is known, needs the exact same treatment
+// or the corrected geometry sails through unconstrained).
+//
+// wlr_xdg_popup_unconstrain_from_box()'s own doc comment requires the box to
+// be in "the popup's root toplevel parent surface" coordinate system - NOT
+// just its immediate parent, which find_root_popup() resolves (see its own
+// comment for why that distinction matters for a submenu). Once at the root
+// popup, its own scene node's parent is the true root surface (a toplevel's
+// tree or a layer surface's tree either way).
+static void constrain_popup_to_output(BiomeServer *server, wlr_xdg_popup *xdg_popup) {
+    wlr_xdg_popup *root_popup = find_root_popup(xdg_popup);
 
     auto *root_scene_tree = static_cast<wlr_scene_tree *>(root_popup->base->data);
     if (root_scene_tree == nullptr || root_scene_tree->node.parent == nullptr) {
@@ -378,19 +378,29 @@ static void xdg_popup_reposition(wl_listener *listener, void *data) {
     constrain_popup_to_output(popup->server, popup->xdg_popup);
 }
 
-// A client that calls xdg_popup.grab (every toolkit menu/combo box does, to
-// get outside-click dismissal) installs its own wlr_seat_keyboard_grab the
-// moment it makes that request - before this popup even maps. That grab's
-// own .enter callback is a deliberate no-op ("keyboard focus should remain
-// on the popup" - wlroots' types/xdg_shell/wlr_xdg_popup.c), so routing
-// through the grab-aware wlr_seat_keyboard_notify_enter() would be silently
-// swallowed and the popup would never actually receive keyboard focus - focus
-// would stay wherever it already was, exactly the bug this fixes. The plain
-// wlr_seat_keyboard_enter() bypasses grab dispatch entirely, which is what's
-// needed to actually grant the focus the grab intends to pin in place; for a
-// popup that never requested a grab this is a no-op-equivalent to the
-// notify_* variant, since the default grab's own .enter just calls this same
-// function - so it's safe to use unconditionally here.
+// Whether a newly-mapped popup should be handed real keyboard focus.
+//
+// Grab state alone can't decide this: Chromium's popups and Forest's panel
+// popups (panel/panel-library/popup.h) are both non-grabbing xdg_popups,
+// but Chromium's must NOT get focus (it reads the resulting leave on its
+// own toplevel as deactivation and closes the popup) while Forest's must
+// (they never grab in the first place, since hotkey-opened popups have no
+// input serial to grab with).
+//
+// The real distinguishing signal is structural: Chromium's popups are
+// toplevel-owned, Forest's are layer-shell-owned (attached to the panel's
+// own zwlr_layer_surface_v1, which already declared real keyboard
+// interactivity for itself). So: grant focus unconditionally to a
+// layer-shell-owned popup chain, and fall back to the grab check otherwise.
+bool popup_wants_keyboard_focus(wlr_xdg_popup *xdg_popup) {
+    wlr_xdg_popup *root_popup = find_root_popup(xdg_popup);
+    if (root_popup->parent != nullptr &&
+            wlr_layer_surface_v1_try_from_wlr_surface(root_popup->parent) != nullptr) {
+        return true;
+    }
+    return xdg_popup->seat != nullptr;
+}
+
 static void xdg_popup_map(wl_listener *listener, void *data) {
     (void)data;
     BiomePopup *popup = wl_container_of(listener, popup, map);
@@ -402,20 +412,14 @@ static void xdg_popup_map(wl_listener *listener, void *data) {
     if (server->session_locked) {
         return;
     }
+    if (!popup_wants_keyboard_focus(popup->xdg_popup)) {
+        return;
+    }
 
-    // This was the actual root cause of windowlist showing a toplevel as
-    // permanently focused: every Qt "Popup"-flagged widget (context menus,
-    // dropdowns, tooltips - anything using panel/panel-library's
-    // popup/popupmenu classes) maps as a plain xdg_popup, not a layer-shell
-    // surface, so it only ever went through this path - which needs the
-    // grab-bypassing wlr_seat_keyboard_enter() this function's own header
-    // comment explains, not wlr_seat_keyboard_notify_enter(), so a plain
-    // grep for the latter missed this site (and cursor.cpp's click-on-
-    // popup handler, which needs the same bypass) entirely on the first
-    // pass. See grant_keyboard_focus_to_non_toplevel()'s own doc comment
-    // (desktop/toplevel.h) for the full incident and why every such site
-    // now goes through it instead of calling wlr_seat_keyboard_enter()
-    // directly.
+    // A grabbing popup's own .enter callback is a deliberate no-op (wlroots'
+    // wlr_xdg_popup.c), so the grab-aware wlr_seat_keyboard_notify_enter()
+    // would be silently swallowed here - grant_keyboard_focus_to_non_
+    // toplevel()'s plain wlr_seat_keyboard_enter() bypasses that.
     grant_keyboard_focus_to_non_toplevel(server, popup->xdg_popup->base->surface);
 }
 
@@ -450,7 +454,7 @@ static void xdg_popup_unmap(wl_listener *listener, void *data) {
         }
     }
     if (parent_toplevel != nullptr) {
-        focus_toplevel(parent_toplevel, parent);
+        focus_toplevel(parent_toplevel);
         return;
     }
     if (parent != nullptr) {
@@ -459,7 +463,7 @@ static void xdg_popup_unmap(wl_listener *listener, void *data) {
     }
     if (!wl_list_empty(&server->toplevels)) {
         BiomeToplevel *top = wl_container_of(server->toplevels.next, top, link);
-        focus_toplevel(top, toplevel_surface(top));
+        focus_toplevel(top);
     } else {
         wlr_seat_keyboard_notify_clear_focus(seat);
     }

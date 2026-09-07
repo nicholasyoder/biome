@@ -58,7 +58,7 @@ static void keyboard_handle_modifiers(wl_listener *listener, void *data) {
             if (target->minimized) {
                 set_toplevel_minimized(target, false);
             }
-            focus_toplevel(target, toplevel_surface(target));
+            focus_toplevel(target);
         }
         server->switcher_active = false;
         server->switcher_order.clear();
