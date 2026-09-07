@@ -467,9 +467,22 @@ static BiomeScanoutFade *scanout_fade_create(BiomeLayerSurface *wrapper) {
 
     fade->scene_buffer = wlr_scene_buffer_create(client_tree->node.parent, nullptr);
     wlr_scene_node_set_position(&fade->scene_buffer->node, fade->logical_box.x, fade->logical_box.y);
-    // Deliberately no wlr_scene_buffer_set_dest_size() call - leaving it
-    // unset defaults to "use the buffer's own size", which is what keeps
-    // the 1:1 buffer/box match direct-scanout eligibility checks expect.
+    // Explicit dest size in *logical* (scene-graph) units, even though the
+    // buffer itself is allocated at physical pixel size (buffer_width/
+    // buffer_height above). Leaving dest size unset makes wlr_scene treat
+    // the buffer's raw pixel dimensions as its logical scene-graph footprint
+    // (scene_node_get_size() in wlroots' types/scene/wlr_scene.c falls back
+    // to buffer_width/buffer_height when dst_width/dst_height are 0) - the
+    // render/scanout path then multiplies that by the output's scale *again*
+    // (transform_output_box() -> scale_box()) to get the physical
+    // destination. At scale 1 those two bugs cancel out, but at any other
+    // scale (e.g. 1.5) the node ends up sized by scale^2 instead of scale,
+    // which is what made this fade balloon past the actual output bounds on
+    // a scaled display. Setting dest size explicitly to the logical box
+    // keeps the buffer/physical-destination 1:1 match direct-scanout
+    // eligibility wants (logical_box * scale == buffer_width/buffer_height,
+    // by construction above) while fixing the scene-graph footprint.
+    wlr_scene_buffer_set_dest_size(fade->scene_buffer, fade->logical_box.width, fade->logical_box.height);
 
     fade->phase = ScanoutFadePhase::In;
     fade->fade_from = 0.0f;

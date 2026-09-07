@@ -538,3 +538,26 @@ protocol directly when this phase starts.
   Needs a dedicated packaging pass (control file, install rules, changelog)
   before `forest`'s own packaging can be corrected to match the Wayland-only
   reality.
+- **Output `scale` + manual `x`/`y` positions can silently open a layout gap
+  that traps the cursor (found 2026-09-06).** `core/output_config.{h,cpp}`
+  stores each connector's `x`/`y` as independent, static, hand-entered
+  logical-pixel offsets with no cross-output validation. An output's
+  effective (logical) size is `mode_size / scale`
+  (`wlr_output_effective_resolution`), so changing one output's `scale`
+  shrinks/grows only that output's logical box — any sibling output whose
+  `x`/`y` was calibrated against the old size is left stale, opening a gap
+  in `wlr_output_layout` that belongs to no output. Biome has no custom
+  cursor confinement; it relies on wlroots' default
+  `wlr_cursor_warp_closest` → `wlr_output_layout_closest_point`, which
+  resolves every pointer motion to the closest point across the *entire*
+  layout. A position inside the gap that's closer to the scaled output's
+  edge than to the neighbor's edge gets snapped straight back on every
+  motion event — indistinguishable from the cursor being locked inside the
+  scaled screen. Current workaround is hand-computing correct neighbor
+  `x`/`y` as `floor(mode_width / scale)` past the scaled output (verified
+  working). Real fix should live in Biome itself (auto-arrange by default,
+  and/or validate + warn/auto-correct gaps computed from effective
+  resolution at output-manager init), not be deferred entirely to the
+  eventual display-settings UI — that UI will consume Biome's resolved
+  layout via `wlr-output-management-unstable-v1`, which assumes the
+  compositor is the source of truth for a valid arrangement, not the UI.

@@ -105,6 +105,20 @@ int main(int argc, char *argv[]) {
     wlr_data_device_manager_create(server.display);
     wlr_primary_selection_v1_device_manager_create(server.display);
 
+    // fractional_scale_manager + viewporter: without these, clients only see
+    // the legacy integer wl_output.scale (wlroots advertises ceil() of the
+    // real per-output scale over that protocol - see output.c's send_scale())
+    // instead of the exact per-output float scale, so any output configured
+    // with a non-integer scale (e.g. 1.5) makes fractional-scale-aware
+    // clients (Qt included) mis-size their surfaces relative to that output's
+    // real logical resolution. wlr_scene already drives both of these
+    // automatically per-surface (types/scene/surface.c calls
+    // wlr_fractional_scale_v1_notify_scale() using the exact output scale
+    // whenever a surface's current output set changes) - creating the
+    // globals here is the only wiring needed.
+    wlr_fractional_scale_manager_v1_create(server.display, 1);
+    wlr_viewporter_create(server.display);
+
     output_manager_init(&server);
     session_lock_init(&server);
     layer_shell_init(&server);
