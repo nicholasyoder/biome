@@ -60,15 +60,21 @@ struct BiomeToplevel {
     // would put it ahead of the client's own matching commit (xdg-shell
     // resizes asynchronously), showing the old, wrong-sized buffer at the
     // new position for a frame or more. Deferred until xdg_toplevel_commit
-    // sees the buffer's size actually change, same idea as
-    // process_cursor_resize's deferred edge reposition. Xwayland configures
-    // x/y/width/height together, so left unset for it. Shared between the
-    // two callers (whichever one fires last wins, which is fine - only one
-    // resize can be in flight at a time since both are synchronous calls
-    // into this same struct).
+    // sees this request's configure serial come back acked, same idea as
+    // process_cursor_resize's deferred edge reposition. Tracking the serial
+    // rather than waiting for the buffer size to change matters because the
+    // requested size can legitimately equal the size the client already
+    // has (e.g. maximizing a window whose remembered size from a
+    // differently-sized output happens to match this output's maximized
+    // size) - the client is not required to resize in that case, but it
+    // still must ack the configure. Xwayland configures x/y/width/height
+    // together, so left unset for it. Shared between the two callers
+    // (whichever one fires last wins, which is fine - only one resize can
+    // be in flight at a time since both are synchronous calls into this
+    // same struct).
     bool reposition_pending = false;
     int reposition_pending_x = 0, reposition_pending_y = 0;
-    int reposition_pending_old_width = 0, reposition_pending_old_height = 0;
+    uint32_t reposition_pending_serial = 0;
 
     // Set by set_toplevel_minimized. No taskbar exists under Biome yet, so
     // the only way to restore a minimized window is the Alt-Tab switcher.

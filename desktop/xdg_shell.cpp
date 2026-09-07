@@ -121,14 +121,15 @@ static void xdg_toplevel_commit(wl_listener *listener, void *data) {
     }
 
     if (toplevel->reposition_pending) {
-        // Same idea as the resize case above: wait for a commit whose size
-        // actually differs from before set_toplevel_maximized/
-        // set_toplevel_fullscreen requested the change - see
-        // reposition_pending's declaration.
-        wlr_box geo;
-        toplevel_get_geometry(toplevel, &geo);
-        bool resolves = geo.width != toplevel->reposition_pending_old_width ||
-            geo.height != toplevel->reposition_pending_old_height;
+        // Wait for the commit that acks the configure set_toplevel_maximized/
+        // set_toplevel_fullscreen sent - see reposition_pending's
+        // declaration. Not a size comparison: the requested size can equal
+        // the size the client already has, in which case it never resizes
+        // at all, only acks. Serial arithmetic is wraparound-safe per the
+        // xdg-shell/wl_display_next_serial convention.
+        bool resolves =
+            static_cast<int32_t>(toplevel->xdg_toplevel->base->current.configure_serial -
+                toplevel->reposition_pending_serial) >= 0;
         if (resolves) {
             wlr_scene_node_set_position(&toplevel->scene_tree->node,
                 toplevel->reposition_pending_x, toplevel->reposition_pending_y);

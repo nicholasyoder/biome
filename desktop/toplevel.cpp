@@ -337,13 +337,11 @@ void set_toplevel_maximized(BiomeToplevel *toplevel, bool maximized) {
     int node_x = target.x - decoration_border_width(toplevel, toplevel->maximized);
     int node_y = target.y - decoration_titlebar_height(toplevel, toplevel->maximized);
     if (toplevel->type == BiomeToplevelType::Xdg) {
-        // Picked up by xdg_toplevel_commit once the resized buffer lands -
-        // see reposition_pending's declaration.
+        // Picked up by xdg_toplevel_commit once this request's configure is
+        // acked - see reposition_pending's declaration.
         toplevel->reposition_pending = true;
         toplevel->reposition_pending_x = node_x;
         toplevel->reposition_pending_y = node_y;
-        toplevel->reposition_pending_old_width = old_geo.width;
-        toplevel->reposition_pending_old_height = old_geo.height;
     } else {
         wlr_scene_node_set_position(&toplevel->scene_tree->node, node_x, node_y);
     }
@@ -351,7 +349,11 @@ void set_toplevel_maximized(BiomeToplevel *toplevel, bool maximized) {
     toplevel_sync_position(toplevel, target.x, target.y);
 
     if (toplevel->type == BiomeToplevelType::Xdg) {
-        wlr_xdg_toplevel_set_maximized(toplevel->xdg_toplevel, maximized);
+        // wlr_xdg_toplevel_set_maximized schedules (or joins an
+        // already-scheduled) configure and returns its serial - the size
+        // set above, if any, coalesces into the same configure, so this is
+        // the serial reposition_pending needs to see acked.
+        toplevel->reposition_pending_serial = wlr_xdg_toplevel_set_maximized(toplevel->xdg_toplevel, maximized);
     } else {
         wlr_xwayland_surface_set_maximized(toplevel->xwayland_surface, maximized);
     }
@@ -423,8 +425,6 @@ void set_toplevel_fullscreen(BiomeToplevel *toplevel, bool fullscreen) {
         toplevel->reposition_pending = true;
         toplevel->reposition_pending_x = node_x;
         toplevel->reposition_pending_y = node_y;
-        toplevel->reposition_pending_old_width = old_geo.width;
-        toplevel->reposition_pending_old_height = old_geo.height;
     } else {
         wlr_scene_node_set_position(&toplevel->scene_tree->node, node_x, node_y);
     }
@@ -432,7 +432,8 @@ void set_toplevel_fullscreen(BiomeToplevel *toplevel, bool fullscreen) {
     toplevel_sync_position(toplevel, target.x, target.y);
 
     if (toplevel->type == BiomeToplevelType::Xdg) {
-        wlr_xdg_toplevel_set_fullscreen(toplevel->xdg_toplevel, fullscreen);
+        // See the maximized case's comment above.
+        toplevel->reposition_pending_serial = wlr_xdg_toplevel_set_fullscreen(toplevel->xdg_toplevel, fullscreen);
     } else {
         wlr_xwayland_surface_set_fullscreen(toplevel->xwayland_surface, fullscreen);
     }
@@ -488,6 +489,24 @@ void toplevel_map(wl_listener *listener, void *data) {
     }
 
     place_new_toplevel(toplevel);
+
+    // A client can request maximized/fullscreen before its first commit
+    // (e.g. a toolkit restoring saved window state) - xdg_toplevel_request_
+    // maximize/request_fullscreen ignore that (base->initialized is still
+    // false then, see their comments), so requested.maximized/fullscreen is
+    // still sitting there unactioned. wlr_xdg_toplevel_requested's own doc
+    // comment says the compositor is expected to check it here, on map -
+    // only now, after place_new_toplevel, does the toplevel have a real
+    // position/output for set_toplevel_fullscreen/set_toplevel_maximized to
+    // compute a target box against.
+    if (toplevel->type == BiomeToplevelType::Xdg) {
+        if (toplevel->xdg_toplevel->requested.fullscreen) {
+            set_toplevel_fullscreen(toplevel, true);
+        } else if (toplevel->xdg_toplevel->requested.maximized) {
+            set_toplevel_maximized(toplevel, true);
+        }
+    }
+
     render_toplevel_decoration(toplevel);
     wl_list_insert(&toplevel->server->toplevels, &toplevel->link);
     foreign_toplevel_create(toplevel);
