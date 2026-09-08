@@ -322,6 +322,13 @@ struct BiomeOutput {
     wl_listener request_state = {};
     wl_listener destroy = {};
 
+    // True for a connector configured Outputs/<name>/enabled=false
+    // (core/output_config.h) - permanently off, not just idle-blanked.
+    // core/idle_blank.cpp must never flip this output's enabled state in
+    // either direction: waking it back on would silently undo the user's
+    // config until next restart.
+    bool config_disabled = false;
+
     // ext-session-lock-v1 (desktop/session_lock.cpp). Created unconditionally
     // for every output, locked or not, so a monitor that appears while
     // already locked is blanked from its very first frame with no special

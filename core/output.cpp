@@ -180,55 +180,57 @@ static void server_new_output(wl_listener *listener, void *data) {
 
     wlr_output_state state;
     wlr_output_state_init(&state);
-    wlr_output_state_set_enabled(&state, cfg.enabled);
 
-    if (cfg.enabled) {
-        if (cfg.mode.has_value()) {
-            wlr_output_mode *chosen_mode = find_matching_mode(wlr_output, *cfg.mode);
-            if (chosen_mode != nullptr) {
-                wlr_output_state_set_mode(&state, chosen_mode);
-            } else {
-                // No advertised mode matches - either this backend has no
-                // fixed mode list at all (the nested Wayland/X11 dev
-                // backends) or this exact size isn't offered. Custom modes
-                // "may result in visual artifacts" on real DRM/KMS per
-                // wlr_output_state_set_custom_mode()'s own doc comment, but
-                // are the only way to honor an exact user-requested
-                // resolution the driver doesn't enumerate.
-                wlr_log(WLR_ERROR,
-                        "output %s: no matching mode for configured %dx%d@%d, using custom mode",
-                        wlr_output->name, cfg.mode->width, cfg.mode->height, cfg.mode->refresh_mhz);
-                wlr_output_state_set_custom_mode(&state, cfg.mode->width, cfg.mode->height,
-                                                  cfg.mode->refresh_mhz);
-            }
+    // Always bring the output up enabled on this first commit, even one
+    // configured enabled=false - committing enabled=false as a connector's
+    // very first-ever state (mode included or not) crashes the backend on
+    // real DRM/KMS. A config-disabled output gets blanked below instead,
+    // via the same bring-up-then-blank two-step idle_blank.cpp already uses
+    // successfully on every other output.
+    wlr_output_state_set_enabled(&state, true);
+
+    if (cfg.mode.has_value()) {
+        wlr_output_mode *chosen_mode = find_matching_mode(wlr_output, *cfg.mode);
+        if (chosen_mode != nullptr) {
+            wlr_output_state_set_mode(&state, chosen_mode);
         } else {
-            // Some backends (e.g. DRM+KMS) require a mode to be set before
-            // use; just pick the monitor's preferred one.
-            wlr_output_mode *mode = wlr_output_preferred_mode(wlr_output);
-            if (mode != nullptr) {
-                wlr_output_state_set_mode(&state, mode);
-            }
+            // No advertised mode matches - either this backend has no
+            // fixed mode list at all (the nested Wayland/X11 dev
+            // backends) or this exact size isn't offered. Custom modes
+            // "may result in visual artifacts" on real DRM/KMS per
+            // wlr_output_state_set_custom_mode()'s own doc comment, but
+            // are the only way to honor an exact user-requested
+            // resolution the driver doesn't enumerate.
+            wlr_log(WLR_ERROR,
+                    "output %s: no matching mode for configured %dx%d@%d, using custom mode",
+                    wlr_output->name, cfg.mode->width, cfg.mode->height, cfg.mode->refresh_mhz);
+            wlr_output_state_set_custom_mode(&state, cfg.mode->width, cfg.mode->height,
+                                              cfg.mode->refresh_mhz);
         }
-
-        wlr_output_state_set_scale(&state, static_cast<float>(cfg.scale));
-        wlr_output_state_set_transform(&state, cfg.transform);
+    } else {
+        // Some backends (e.g. DRM+KMS) require a mode to be set before
+        // use; just pick the monitor's preferred one.
+        wlr_output_mode *mode = wlr_output_preferred_mode(wlr_output);
+        if (mode != nullptr) {
+            wlr_output_state_set_mode(&state, mode);
+        }
     }
+
+    wlr_output_state_set_scale(&state, static_cast<float>(cfg.scale));
+    wlr_output_state_set_transform(&state, cfg.transform);
 
     wlr_output_commit_state(wlr_output, &state);
     wlr_output_state_finish(&state);
 
-    // STOPGAP(idle-blank): a connector can bounce its HPD line (disconnect
-    // then immediately reconnect) when its CRTC is disabled - some DP
-    // monitors/docks do this on every blank. Left alone, that reconnect
-    // would come up via the normal cfg.enabled=true commit above and
-    // instantly re-light a screen that's supposed to be dark. Committing
-    // enabled=false as this connector's very first-ever state (mode included
-    // or not) crashes the backend, so this always brings it up normally
-    // first and only then blanks it with a second commit - the same
-    // enabled-false-only shape idle_blank.cpp already uses successfully on
-    // every other output. See core/idle_blank.h - delete this whole block
-    // once Phase 6 lands.
-    if (cfg.enabled && server->idle_blanked) {
+    // STOPGAP(idle-blank): blank this output with a second commit if it
+    // should not end up enabled - either it's configured enabled=false, or
+    // (a connector can bounce its HPD line - disconnect then immediately
+    // reconnect - when its CRTC is disabled, which some DP monitors/docks do
+    // on every blank) it reconnected while the whole session is
+    // idle-blanked, and left alone would instantly re-light a screen that's
+    // supposed to be dark. See core/idle_blank.h - delete the
+    // idle_blanked half of this once Phase 6 lands.
+    if (!cfg.enabled || server->idle_blanked) {
         wlr_output_state blank_state;
         wlr_output_state_init(&blank_state);
         wlr_output_state_set_enabled(&blank_state, false);
@@ -239,6 +241,7 @@ static void server_new_output(wl_listener *listener, void *data) {
     auto *output = static_cast<BiomeOutput *>(calloc(1, sizeof(BiomeOutput)));
     output->wlr = wlr_output;
     output->server = server;
+    output->config_disabled = !cfg.enabled;
 
     output->frame.notify = output_frame;
     wl_signal_add(&wlr_output->events.frame, &output->frame);
@@ -250,20 +253,43 @@ static void server_new_output(wl_listener *listener, void *data) {
     wl_list_insert(&server->outputs, &output->link);
 
     // add_auto arranges outputs left-to-right in the order they appear, and
-    // adds a wl_output global for clients to query (DPI, scale, etc). A
-    // configured position instead anchors the output there directly -
+    // (re)exposes this connector's wl_output global as a side effect -
+    // wlr_output_layout's own output_update_global() keys that purely off
+    // whether current_mode is non-null, not off output->enabled. current_mode
+    // is non-null here even for a config-disabled output (the bring-up
+    // commit above always sets one), so add/add_auto would give it a real,
+    // non-zero effective_resolution - not just a phantom wl_output global,
+    // but real hit-testable space in server->output_layout, the same shared
+    // coordinate system maximize/fullscreen/new-window placement
+    // (desktop/toplevel.cpp) hit-test against. A config-disabled output must
+    // never be a placement target, so it's kept out of the layout entirely
+    // instead - positioned/scened manually below rather than via
+    // wlr_output_layout_add[_auto]/wlr_scene_output_layout_add_output. (No
+    // explicit wlr_output_destroy_global() needed either: the global is only
+    // ever created by output_update_global(), which add/add_auto is what
+    // calls - skipping them means it's simply never created.) A configured
+    // position instead anchors an enabled output there directly -
     // wlr_output_layout handles a mix of anchored and auto-arranged outputs
-    // on its own (auto ones flow to the right of the rightmost anchored
-    // one). Disabled outputs still get full layout/scene wiring - wlroots
-    // withholds the wl_output global for a 0x0 output on its own, and
-    // wlr_scene already treats a disabled output as invisible.
-    wlr_output_layout_output *l_output =
-        cfg.position.has_value()
-            ? wlr_output_layout_add(server->output_layout, wlr_output, cfg.position->first,
-                                     cfg.position->second)
-            : wlr_output_layout_add_auto(server->output_layout, wlr_output);
+    // on its own (auto ones flow to the right of the rightmost anchored one).
     wlr_scene_output *scene_output = wlr_scene_output_create(server->scene, wlr_output);
-    wlr_scene_output_layout_add_output(server->scene_layout, l_output, scene_output);
+    int out_x = 0;
+    int out_y = 0;
+    if (cfg.enabled) {
+        wlr_output_layout_output *l_output =
+            cfg.position.has_value()
+                ? wlr_output_layout_add(server->output_layout, wlr_output, cfg.position->first,
+                                         cfg.position->second)
+                : wlr_output_layout_add_auto(server->output_layout, wlr_output);
+        wlr_scene_output_layout_add_output(server->scene_layout, l_output, scene_output);
+        out_x = l_output->x;
+        out_y = l_output->y;
+    } else {
+        // Never moves - not in output_layout, so nothing ever repositions
+        // it. Position is otherwise irrelevant: with no wl_output global, no
+        // client can target this output, so nothing is ever added under
+        // these trees to render.
+        wlr_scene_output_set_position(scene_output, out_x, out_y);
+    }
 
     // wlr-layer-shell-unstable-v1: one child tree per output-scoped global
     // layer, positioned at this output's layout coords - layer-shell
@@ -273,10 +299,10 @@ static void server_new_output(wl_listener *listener, void *data) {
     output->layer_bottom = wlr_scene_tree_create(server->layers.bottom);
     output->layer_top = wlr_scene_tree_create(server->layers.top);
     output->layer_overlay = wlr_scene_tree_create(server->layers.overlay);
-    wlr_scene_node_set_position(&output->layer_background->node, l_output->x, l_output->y);
-    wlr_scene_node_set_position(&output->layer_bottom->node, l_output->x, l_output->y);
-    wlr_scene_node_set_position(&output->layer_top->node, l_output->x, l_output->y);
-    wlr_scene_node_set_position(&output->layer_overlay->node, l_output->x, l_output->y);
+    wlr_scene_node_set_position(&output->layer_background->node, out_x, out_y);
+    wlr_scene_node_set_position(&output->layer_bottom->node, out_x, out_y);
+    wlr_scene_node_set_position(&output->layer_top->node, out_x, out_y);
+    wlr_scene_node_set_position(&output->layer_overlay->node, out_x, out_y);
 
     // ext-session-lock-v1: created unconditionally for every output, locked
     // or not, so a monitor that appears while already locked is blanked
@@ -285,7 +311,7 @@ static void server_new_output(wl_listener *listener, void *data) {
     // a client's own lock surface (added later, as a sibling within
     // output->lock_tree) renders on top of it since it's created after.
     output->lock_tree = wlr_scene_tree_create(server->layers.session_lock);
-    wlr_scene_node_set_position(&output->lock_tree->node, l_output->x, l_output->y);
+    wlr_scene_node_set_position(&output->lock_tree->node, out_x, out_y);
     int lock_width, lock_height;
     wlr_output_effective_resolution(wlr_output, &lock_width, &lock_height);
     output->lock_rect =

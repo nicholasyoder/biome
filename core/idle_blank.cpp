@@ -24,6 +24,12 @@ bool set_all_outputs_enabled(BiomeServer *server, bool enabled) {
     bool all_ok = true;
     BiomeOutput *output;
     wl_list_for_each(output, &server->outputs, link) {
+        // Permanently off per Outputs/<name>/enabled=false - leave it alone
+        // in both directions. Waking it back on here would silently undo
+        // that config until the next restart (see BiomeOutput::config_disabled).
+        if (output->config_disabled) {
+            continue;
+        }
         wlr_output_state state;
         wlr_output_state_init(&state);
         wlr_output_state_set_enabled(&state, enabled);
