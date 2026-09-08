@@ -52,6 +52,14 @@ void destroy_toplevel_decoration(BiomeToplevel *toplevel);
 // toplevel's content geometry, focus, title, or hover/press state changes.
 void render_toplevel_decoration(BiomeToplevel *toplevel);
 
+// Classifies an already-found scene node (see desktop/toplevel.h's
+// scene_node_at) the same way decoration_toplevel_at does - split out so a
+// caller holding one hit-test result (core/cursor.cpp's motion handler,
+// after desktop_toplevel_at_node already came back empty) can reuse it
+// instead of re-querying the scene.
+BiomeToplevel *decoration_toplevel_at_node(
+    wlr_scene_node *node, double sx, double sy, biome_decoration::Region *out_region);
+
 // Like desktop_toplevel_at (desktop/toplevel.h), but for Biome's own
 // decoration_buffer nodes instead of client surfaces - the topmost-node
 // lookup respects real stacking order. Returns nullptr (region left

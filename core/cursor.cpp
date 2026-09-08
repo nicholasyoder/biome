@@ -286,17 +286,21 @@ static void process_cursor_motion(BiomeServer *server, uint32_t time) {
         return;
     }
 
+    // One scene-graph hit test shared below between the client-surface and
+    // decoration classifications, instead of each re-walking the scene from
+    // scratch - this runs on every motion event, so a second walk here was
+    // pure waste on the (very common) no-client-surface path.
     double sx, sy;
+    wlr_scene_node *node = scene_node_at(server, server->cursor->x, server->cursor->y, &sx, &sy);
     wlr_surface *surface = nullptr;
-    BiomeToplevel *toplevel = desktop_toplevel_at(server,
-        server->cursor->x, server->cursor->y, &surface, &sx, &sy);
+    BiomeToplevel *toplevel = desktop_toplevel_at_node(node, &surface);
     if (!toplevel) {
         // No client surface under the cursor - either nothing at all, or our
         // own decoration. Update the cursor image and hover state either way,
         // including resize-direction hints over a window's edges.
         biome_decoration::Region region = biome_decoration::Region::None;
         BiomeToplevel *decoration_toplevel =
-            decoration_toplevel_at(server, server->cursor->x, server->cursor->y, &region);
+            decoration_toplevel_at_node(node, sx, sy, &region);
         wlr_cursor_set_xcursor(server->cursor, server->cursor_mgr, resize_cursor_name(region));
         update_decoration_hover(server, decoration_toplevel, region);
     } else {

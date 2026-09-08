@@ -549,11 +549,11 @@ void toplevel_request_move(wl_listener *listener, void *data) {
     begin_interactive(toplevel, BiomeCursorMode::Move, 0, true);
 }
 
-BiomeToplevel *desktop_toplevel_at(
-        BiomeServer *server, double lx, double ly,
-        wlr_surface **surface, double *sx, double *sy) {
-    wlr_scene_node *node = wlr_scene_node_at(
-        &server->scene->tree.node, lx, ly, sx, sy);
+wlr_scene_node *scene_node_at(BiomeServer *server, double lx, double ly, double *sx, double *sy) {
+    return wlr_scene_node_at(&server->scene->tree.node, lx, ly, sx, sy);
+}
+
+BiomeToplevel *desktop_toplevel_at_node(wlr_scene_node *node, wlr_surface **surface) {
     if (node == nullptr || node->type != WLR_SCENE_NODE_BUFFER) {
         return nullptr;
     }
@@ -584,4 +584,11 @@ BiomeToplevel *desktop_toplevel_at(
         tree = tree->node.parent;
     }
     return tree ? static_cast<BiomeToplevel *>(tree->node.data) : nullptr;
+}
+
+BiomeToplevel *desktop_toplevel_at(
+        BiomeServer *server, double lx, double ly,
+        wlr_surface **surface, double *sx, double *sy) {
+    wlr_scene_node *node = scene_node_at(server, lx, ly, sx, sy);
+    return desktop_toplevel_at_node(node, surface);
 }

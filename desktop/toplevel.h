@@ -314,6 +314,19 @@ void toplevel_map(wl_listener *listener, void *data);
 void toplevel_unmap(wl_listener *listener, void *data);
 void toplevel_request_move(wl_listener *listener, void *data);
 
+// Raw scene-graph hit test, shared by desktop_toplevel_at and
+// decoration_toplevel_at (desktop/decoration_bridge.h) - a caller that needs
+// both classifications for the same point (core/cursor.cpp's motion handler)
+// does this walk once and feeds the result to desktop_toplevel_at_node/
+// decoration_toplevel_at_node, instead of hit-testing the scene twice per
+// event.
+wlr_scene_node *scene_node_at(BiomeServer *server, double lx, double ly, double *sx, double *sy);
+
+// Classifies an already-found scene node (see scene_node_at) the same way
+// desktop_toplevel_at does - split out so a caller holding one hit-test
+// result can reuse it instead of re-querying the scene.
+BiomeToplevel *desktop_toplevel_at_node(wlr_scene_node *node, wlr_surface **surface);
+
 // Returns the topmost surface node in the scene at the given layout coords.
 // Override-redirect Xwayland surfaces never set scene_tree->node.data, so
 // clicking one yields toplevel == nullptr - pointer events still reach it

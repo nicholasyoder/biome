@@ -239,10 +239,8 @@ void update_switcher_overlay(BiomeServer *server) {
     wlr_scene_node_raise_to_top(&server->switcher_buffer->node);
 }
 
-BiomeToplevel *decoration_toplevel_at(
-        BiomeServer *server, double lx, double ly, biome_decoration::Region *out_region) {
-    double sx, sy;
-    wlr_scene_node *node = wlr_scene_node_at(&server->scene->tree.node, lx, ly, &sx, &sy);
+BiomeToplevel *decoration_toplevel_at_node(
+        wlr_scene_node *node, double sx, double sy, biome_decoration::Region *out_region) {
     if (node == nullptr || node->type != WLR_SCENE_NODE_BUFFER) {
         return nullptr;
     }
@@ -272,6 +270,13 @@ BiomeToplevel *decoration_toplevel_at(
     }
     *out_region = region;
     return toplevel;
+}
+
+BiomeToplevel *decoration_toplevel_at(
+        BiomeServer *server, double lx, double ly, biome_decoration::Region *out_region) {
+    double sx, sy;
+    wlr_scene_node *node = scene_node_at(server, lx, ly, &sx, &sy);
+    return decoration_toplevel_at_node(node, sx, sy, out_region);
 }
 
 static bool is_button_region(biome_decoration::Region region) {
