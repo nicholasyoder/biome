@@ -258,8 +258,9 @@ bool handle_key_press(BiomeServer *server, xkb_keysym_t sym, uint32_t modifiers)
     // Built-ins always win on an exact-trigger collision with a portal-
     // registered shortcut - a deliberate, conservative default. Whether a
     // portal-bound shortcut should ever be allowed to shadow a built-in is
-    // a real open question (ties back into docs/plan.md's "fixed-policy"
-    // stance) - left for a later step once there's an actual Forest-side
+    // a real open question (ties back into docs/roadmap.md's "fixed-policy,
+    // not user-configurable" guiding principle) - left for a later step
+    // once there's an actual Forest-side
     // config entry that wants to do this, rather than guessed at now.
     for (const BiomeKeybinding &entry : builtin_keybindings()) {
         if (trigger_matches(entry.trigger, sym, modifiers)) {

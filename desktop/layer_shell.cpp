@@ -634,7 +634,8 @@ static void handle_layer_surface_commit(wl_listener *listener, void *data) {
     // (so it stayed cheap on CPU while still starving other event-loop work,
     // like pointer motion, on Biome's single thread - found the hard way via
     // a WAYLAND_DEBUG trace during Workstream A's Forest-side bring-up,
-    // see biome/docs/phase4-plan.md). Only actually re-arrange when
+    // see biome/docs/architecture-notes.md's "Layer-shell reconfigure-storm
+    // bug (Workstream A)" section). Only actually re-arrange when
     // something layout-relevant changed.
     if (!(layer_surface->current.committed & kLayoutRelevantState)) {
         return;

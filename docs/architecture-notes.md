@@ -1,10 +1,11 @@
 # Architecture Notes
 
 Reference material for design decisions and postmortems that are too
-detailed for `docs/plan.md`'s roadmap altitude but still explain load-bearing
-"why is it built this way" invariants in the current code. `plan.md` stays
-the authoritative source for phase status and current open risks; this file
-is where the reasoning behind specific pieces of that code lives once it's
+detailed for `docs/roadmap.md`'s roadmap altitude but still explain
+load-bearing "why is it built this way" invariants in the current code.
+`docs/roadmap.md` stays the authoritative source for current status and open
+work; `docs/history.md` has the original phase-by-phase narrative; this file
+is where the reasoning behind specific pieces of code lives once it's
 settled, so a future change doesn't have to re-derive it or accidentally
 regress an invariant nothing else documents.
 

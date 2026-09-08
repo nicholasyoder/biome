@@ -4,10 +4,11 @@
 // *backend* interface xdg-desktop-portal brokers to on behalf of an app
 // calling the generic org.freedesktop.portal.GlobalShortcuts frontend (the
 // same split KWin/Mutter implement for GNOME/KDE). Implementing the backend
-// rather than the frontend directly is what satisfies docs/plan.md's
+// rather than the frontend directly is what satisfies docs/history.md's
 // Decoupling goal here: any shell going through the standard broker can use
-// this, not just Forest specifically. See docs/phase4-plan.md's Workstream
-// C for the full research behind this choice.
+// this, not just Forest specifically. See docs/architecture-notes.md's
+// "GlobalShortcuts portal architecture (Workstream C)" section for the full
+// research behind this choice.
 //
 // Scope for this first prototype step (Biome-side only, no forest/ changes,
 // no portals.conf/xdg-desktop-portal system wiring yet - see the plan doc):

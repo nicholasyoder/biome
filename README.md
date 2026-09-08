@@ -1,6 +1,8 @@
 # Biome
 
-Wayland compositor on wlroots 0.18. See `docs/plan.md` for architecture and roadmap.
+Wayland compositor on wlroots 0.18. See `docs/roadmap.md` for current status
+and planned work, or `docs/history.md` for the original architecture/design
+narrative.
 
 ## Building
 

@@ -6,7 +6,8 @@
 // runtime via ipc/global_shortcuts_portal.cpp's
 // org.freedesktop.impl.portal.GlobalShortcuts implementation. Both kinds
 // are matched the same way, through the same trigger parser - see
-// docs/phase4-plan.md's Workstream C for why (a real Forest-configured
+// docs/architecture-notes.md's "GlobalShortcuts portal architecture
+// (Workstream C)" section for why (a real Forest-configured
 // hotkey, once that lands, is just another entry registered through the
 // portal path, layered on top of these compiled-in defaults, not a
 // separate mechanism).

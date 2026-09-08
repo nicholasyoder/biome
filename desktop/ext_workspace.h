@@ -5,7 +5,8 @@
 // unstable-v1, both of which wlroots implements itself), so this module
 // owns the wl_global/wl_resource plumbing directly instead of wrapping an
 // existing wlroots type the way every other desktop/*.cpp module does. See
-// docs/phase4-plan.md's Workstream D for the research behind adopting it.
+// docs/architecture-notes.md's "Workspace protocol (Workstream D)" section
+// for the research behind adopting it.
 //
 // Biome's workspace model (desktop/workspace.h) is a single flat, global
 // list (not per-output), so this exposes exactly one ext_workspace_group_

@@ -5,8 +5,9 @@
 // more (no lock screen, no protocol exposed to clients). This exists only
 // because Biome has no display power management yet and the real design
 // (ext-idle-notify-v1 driving a session-locker client, output power handled
-// separately via wlr-output-management-unstable-v1/KScreen) is Phase 6 work
-// that hasn't started - see docs/plan.md, "Phase 6 - New capabilities".
+// separately via wlr-output-power-management-unstable-v1) is Phase 6 work
+// that hasn't started - see docs/roadmap.md, "Phase 6 - Session, idle &
+// display completeness".
 //
 // DELETE THIS WHOLE THING once Phase 6 lands. Everything belonging to this
 // stopgap is tagged with the exact string "STOPGAP(idle-blank)" so

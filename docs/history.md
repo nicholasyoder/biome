@@ -1,4 +1,18 @@
-# Biome Development Plan
+# Biome Development History
+
+**Archived 2026-09-07.** This was `docs/plan.md`, the original roadmap
+written before any code existed. It grew phase-by-phase during development
+into a mix of forward-looking roadmap and after-the-fact narrative/rationale,
+which made it hard to use as a living roadmap. It's kept here, frozen, as the
+record of *why* Phases 0–5 were built the way they were — several sections
+are still cited by in-tree comments for load-bearing design rationale (the
+Decoupling goal, the wlroots-version pin, session-lock invariants, etc.).
+
+**For current status and planned work, see [`docs/roadmap.md`](roadmap.md)
+instead.** Nothing below this point is maintained going forward; treat it as
+a historical document, not a source of current truth about open work.
+
+---
 
 Biome is a Wayland compositor, built on wlroots, that replaces xfwm4 as the
 window manager/compositor underneath the Forest desktop shell. It is an

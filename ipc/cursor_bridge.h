@@ -8,8 +8,9 @@
 // push mechanism anywhere in the Wayland ecosystem, compositor-owned or
 // not (sway's own `seat * xcursor_theme` IPC command is the closest
 // precedent, and it's sway-specific too) - so this is a bespoke addition
-// for the same reason org.biome.Workspaces is (see docs/phase4-plan.md
-// Workstream D): nothing standard exists to reuse instead.
+// for the same reason org.biome.Workspaces is (see docs/architecture-notes.md's
+// "Workspace protocol (Workstream D)" section): nothing standard exists to
+// reuse instead.
 //
 // A client that loaded and cached its own cursor images at startup (most
 // Qt/GTK apps not using cursor-shape-v1) keeps them until restarted - a

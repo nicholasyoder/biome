@@ -4,8 +4,8 @@
 // needed. ext-workspace-v1 (desktop/ext_workspace.cpp) covers workspace
 // switching/listing on its own, but neither it nor
 // wlr-foreign-toplevel-management-unstable-v1 ties a toplevel to a
-// workspace at all - see docs/phase4-plan.md's Workstream D for the full
-// research. This interface exists purely for that one relationship:
+// workspace at all - see docs/architecture-notes.md's "Workspace protocol
+// (Workstream D)" section for the full research. This interface exists purely for that one relationship:
 //
 //   - GetWindowWorkspaces/WindowWorkspacesChanged: which workspace each
 //     open window is on. deskswitch tallies this into per-desktop counts

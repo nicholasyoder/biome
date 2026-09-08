@@ -93,7 +93,8 @@ struct BiomeServer {
     // purely to hand out ext_foreign_toplevel_handle_v1's auto-generated
     // stable `identifier` string. Forest's windowlist pairs that identifier
     // with the corresponding wlr_foreign_toplevel_handle_v1 by creation
-    // order (see Workstream D notes in docs/phase4-plan.md) since it's the
+    // order (see the "Workspace protocol (Workstream D)" section in
+    // docs/architecture-notes.md) since it's the
     // only cross-transport handle org.biome.Workspaces (ipc/workspace_bridge.cpp)
     // can name a toplevel by.
     wlr_ext_foreign_toplevel_list_v1 *ext_foreign_toplevel_list = nullptr;
@@ -301,7 +302,8 @@ struct BiomeServer {
 
     // STOPGAP(idle-blank): see core/idle_blank.h. Delete this block plus
     // that module and its two call sites (input.cpp, cursor.cpp) once
-    // Phase 6's real idle-notify/output-management lands (docs/plan.md).
+    // Phase 6's real idle-notify/output-power-management lands
+    // (docs/roadmap.md).
     wl_event_source *idle_blank_timer = nullptr;
     bool idle_blanked = false;
     // One-shot; re-attempts a wlr_output_commit_state() that failed for some

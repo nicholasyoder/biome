@@ -6,7 +6,7 @@
 // Forest's own widget chrome: panel, menus, popups), so this reproduces the
 // color/shape values of Forest's base-dark + base-rounded theme layers for
 // Biome's own new decoration-specific selectors instead, as a starting
-// point to later merge with Forest's real themes (see docs/plan.md's
+// point to later merge with Forest's real themes (see docs/history.md's
 // Phase 3 writeup).
 
 #pragma once
