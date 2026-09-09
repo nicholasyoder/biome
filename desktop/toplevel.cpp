@@ -168,16 +168,8 @@ void focus_toplevel(BiomeToplevel *toplevel) {
     }
 }
 
-// Global-coordinate box a window should stay within on this output -
-// wlr_output's usable_area (desktop/layer_shell.cpp's arrange_layers(),
-// shrunk by any exclusive-zone layer surface) translated from its
-// output-local coordinates into the same global layout space
-// wlr_output_layout_get_box() itself uses, since that's what every caller
-// here already works in. Falls back to the full output box if wlr_output
-// can't be resolved to a BiomeOutput, or if usable_area is degenerate
-// (e.g. a pathological exclusive-zone claim consuming the whole output) -
-// never returns something that would make a window disappear entirely.
-static wlr_box output_target_box(BiomeServer *server, wlr_output *wlr_output) {
+// See declaration in toplevel.h.
+wlr_box output_target_box(BiomeServer *server, wlr_output *wlr_output) {
     wlr_box box = {};
     wlr_output_layout_get_box(server->output_layout, wlr_output, &box);
     if (wlr_box_empty(&box)) {

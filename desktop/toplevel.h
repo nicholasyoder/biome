@@ -298,6 +298,18 @@ void clear_focused_toplevel(BiomeServer *server);
 // directly for a non-toplevel surface anymore.
 void grant_keyboard_focus_to_non_toplevel(BiomeServer *server, wlr_surface *surface);
 
+// Global-coordinate box a window should stay within on this output -
+// wlr_output's usable_area (desktop/layer_shell.cpp's arrange_layers(),
+// shrunk by any exclusive-zone layer surface) translated from its
+// output-local coordinates into the same global layout space
+// wlr_output_layout_get_box() itself uses. Falls back to the full output
+// box if wlr_output can't be resolved to a BiomeOutput, or if usable_area
+// is degenerate (e.g. a pathological exclusive-zone claim consuming the
+// whole output) - never returns something that would make a window
+// disappear entirely. Pass nullptr for wlr_output to get the whole
+// output-layout's combined extents instead of a single output's.
+wlr_box output_target_box(BiomeServer *server, wlr_output *wlr_output);
+
 // Places a newly-mapped floating toplevel. A transient window (one with a
 // parent, e.g. a dialog) centers on its parent, matching xfwm4's default
 // dialog placement. Otherwise it's centered on the output layout, with a

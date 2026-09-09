@@ -256,11 +256,20 @@ void update_switcher_overlay(BiomeServer *server) {
     wlr_scene_buffer_set_buffer(server->switcher_buffer, buffer);
     wlr_buffer_drop(buffer);
 
-    wlr_box layout_box;
-    wlr_output_layout_get_box(server->output_layout, nullptr, &layout_box);
+    // Center on the output under the cursor, not the combined layout box -
+    // same reasoning as place_new_toplevel() in desktop/toplevel.cpp: on a
+    // multi-monitor rig the combined box's center frequently falls near a
+    // seam between two outputs rather than the middle of either one.
+    wlr_output *wlr_output = wlr_output_layout_output_at(
+        server->output_layout, server->cursor->x, server->cursor->y);
+    wlr_box target = output_target_box(server, wlr_output);
+    if (wlr_box_empty(&target)) {
+        wlr_scene_node_set_enabled(&server->switcher_buffer->node, false);
+        return;
+    }
     wlr_scene_node_set_position(&server->switcher_buffer->node,
-        layout_box.x + (layout_box.width - frame.width) / 2,
-        layout_box.y + (layout_box.height - frame.height) / 2);
+        target.x + (target.width - frame.width) / 2,
+        target.y + (target.height - frame.height) / 2);
     wlr_scene_node_set_enabled(&server->switcher_buffer->node, true);
     wlr_scene_node_raise_to_top(&server->switcher_buffer->node);
 }
