@@ -5,6 +5,7 @@
 #include "core/cursor.h"
 #include "decoration/renderer.h"
 #include "decoration/switcher.h"
+#include "decoration/switcher_highlight.h"
 #include "decoration/theme.h"
 
 #include <drm_fourcc.h>
@@ -17,6 +18,9 @@ void decoration_bridge_init(BiomeServer *server) {
     // toplevel's) since it isn't owned by a specific window.
     server->switcher_buffer = wlr_scene_buffer_create(&server->scene->tree, nullptr);
     wlr_scene_node_set_enabled(&server->switcher_buffer->node, false);
+
+    server->switcher_highlight_buffer = wlr_scene_buffer_create(&server->scene->tree, nullptr);
+    wlr_scene_node_set_enabled(&server->switcher_highlight_buffer->node, false);
 }
 
 int decoration_border_width(const BiomeToplevel *toplevel, bool maximized) {
@@ -228,10 +232,48 @@ biome_decoration::SwitcherEntry switcher_entry_for(BiomeToplevel *pos) {
 
 } // namespace
 
+namespace {
+
+// Updates the live highlight box outlining the currently-previewed window's
+// on-screen frame, without raising or focusing it (switch-on-release mode
+// only ever commits the focus change on Alt release - see
+// keyboard_handle_modifiers in core/input.cpp). Disables the highlight if
+// the previewed window isn't actually on screen right now: switcher_order
+// spans every workspace and minimized windows too, and nothing here forces
+// a workspace switch or un-minimizes anything mid-cycle, so the selection
+// can legitimately point at a window with nothing to outline yet.
+void update_switcher_highlight(BiomeServer *server, BiomeToplevel *selected) {
+    bool visible = selected->placed && selected->scene_tree->node.enabled;
+    if (!visible) {
+        wlr_scene_node_set_enabled(&server->switcher_highlight_buffer->node, false);
+        return;
+    }
+
+    wlr_box box;
+    toplevel_get_frame_box(selected, &box);
+    biome_decoration::RenderedFrame frame =
+        biome_decoration::render_switcher_highlight(box.width, box.height);
+    wlr_buffer *buffer = create_decoration_buffer(std::move(frame));
+    if (buffer == nullptr) {
+        wlr_scene_node_set_enabled(&server->switcher_highlight_buffer->node, false);
+        return;
+    }
+    wlr_scene_buffer_set_buffer(server->switcher_highlight_buffer, buffer);
+    wlr_buffer_drop(buffer);
+    wlr_scene_node_set_position(&server->switcher_highlight_buffer->node, box.x, box.y);
+    wlr_scene_node_set_enabled(&server->switcher_highlight_buffer->node, true);
+    wlr_scene_node_raise_to_top(&server->switcher_highlight_buffer->node);
+}
+
+} // namespace
+
 void update_switcher_overlay(BiomeServer *server) {
     if (!server->switcher_active || wl_list_empty(&server->toplevels)) {
         if (server->switcher_buffer != nullptr) {
             wlr_scene_node_set_enabled(&server->switcher_buffer->node, false);
+        }
+        if (server->switcher_highlight_buffer != nullptr) {
+            wlr_scene_node_set_enabled(&server->switcher_highlight_buffer->node, false);
         }
         return;
     }
@@ -251,6 +293,7 @@ void update_switcher_overlay(BiomeServer *server) {
     wlr_buffer *buffer = create_decoration_buffer(std::move(frame));
     if (buffer == nullptr) {
         wlr_scene_node_set_enabled(&server->switcher_buffer->node, false);
+        wlr_scene_node_set_enabled(&server->switcher_highlight_buffer->node, false);
         return;
     }
     wlr_scene_buffer_set_buffer(server->switcher_buffer, buffer);
@@ -265,12 +308,17 @@ void update_switcher_overlay(BiomeServer *server) {
     wlr_box target = output_target_box(server, wlr_output);
     if (wlr_box_empty(&target)) {
         wlr_scene_node_set_enabled(&server->switcher_buffer->node, false);
+        wlr_scene_node_set_enabled(&server->switcher_highlight_buffer->node, false);
         return;
     }
     wlr_scene_node_set_position(&server->switcher_buffer->node,
         target.x + (target.width - frame.width) / 2,
         target.y + (target.height - frame.height) / 2);
     wlr_scene_node_set_enabled(&server->switcher_buffer->node, true);
+
+    // Highlight first, panel raised last, so the centered title panel is
+    // never occluded by a highlight box it happens to overlap.
+    update_switcher_highlight(server, server->switcher_order[static_cast<size_t>(server->switcher_preview_index)]);
     wlr_scene_node_raise_to_top(&server->switcher_buffer->node);
 }
 

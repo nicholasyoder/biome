@@ -37,6 +37,17 @@ void toplevel_get_geometry(BiomeToplevel *toplevel, wlr_box *box) {
     box->height = toplevel->xwayland_surface->height;
 }
 
+void toplevel_get_frame_box(BiomeToplevel *toplevel, wlr_box *box) {
+    wlr_box geo;
+    toplevel_get_geometry(toplevel, &geo);
+    box->x = static_cast<int>(toplevel->scene_tree->node.x);
+    box->y = static_cast<int>(toplevel->scene_tree->node.y);
+    box->width = decoration_border_width(toplevel, toplevel->maximized) + geo.width
+        + decoration_border_right_width(toplevel, toplevel->maximized);
+    box->height = decoration_titlebar_height(toplevel, toplevel->maximized) + geo.height
+        + decoration_border_bottom_height(toplevel, toplevel->maximized);
+}
+
 bool toplevel_decorated(const BiomeToplevel *toplevel) {
     if (toplevel->fullscreen) {
         return false;

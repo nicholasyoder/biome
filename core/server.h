@@ -250,6 +250,13 @@ struct BiomeServer {
     bool switcher_active = false;
     wlr_scene_buffer *switcher_buffer = nullptr;
 
+    // Live highlight box outlining the currently-previewed window's
+    // on-screen frame while cycling (see update_switcher_overlay) - a
+    // separate scene node from switcher_buffer so the panel can always be
+    // raised above it regardless of whether the highlighted window overlaps
+    // the panel's centered position.
+    wlr_scene_buffer *switcher_highlight_buffer = nullptr;
+
     // Only used when kSwitcherSwitchOnRelease is true: switcher_order is a
     // snapshot of toplevels' MRU order taken on the first Tab press of a
     // hold (server->toplevels itself isn't touched again until Alt release,

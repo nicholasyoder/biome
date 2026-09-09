@@ -223,6 +223,11 @@ void close_toplevel(BiomeToplevel *toplevel);
 
 void toplevel_get_geometry(BiomeToplevel *toplevel, wlr_box *box);
 
+// The full on-screen frame (position + size, in output-layout coordinates)
+// including border/titlebar - what the Alt-Tab switcher's live highlight box
+// outlines. Same formula set_toplevel_maximized uses for restore_box.
+void toplevel_get_frame_box(BiomeToplevel *toplevel, wlr_box *box);
+
 // Always false while toplevel->fullscreen is set - a fullscreen window
 // fills the whole output with no border/titlebar regardless of what it
 // would otherwise negotiate, same convention as every other compositor.

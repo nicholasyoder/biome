@@ -170,3 +170,13 @@ QLabel#biomeSwitcherTitleLabel {
     padding-top: 10px;
     qproperty-alignment: AlignHCenter;
 }
+
+QWidget#biomeSwitcherHighlightRoot {
+    background: transparent;
+}
+
+QFrame#biomeSwitcherHighlight {
+    background: rgba(90, 150, 220, 15%);
+    border: 2px solid rgb(90, 150, 220);
+    border-radius: 4px;
+}
