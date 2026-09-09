@@ -258,10 +258,9 @@ static void scanout_fade_destroy(BiomeScanoutFade *fade) {
 //
 // Deliberately doesn't reuse fade->swapchain (opaque XRGB8888) for this:
 // the dim content is genuinely translucent, and rendering it into an
-// alpha-less destination would collapse that alpha - this is what caused a
-// real past bug, a flash to black at the start of every fade-out from the
-// translucent content blending against undefined memory in a reused
-// buffer slot.
+// alpha-less destination would collapse that alpha, flashing black at the
+// start of fade-out as the translucent content blends against undefined
+// memory in a reused buffer slot.
 //
 // Returns nullptr on any failure (fade-out falls back to no dim content).
 static wlr_texture *capture_frozen_client_texture(BiomeServer *server, wlr_texture *texture, int width, int height) {
@@ -621,22 +620,13 @@ static void handle_layer_surface_commit(wl_listener *listener, void *data) {
         set_tree_opacity(wrapper->scene_layer_surface->tree, fraction);
     }
 
-    // wlr_layer_surface_v1_configure() (called from arrange_layers() below,
-    // via wlr_scene_layer_surface_v1_configure()) always sends a fresh
-    // configure with a new serial, even when the box it computes is
-    // byte-for-byte identical to the last one - wlroots does no such
-    // deduplication itself. Combined with calling arrange_layers()
-    // unconditionally on every commit, that made *any* commit from *any*
-    // layer surface on an output reconfigure every layer surface on it,
-    // which the client then acks and recommits in response - a
-    // self-sustaining reconfigure/recommit loop across every layer surface
-    // on the output, all day, paced only by buffer-release/vsync timing
-    // (so it stayed cheap on CPU while still starving other event-loop work,
-    // like pointer motion, on Biome's single thread - found the hard way via
-    // a WAYLAND_DEBUG trace during Workstream A's Forest-side bring-up,
-    // see biome/docs/architecture-notes.md's "Layer-shell reconfigure-storm
-    // bug (Workstream A)" section). Only actually re-arrange when
-    // something layout-relevant changed.
+    // wlr_layer_surface_v1_configure() always sends a fresh configure with a
+    // new serial even when the box is byte-for-byte identical to the last
+    // one (wlroots does no dedup) - calling arrange_layers() unconditionally
+    // on every commit would make any commit from any layer surface on an
+    // output reconfigure every surface on it, which acks and recommits in
+    // turn: a self-sustaining reconfigure loop across the whole output. Only
+    // actually re-arrange when something layout-relevant changed.
     if (!(layer_surface->current.committed & kLayoutRelevantState)) {
         return;
     }

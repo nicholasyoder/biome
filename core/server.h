@@ -52,15 +52,12 @@ struct BiomeServer {
     //   background -> bottom -> toplevels -> top -> overlay -> fullscreen -> session_lock
     // background/bottom/top/overlay correspond 1:1 to wlr-layer-shell's own
     // four zwlr_layer_shell_v1_layer values (desktop/layer_shell.cpp);
-    // toplevels is where every normal window's scene_tree lives (previously
-    // a direct child of scene->tree - see desktop/xdg_shell.cpp,
-    // desktop/xwayland_shell.cpp). fullscreen is where set_toplevel_fullscreen
-    // (desktop/toplevel.h) reparents a toplevel's scene_tree for the duration
-    // of being fullscreen, and back to toplevels on restore - above every
-    // layer-shell layer (a fullscreen window must cover a panel/dock sitting
-    // in top, same convention as every other desktop) but still below
-    // session_lock. session_lock is what used to be the ad-hoc,
-    // separately-raised BiomeServer::lock_tree (desktop/session_lock.cpp).
+    // toplevels is where every normal window's scene_tree lives. fullscreen
+    // is where set_toplevel_fullscreen (desktop/toplevel.h) reparents a
+    // toplevel's scene_tree for the duration of being fullscreen, and back
+    // to toplevels on restore - above every layer-shell layer (a fullscreen
+    // window must cover a panel/dock sitting in top, same convention as
+    // every other desktop) but still below session_lock.
     // Because nothing can be created as a *later* sibling of scene->tree
     // than session_lock (every other tree in this stack is created here,
     // once, at startup, before any client ever connects), session_lock is
@@ -210,12 +207,9 @@ struct BiomeServer {
     BiomeToplevel *pressed_decoration_toplevel = nullptr;
 
     int active_workspace = 0;
-    // Number of workspaces. Was a compile-time kWorkspaceCount constant
-    // (desktop/workspace.h) until Workstream D's ext-workspace-v1 binding
-    // made the count inherently dynamic on the wire - no config/UI to
-    // change this at runtime exists yet, but nothing should hardcode "4"
-    // now that the protocol doesn't. desktop/ext_workspace.cpp reads this
-    // to know how many ext_workspace_handle_v1 objects to advertise.
+    // Number of workspaces - no config/UI to change this at runtime yet, but
+    // nothing should hardcode 4: desktop/ext_workspace.cpp reads this to know
+    // how many ext_workspace_handle_v1 objects to advertise on the wire.
     int workspace_count = 4;
 
     // ext-workspace-v1 (desktop/ext_workspace.cpp) - hand-rolled server

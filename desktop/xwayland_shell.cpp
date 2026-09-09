@@ -166,13 +166,12 @@ static void unmanaged_associate(wl_listener *listener, void *data) {
         (void)d;
         BiomeUnmanaged *s = wl_container_of(l, s, map);
         // raise_to_top only reorders siblings within layers.toplevels (its
-        // scene_tree's parent - see unmanaged_associate above), so unlike
-        // before this reparenting, it can no longer put this surface above
-        // layers.session_lock regardless of lock state - no check needed
-        // for that anymore. Keyboard focus is a separate, seat-level
-        // concern structural z-order doesn't touch, though: while locked,
-        // the lock surface holds focus (desktop/session_lock.cpp) and
-        // nothing else may take it, so that grab still needs its own check.
+        // scene_tree's parent - see unmanaged_associate above), so it can
+        // never put this surface above layers.session_lock regardless of
+        // lock state - no check needed here. Keyboard focus is a separate,
+        // seat-level concern structural z-order doesn't touch, though: while
+        // locked, the lock surface holds focus (desktop/session_lock.cpp)
+        // and nothing else may take it, so that grab still needs its own check.
         wlr_scene_node_raise_to_top(&s->scene_tree->node);
         if (!s->server->session_locked && wlr_xwayland_or_surface_wants_focus(s->xwayland_surface)) {
             grant_keyboard_focus_to_non_toplevel(s->server, s->xwayland_surface->surface);

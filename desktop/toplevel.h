@@ -288,19 +288,13 @@ void clear_focused_toplevel(BiomeServer *server);
 // own grab - see desktop/xdg_shell.cpp's xdg_popup_map for the full
 // explanation of why notify_enter() would silently no-op there).
 //
-// This exists because every call site that granted focus this way used to
-// call wlr_seat_keyboard_(notify_)enter() directly, and every one of them
-// independently had to remember to unfocus whatever toplevel currently held
-// focus first - a discipline that was violated four separate times (found
-// 2026-08-23: desktop/layer_shell.cpp's map-time grab,
-// desktop/xwayland_shell.cpp's unmanaged-surface map-time grab,
-// desktop/xdg_shell.cpp's xdg_popup_map, and core/cursor.cpp's click-on-
-// non-toplevel-surface handler - the last of these being the actual
-// everyday trigger, since it's what runs on an ordinary click on the
-// panel). Routing every such site through this one function makes it
-// structurally impossible to add a fifth: nothing outside toplevel.cpp
-// calls wlr_seat_keyboard_(notify_)enter()/wlr_seat_keyboard_enter()
-// directly for a non-toplevel surface anymore.
+// Exists because call sites granting focus this way independently have to
+// remember to unfocus whatever toplevel currently holds focus first - easy
+// to get wrong per-callsite (an ordinary click on the panel is the everyday
+// trigger). Routing every such site through this one function makes it
+// structurally impossible to skip: nothing outside toplevel.cpp calls
+// wlr_seat_keyboard_(notify_)enter()/wlr_seat_keyboard_enter() directly for
+// a non-toplevel surface.
 void grant_keyboard_focus_to_non_toplevel(BiomeServer *server, wlr_surface *surface);
 
 // Global-coordinate box a window should stay within on this output -

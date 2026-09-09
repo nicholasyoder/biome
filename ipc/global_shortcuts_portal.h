@@ -24,12 +24,10 @@
 //
 // Session teardown: CreateSession() also exports a real per-session
 // org.freedesktop.impl.portal.Session object (PortalSession below) at the
-// session_handle path, since a live busctl monitor capture during
-// Workstream C step 2 (docs/phase4-session-log.md, 2026-08-26) confirmed
-// the real xdg-desktop-portal daemon actually calls
+// session_handle path - the real xdg-desktop-portal daemon calls
 // org.freedesktop.DBus.Properties.GetAll and
-// org.freedesktop.impl.portal.Session.Close() against that exact path -
-// without an object there, both got UnknownObject errors back.
+// org.freedesktop.impl.portal.Session.Close() against that exact path, and
+// gets UnknownObject back without an object there.
 
 #pragma once
 

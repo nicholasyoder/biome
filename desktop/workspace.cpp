@@ -5,10 +5,9 @@
 #include "desktop/ext_workspace.h"
 
 void update_toplevel_visibility(BiomeToplevel *toplevel) {
-    // No session_locked check here (Phase 3.5 added one; removed now that
-    // Workstream A's real per-output layer stack exists - see
-    // BiomeServer::layers' doc comment in server.h). toplevel->scene_tree is
-    // always a child of one of the fixed server->layers trees
+    // No session_locked check needed here - see BiomeServer::layers' doc
+    // comment in server.h. toplevel->scene_tree is always a child of one of
+    // the fixed server->layers trees
     // (layers.toplevels normally, layers.fullscreen while fullscreen - see
     // set_toplevel_fullscreen), both structurally below
     // server->layers.session_lock for every toplevel that will ever exist,

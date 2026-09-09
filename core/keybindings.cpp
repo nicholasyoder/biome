@@ -67,9 +67,8 @@ std::vector<PortalBinding> &portal_bindings() {
 }
 
 // Alt-Tab/Alt-Shift-Tab: cycle through windows in MRU order, no live
-// preview (matches xfwm4's cycle_preview=false default). Moved verbatim
-// from the old handle_keybinding()'s Tab case. Deliberately not one of
-// builtin_keybindings()'s table entries: it's stateful (a live MRU
+// preview (matches xfwm4's cycle_preview=false default). Deliberately not
+// one of builtin_keybindings()'s table entries: it's stateful (a live MRU
 // switcher/preview spanning an entire Alt-hold, not a one-shot action -
 // see BiomeServer::switcher_active/switcher_preview_index), and xkb remaps
 // the *keysym itself* to ISO_Left_Tab when Shift is held, which doesn't fit

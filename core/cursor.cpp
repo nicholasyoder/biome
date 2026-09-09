@@ -432,14 +432,11 @@ void server_cursor_button(wl_listener *listener, void *data) {
                 xdg_surface->popup != nullptr && !popup_wants_keyboard_focus(xdg_surface->popup);
 
             if ((!unmanaged_xwayland || server->session_locked) && !unwanted_popup_focus) {
-                // This was the actual everyday trigger for windowlist
-                // showing a toplevel as permanently focused: an ordinary
-                // click on the panel reliably lands here (toplevel==nullptr,
-                // surface==the panel's), and this used to call
-                // wlr_seat_keyboard_enter() directly - see
+                // An ordinary click on the panel reliably lands here
+                // (toplevel==nullptr, surface==the panel's) - see
                 // grant_keyboard_focus_to_non_toplevel()'s doc comment
-                // (desktop/toplevel.h) for the full incident and why this
-                // now goes through it instead.
+                // (desktop/toplevel.h) for why this must go through it
+                // rather than calling wlr_seat_keyboard_enter() directly.
                 grant_keyboard_focus_to_non_toplevel(server, root_surface);
             }
         }

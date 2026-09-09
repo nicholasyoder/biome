@@ -79,10 +79,9 @@ static void keyboard_handle_key(wl_listener *listener, void *data) {
     int nsyms = xkb_state_key_get_syms(
         keyboard->wlr->xkb_state, keycode, &syms);
 
-    // Unlike the old Alt-only-gated handle_keybinding(), handle_key_press()
-    // runs on every press regardless of which modifiers are held - portal-
-    // registered shortcuts (core/keybindings.h) aren't restricted to
-    // Alt-chords the way Biome's own built-in bindings are.
+    // handle_key_press() runs on every press regardless of which modifiers
+    // are held - portal-registered shortcuts (core/keybindings.h) aren't
+    // restricted to Alt-chords the way Biome's own built-in bindings are.
     bool handled = false;
     uint32_t modifiers = wlr_keyboard_get_modifiers(keyboard->wlr);
     const bool pressed = event->state == WL_KEYBOARD_KEY_STATE_PRESSED;

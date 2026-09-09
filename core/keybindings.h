@@ -54,9 +54,8 @@ struct BiomeKeybinding {
 };
 
 // The single entry point called from core/input.cpp's keyboard_handle_key()
-// for every key press, regardless of which modifiers are held (unlike the
-// old Alt-only-gated handle_keybinding() this replaces - portal-registered
-// shortcuts aren't restricted to Alt-chords).
+// for every key press, regardless of which modifiers are held - portal-
+// registered shortcuts aren't restricted to Alt-chords.
 bool handle_key_press(BiomeServer *server, xkb_keysym_t sym, uint32_t modifiers);
 
 // Also called from keyboard_handle_key(), but for every key event - press

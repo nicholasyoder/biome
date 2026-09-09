@@ -91,11 +91,9 @@ static void handle_lock_unlock(wl_listener *listener, void *data) {
     server->session_locked = false;
     wlr_scene_node_set_enabled(&server->layers.session_lock->node, false);
 
-    // No toplevel visibility sweep needed here (Phase 3.5 had one, to undo
-    // update_toplevel_visibility()'s now-removed session_locked clause -
-    // see workspace.cpp): a toplevel's enabled bit was never touched by
-    // locking in the first place under the current structural layer stack,
-    // so there's nothing to restore.
+    // No toplevel visibility sweep needed here: a toplevel's enabled bit is
+    // never touched by locking under the current structural layer stack
+    // (see workspace.cpp), so there's nothing to restore.
 
     // Restores focus to the MRU-front toplevel that's actually visible on
     // the active workspace (not just MRU-front overall - the same
@@ -182,10 +180,7 @@ static void handle_new_session_lock(wl_listener *listener, void *data) {
     // comment), both structurally below server->layers.session_lock for the
     // lifetime of the compositor - including for a toplevel mapped for the
     // first time *while* locked, since place_new_toplevel() parents it there
-    // too, not as a fresh sibling of scene->tree. That's what closes the gap
-    // Phase 3.5's original ad-hoc single-raised-tree design had (a brand new
-    // scene node always becomes the newest topmost sibling of *its own*
-    // parent, which used to be scene->tree itself for every toplevel).
+    // too, not as a fresh sibling of scene->tree.
 
     BiomeOutput *output;
     wl_list_for_each(output, &server->outputs, link) {

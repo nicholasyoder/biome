@@ -251,13 +251,10 @@ void place_new_toplevel(BiomeToplevel *toplevel) {
     } else {
         // Center on the output under the cursor (falling back to the whole
         // layout's box - see output_target_box - if the cursor isn't over
-        // any output yet). Centering in the *combined* multi-output layout
-        // box instead, as this used to, places the raw center point wherever
-        // it falls in the whole virtual desktop - on a multi-monitor rig
-        // with differently-sized outputs, that's frequently near a seam
-        // between two outputs rather than the middle of either one, and the
-        // old code only discovered which single output to clamp against
-        // *after* computing that already-wrong center.
+        // any output yet), not the combined multi-output layout box: on a
+        // multi-monitor rig with differently-sized outputs, the combined
+        // box's center frequently falls near the seam between two outputs
+        // rather than the middle of either one.
         wlr_output *wlr_output = wlr_output_layout_output_at(
             server->output_layout, server->cursor->x, server->cursor->y);
         wlr_box target = output_target_box(server, wlr_output);

@@ -10,8 +10,7 @@ void scene_layers_init(BiomeServer *server) {
     server->layers.overlay = wlr_scene_tree_create(&server->scene->tree);
     server->layers.fullscreen = wlr_scene_tree_create(&server->scene->tree);
     server->layers.session_lock = wlr_scene_tree_create(&server->scene->tree);
-    // Starts disabled - only enabled for the duration of a lock (mirrors
-    // the old BiomeServer::lock_tree's own initial-disabled convention).
+    // Starts disabled - only enabled for the duration of a lock.
     // Its content (BiomeOutput::lock_tree, one per output) is created
     // unconditionally by server_new_output() regardless of lock state, so
     // this is what actually keeps it invisible/unhittable outside a lock -
