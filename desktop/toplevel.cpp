@@ -197,6 +197,30 @@ wlr_box output_target_box(BiomeServer *server, wlr_output *wlr_output) {
     return wlr_box{box.x + usable.x, box.y + usable.y, usable.width, usable.height};
 }
 
+// The output whose usable area overlaps window_box the most, or nullptr if
+// it overlaps no output. Used for maximize/fullscreen target selection - a
+// single-point test on the window's corner picks the wrong monitor whenever
+// the window straddles a seam with most of its area on the far side.
+static wlr_output *output_with_largest_overlap(BiomeServer *server, const wlr_box &window_box) {
+    wlr_output *best = nullptr;
+    int best_area = 0;
+    BiomeOutput *candidate;
+    wl_list_for_each(candidate, &server->outputs, link) {
+        wlr_box output_box = {};
+        wlr_output_layout_get_box(server->output_layout, candidate->wlr, &output_box);
+        wlr_box overlap;
+        if (!wlr_box_intersection(&overlap, &window_box, &output_box)) {
+            continue;
+        }
+        int area = overlap.width * overlap.height;
+        if (area > best_area) {
+            best_area = area;
+            best = candidate->wlr;
+        }
+    }
+    return best;
+}
+
 void place_new_toplevel(BiomeToplevel *toplevel) {
     BiomeServer *server = toplevel->server;
 
@@ -270,16 +294,19 @@ void place_new_toplevel(BiomeToplevel *toplevel) {
     update_toplevel_visibility(toplevel);
 }
 
-// The output the toplevel is currently (mostly) on, by its visible
-// content's top-left corner - falls back to the full output layout extents
-// if that point isn't on any output. Called before toplevel->maximized
-// flips to true, so it still reflects the window's current on-screen frame.
+// The output the toplevel currently overlaps the most - falls back to the
+// full output layout extents if it overlaps no output. Called before
+// toplevel->maximized flips to true, so it still reflects the window's
+// current on-screen frame.
 static wlr_box maximize_target_box(BiomeToplevel *toplevel) {
     BiomeServer *server = toplevel->server;
     double vis_x = toplevel->scene_tree->node.x + decoration_border_width(toplevel, toplevel->maximized);
     double vis_y = toplevel->scene_tree->node.y + decoration_titlebar_height(toplevel, toplevel->maximized);
+    wlr_box geo;
+    toplevel_get_geometry(toplevel, &geo);
+    wlr_box window_box = {static_cast<int>(vis_x), static_cast<int>(vis_y), geo.width, geo.height};
 
-    wlr_output *output = wlr_output_layout_output_at(server->output_layout, vis_x, vis_y);
+    wlr_output *output = output_with_largest_overlap(server, window_box);
     wlr_box box = output_target_box(server, output);
     if (wlr_box_empty(&box)) {
         return box;
@@ -364,17 +391,20 @@ void set_toplevel_maximized(BiomeToplevel *toplevel, bool maximized) {
     foreign_toplevel_sync_state(toplevel);
 }
 
-// The output the toplevel is currently (mostly) on, by its visible
-// content's top-left corner - same lookup maximize_target_box does, just
-// without subtracting usable_area (or the border/titlebar inset, since a
-// fullscreen frame has neither - see toplevel_decorated): a fullscreen
-// window fills the output's full box, panels and all.
+// The output the toplevel currently overlaps the most - same lookup
+// maximize_target_box does, just without subtracting usable_area (or the
+// border/titlebar inset, since a fullscreen frame has neither - see
+// toplevel_decorated): a fullscreen window fills the output's full box,
+// panels and all.
 static wlr_box fullscreen_target_box(BiomeToplevel *toplevel) {
     BiomeServer *server = toplevel->server;
     double vis_x = toplevel->scene_tree->node.x + decoration_border_width(toplevel, toplevel->maximized);
     double vis_y = toplevel->scene_tree->node.y + decoration_titlebar_height(toplevel, toplevel->maximized);
+    wlr_box geo;
+    toplevel_get_geometry(toplevel, &geo);
+    wlr_box window_box = {static_cast<int>(vis_x), static_cast<int>(vis_y), geo.width, geo.height};
 
-    wlr_output *output = wlr_output_layout_output_at(server->output_layout, vis_x, vis_y);
+    wlr_output *output = output_with_largest_overlap(server, window_box);
     wlr_box box = {};
     if (output == nullptr) {
         return box;
