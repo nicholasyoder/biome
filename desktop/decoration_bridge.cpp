@@ -160,6 +160,22 @@ void render_toplevel_decoration(BiomeToplevel *toplevel) {
         ? toplevel->xdg_toplevel->title
         : toplevel->xwayland_surface->title;
 
+    // Called on every surface commit, including plain content-only repaints
+    // (e.g. scrolling) - skip the render below if nothing changed since last
+    // time. See last_decoration_title's declaration for the pointer-identity
+    // comparison.
+    if (toplevel->decoration_rendered_once &&
+            toplevel->last_decoration_width == width &&
+            toplevel->last_decoration_height == height &&
+            toplevel->last_decoration_focused == toplevel->focused &&
+            toplevel->last_decoration_maximized == render_maximized &&
+            toplevel->last_decoration_hovered == toplevel->hovered_region &&
+            toplevel->last_decoration_pressed == toplevel->pressed_region &&
+            toplevel->last_decoration_icon_data == toplevel->icon.pixels.data() &&
+            toplevel->last_decoration_title == title) {
+        return;
+    }
+
     biome_decoration::RenderedFrame frame = biome_decoration::render_decoration(
         toplevel->decoration_frame, width, height,
         toplevel->focused, render_maximized, title, toplevel->icon,
@@ -170,6 +186,16 @@ void render_toplevel_decoration(BiomeToplevel *toplevel) {
     }
     wlr_scene_buffer_set_buffer(toplevel->decoration_buffer, buffer);
     wlr_buffer_drop(buffer);
+
+    toplevel->decoration_rendered_once = true;
+    toplevel->last_decoration_width = width;
+    toplevel->last_decoration_height = height;
+    toplevel->last_decoration_focused = toplevel->focused;
+    toplevel->last_decoration_maximized = render_maximized;
+    toplevel->last_decoration_hovered = toplevel->hovered_region;
+    toplevel->last_decoration_pressed = toplevel->pressed_region;
+    toplevel->last_decoration_icon_data = toplevel->icon.pixels.data();
+    toplevel->last_decoration_title = title;
 
     // Re-syncs content_tree to this render's border/titlebar metrics rather
     // than trusting the snapshot taken at creation, in case the theme sizes

@@ -114,6 +114,22 @@ struct BiomeToplevel {
     biome_decoration::IconImage icon;
     bool icon_resolved = false;
 
+    // State last handed to render_toplevel_decoration(), so it can skip its
+    // expensive full-window QImage render when nothing changed (e.g. a
+    // plain content-only commit during scrolling). last_decoration_title is
+    // a borrowed pointer, not owned: BiomeToplevel is calloc()'d/free()'d,
+    // so a std::string member would never construct. Pointer identity is
+    // enough since a real title change always re-renders directly.
+    bool decoration_rendered_once = false;
+    int last_decoration_width = -1;
+    int last_decoration_height = -1;
+    bool last_decoration_focused = false;
+    bool last_decoration_maximized = false;
+    const char *last_decoration_title = nullptr;
+    const uint8_t *last_decoration_icon_data = nullptr;
+    biome_decoration::Region last_decoration_hovered = biome_decoration::Region::None;
+    biome_decoration::Region last_decoration_pressed = biome_decoration::Region::None;
+
     // wlr-foreign-toplevel-management-unstable-v1 (desktop/foreign_toplevel.h) -
     // created in toplevel_map, destroyed in toplevel_unmap. Null between
     // those (or if the manager global failed to create).
