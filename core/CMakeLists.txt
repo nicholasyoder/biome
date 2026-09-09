@@ -1,5 +1,12 @@
 find_package(Qt6 REQUIRED COMPONENTS Core DBus)
 
+find_package(PkgConfig REQUIRED)
+# Needed by qt_glib_bridge.cpp to dispatch g_main_context_default() directly
+# (see docs/qt-event-loop-integration-research.md) - already present on the
+# target system as a transitive dependency of GTK/other desktop packages, but
+# wasn't declared as a Biome dependency anywhere until now.
+pkg_check_modules(GLIB REQUIRED IMPORTED_TARGET glib-2.0)
+
 add_executable(biome
     main.cpp
     server.h
@@ -19,6 +26,8 @@ add_executable(biome
     cursor.cpp
     idle_blank.h # STOPGAP(idle-blank)
     idle_blank.cpp # STOPGAP(idle-blank)
+    qt_glib_bridge.h
+    qt_glib_bridge.cpp
     wlroots.hpp
 )
 
@@ -40,6 +49,7 @@ target_link_libraries(biome PRIVATE
     PkgConfig::WLROOTS
     PkgConfig::WAYLAND_SERVER
     PkgConfig::XKBCOMMON
+    PkgConfig::GLIB
     Qt6::Core
     Qt6::DBus
 )

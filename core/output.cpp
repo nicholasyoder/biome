@@ -41,7 +41,21 @@ void output_manager_init(BiomeServer *server) {
     wlr_xdg_output_manager_v1_create(server->display, server->output_layout);
 }
 
-// Called at the output's refresh rate (e.g. 60Hz).
+// Diagnostic only - logs how often output_frame fires vs. how often it
+// actually rendered a new buffer (wlr_scene_output_commit() returns false
+// when there's no damage, meaning the frame event fired but nothing was
+// redrawn). A high fire count with a low render count would mean something
+// is calling wlr_output_schedule_frame() more than it needs to; a high
+// render count would mean real damage is churning. Logged every ~10s at
+// WLR_DEBUG (already the compositor's default log level).
+namespace {
+uint64_t g_frame_fires_since_log = 0;
+uint64_t g_frame_renders_since_log = 0;
+timespec g_frame_last_log{};
+} // namespace
+
+// Called whenever this output has a frame scheduled and ready (not
+// unconditionally at the refresh rate - see the damage-driven note below).
 static void output_frame(wl_listener *listener, void *data) {
     (void)data;
     BiomeOutput *output = wl_container_of(listener, output, frame);
@@ -51,10 +65,23 @@ static void output_frame(wl_listener *listener, void *data) {
     bool still_fading = update_layer_surface_fades(output);
 
     wlr_scene_output *scene_output = wlr_scene_get_scene_output(scene, output->wlr);
-    wlr_scene_output_commit(scene_output, nullptr);
+    bool rendered = wlr_scene_output_commit(scene_output, nullptr);
     timespec now;
     clock_gettime(CLOCK_MONOTONIC, &now);
     wlr_scene_output_send_frame_done(scene_output, &now);
+
+    g_frame_fires_since_log++;
+    if (rendered) {
+        g_frame_renders_since_log++;
+    }
+    if (now.tv_sec - g_frame_last_log.tv_sec >= 10) {
+        wlr_log(WLR_DEBUG, "output-frame: %llu fires, %llu actually rendered, over last ~10s",
+                static_cast<unsigned long long>(g_frame_fires_since_log),
+                static_cast<unsigned long long>(g_frame_renders_since_log));
+        g_frame_fires_since_log = 0;
+        g_frame_renders_since_log = 0;
+        g_frame_last_log = now;
+    }
 
     // Biome's rendering is otherwise damage-driven, not continuous - an
     // in-progress layer-surface fade (desktop/layer_shell.cpp) needs to

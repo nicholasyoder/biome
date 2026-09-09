@@ -11,6 +11,7 @@
 #include "core/idle_blank.h" // STOPGAP(idle-blank)
 #include "core/input.h"
 #include "core/output.h"
+#include "core/qt_glib_bridge.h"
 #include "core/server.h"
 #include "decoration/theme.h"
 #include "desktop/app_icon.h"
@@ -72,6 +73,12 @@ int main(int argc, char *argv[]) {
     biome_decoration::load_decoration_theme();
     init_icon_theme();
     server.display = wl_display_create();
+    // Bridges Qt's GLib-backed dispatcher into wl_event_loop so Qt/QtDBus
+    // dispatch fd-driven off Biome's own loop - see
+    // docs/qt-event-loop-integration-research.md. Called this early so it's
+    // live for the entire rest of startup, not just from whenever IPC init
+    // happens to run.
+    qt_glib_bridge_init(&server);
     // Autocreate picks the most suitable backend for the environment (e.g.
     // an X11 window if an X11 server is running).
     server.backend = wlr_backend_autocreate(wl_display_get_event_loop(server.display), &server.session);

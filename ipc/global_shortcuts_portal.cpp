@@ -4,7 +4,6 @@
 
 #include "core/keybindings.h"
 
-#include <QCoreApplication>
 #include <QDBusConnection>
 #include <QDBusError>
 #include <QDBusMetaType>
@@ -165,36 +164,9 @@ void PortalSession::Close() {
     deleteLater();
 }
 
-namespace {
-
-// main.cpp's QApplication is offscreen and its event loop is deliberately
-// never run (see main.cpp's own comment: decoration/ drives QPainter/QImage
-// synchronously off Biome's own loop instead, "not by a running Qt event
-// loop"). QtDBus's socket handling is serviced by Qt's event dispatcher the
-// same way any other Qt I/O is, though, so without pumping it at all,
-// registerObject()/registerService() above succeed (they're synchronous
-// setup calls) but no incoming method call or outgoing signal would ever
-// actually be dispatched. A wl_event_loop timer that periodically drains
-// Qt's queue is a pragmatic fit for a prototype - it's Biome's own loop
-// still driving this (not a second, competing event loop, matching the
-// same principle decoration/ already established), just polling rather
-// than being woken by the exact fd Qt's dispatcher is waiting on. 10ms is
-// imperceptible for a hotkey activation or a D-Bus reply and costs nothing
-// measurable in CPU; revisit with real fd-based integration if this ever
-// needs tighter latency.
-wl_event_source *g_qt_pump_timer = nullptr;
-
-int pump_qt_events(void *data) {
-    (void)data;
-    QCoreApplication::sendPostedEvents();
-    QCoreApplication::processEvents(QEventLoop::AllEvents);
-    wl_event_source_timer_update(g_qt_pump_timer, 10);
-    return 0;
-}
-
-} // namespace
-
 void global_shortcuts_portal_init(BiomeServer *server) {
+    (void)server; // dispatch is the qt_glib_bridge's problem now, already live before this runs
+
     qDBusRegisterMetaType<GlobalShortcutSpec>();
     qDBusRegisterMetaType<QList<GlobalShortcutSpec>>();
 
@@ -219,8 +191,4 @@ void global_shortcuts_portal_init(BiomeServer *server) {
         wlr_log(WLR_ERROR, "Biome: failed to register GlobalShortcuts portal bus name: %s",
             qPrintable(bus.lastError().message()));
     }
-
-    wl_event_loop *event_loop = wl_display_get_event_loop(server->display);
-    g_qt_pump_timer = wl_event_loop_add_timer(event_loop, pump_qt_events, nullptr);
-    wl_event_source_timer_update(g_qt_pump_timer, 10);
 }
