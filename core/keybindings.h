@@ -72,6 +72,15 @@ bool handle_key_press(BiomeServer *server, xkb_keysym_t sym, uint32_t modifiers)
 // considered handled (not forwarded to the focused client).
 bool handle_modifier_tap(BiomeServer *server, xkb_keysym_t sym, uint32_t modifiers, bool pressed);
 
+// Called from keyboard_handle_key() for every key release. Swallows a
+// Tab/ISO_Left_Tab release while the Alt-Tab switcher is active, mirroring
+// handle_switcher_key()'s press-side swallow - the release would otherwise
+// have no matching press-forward to pair with on the client that's still
+// focused at that point (the press was already swallowed), leaking a
+// spurious unmatched key event. Returns true if the release should be
+// considered handled (not forwarded to the focused client).
+bool handle_switcher_key_release(BiomeServer *server, xkb_keysym_t sym);
+
 // Registration API for ipc/global_shortcuts_portal.cpp. `owner` is an
 // opaque per-session key (the portal's session_handle object path) used
 // only to remove every binding for that session again in

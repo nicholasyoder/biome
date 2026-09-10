@@ -316,7 +316,8 @@ bool handle_modifier_tap(BiomeServer *server, xkb_keysym_t sym, uint32_t modifie
     }
 
     const uint32_t candidate = server->modifier_tap_candidate;
-    const bool fire = candidate != 0 && !server->modifier_tap_interrupted && mods == 0;
+    const bool interrupted = server->modifier_tap_interrupted;
+    const bool fire = candidate != 0 && !interrupted && mods == 0;
     if (mods == 0) {
         // The last held matchable modifier just came up - the candidate
         // hold is over either way, fired or not.
@@ -324,7 +325,18 @@ bool handle_modifier_tap(BiomeServer *server, xkb_keysym_t sym, uint32_t modifie
         server->modifier_tap_interrupted = false;
     }
     if (!fire) {
-        return false;
+        // A held-alone modifier that turned into a combo (e.g. Alt+Tab -
+        // modifier_tap_interrupted set by Tab going down mid-hold) still
+        // ends here. The client already saw this modifier's bare press
+        // (forwarded before the compositor could know a combo was coming),
+        // so also swallowing its release keeps it from ever seeing a
+        // complete, uninterrupted press+release pair - which toolkits like
+        // Qt/GTK read as a standalone modifier tap (e.g. activating a
+        // window's menu bar). A release with no candidate at all (this
+        // modifier's press was never a lone-hold start, e.g. the second key
+        // of a held Ctrl+Alt combo) still forwards normally, since nothing
+        // was withheld from it either.
+        return candidate != 0 && interrupted && mods == 0;
     }
 
     for (const PortalBinding &entry : portal_bindings()) {
@@ -333,6 +345,10 @@ bool handle_modifier_tap(BiomeServer *server, xkb_keysym_t sym, uint32_t modifie
         }
     }
     return false;
+}
+
+bool handle_switcher_key_release(BiomeServer *server, xkb_keysym_t sym) {
+    return server->switcher_active && (sym == XKB_KEY_Tab || sym == XKB_KEY_ISO_Left_Tab);
 }
 
 void add_portal_keybinding(const QString &owner, ParsedTrigger trigger,

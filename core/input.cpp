@@ -99,6 +99,17 @@ static void keyboard_handle_key(wl_listener *listener, void *data) {
         }
     }
 
+    // Tab/ISO_Left_Tab release while the switcher is up - handle_key_press()
+    // above already swallowed its press (handle_switcher_key()), but only
+    // runs on presses, so the matching release needs its own swallow here.
+    if (!pressed) {
+        for (int i = 0; i < nsyms; i++) {
+            if (handle_switcher_key_release(server, syms[i])) {
+                handled = true;
+            }
+        }
+    }
+
     if (!handled) {
         wlr_seat_set_keyboard(seat, keyboard->wlr);
         wlr_seat_keyboard_notify_key(seat, event->time_msec,
