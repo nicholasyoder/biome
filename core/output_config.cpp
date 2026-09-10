@@ -76,6 +76,17 @@ wl_output_transform parse_transform(const QString &raw, const QString &connector
     return WL_OUTPUT_TRANSFORM_NORMAL;
 }
 
+double parse_scale(const QString &raw, const QString &connector) {
+    bool ok = false;
+    const double scale = raw.toDouble(&ok);
+    if (!ok || scale <= 0.0 || scale > 10.0) {
+        qWarning() << "Biome: output" << connector << "has invalid scale" << raw
+                   << "- using 1.0";
+        return 1.0;
+    }
+    return scale;
+}
+
 } // namespace
 
 std::unordered_map<std::string, OutputConfig> load_output_configs() {
@@ -97,7 +108,7 @@ std::unordered_map<std::string, OutputConfig> load_output_configs() {
         OutputConfig cfg;
         cfg.enabled = settings.value("enabled", true).toBool();
         cfg.mode = parse_mode(settings.value("mode", "preferred").toString(), connector);
-        cfg.scale = settings.value("scale", 1.0).toDouble();
+        cfg.scale = parse_scale(settings.value("scale", "1.0").toString(), connector);
 
         const bool has_x = settings.contains("x");
         const bool has_y = settings.contains("y");
