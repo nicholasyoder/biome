@@ -23,16 +23,68 @@ void repolish_tree(QWidget *root) {
     }
 }
 
-void force_activate_layouts(QWidget *root) {
+namespace {
+
+// Bottom-up: invalidates every descendant's layout before root's own
+// activate(), so that activate() - which reads each child widget's
+// minimumSizeHint()/sizeHint() to decide root's size - sees values freshly
+// computed against that child's *current* content rather than a stale
+// cache left over from before this render (Qt only refreshes that cache
+// across a widget boundary via a posted QEvent::LayoutRequest, which this
+// synchronous call can't rely on arriving - see force_activate_layouts()'s
+// own doc comment). invalidate() alone (not activate()) is enough here -
+// it just clears the cached-dirty flag behind minimumSizeHint()/sizeHint(),
+// with no geometry math - since any geometry this pass might compute would
+// only be discarded by the top-down activate below anyway.
+void invalidate_bottom_up(QWidget *root) {
+    for (QObject *child : root->children()) {
+        if (auto *child_widget = qobject_cast<QWidget *>(child)) {
+            invalidate_bottom_up(child_widget);
+        }
+    }
+    if (QLayout *layout = root->layout()) {
+        layout->invalidate();
+    }
+}
+
+// Top-down: re-activates every descendant's layout after root's own. A
+// child widget's layout->activate() no-ops once its internal "activated"
+// flag is set - so a child already activated during the bottom-up pass
+// above (against whatever geometry it had *before* root's own activate()
+// potentially resized it) never gets to reflow its own contents against
+// its real, final geometry without this second, top-down pass forcing it
+// to run again.
+void activate_top_down(QWidget *root) {
     if (QLayout *layout = root->layout()) {
         layout->invalidate();
         layout->activate();
     }
     for (QObject *child : root->children()) {
         if (auto *child_widget = qobject_cast<QWidget *>(child)) {
-            force_activate_layouts(child_widget);
+            activate_top_down(child_widget);
         }
     }
+}
+
+} // namespace
+
+void force_activate_layouts(QWidget *root) {
+    invalidate_bottom_up(root);
+    activate_top_down(root);
+}
+
+void relayout_and_shrink_to_fit(QWidget *root) {
+    force_activate_layouts(root);
+    // QLayout::activate() on a top-level widget only ever grows it, never
+    // shrinks - resize to the true minimum explicitly before the final
+    // re-activate positions every child against it.
+    root->resize(root->minimumSizeHint());
+    force_activate_layouts(root);
+}
+
+QIcon fallback_icon() {
+    static const QIcon icon = QIcon::fromTheme("application-x-executable");
+    return icon;
 }
 
 namespace {
@@ -81,7 +133,7 @@ DecorationFrame::DecorationFrame(QWidget *parent) : QFrame(parent) {
     icon_button_->setObjectName("biomeTitleIcon");
     icon_button_->setFocusPolicy(Qt::NoFocus);
     icon_button_->setAttribute(Qt::WA_StyledBackground, true);
-    icon_button_->hide(); // no gap shown until setIcon() gives it a real icon
+    icon_button_->hide(); // shown by setIcon() once it has a real or fallback icon to set
 
     button_minimize_ = new DecorationButton(Region::ButtonMinimize, titlebar_);
     button_maximize_ = new DecorationButton(Region::ButtonMaximize, titlebar_);
@@ -137,12 +189,7 @@ void DecorationFrame::layoutFor(int content_width, int content_height) {
     // ipc/global_shortcuts_portal.cpp now pumps Qt's event loop periodically
     // for D-Bus - otherwise minimumSizeHint() below could read a stale size
     // left by this shared widget's previous render.
-    force_activate_layouts(this);
-    // QLayout::activate() on a top-level widget only ever grows it, never
-    // shrinks - resize to the true minimum explicitly before the final
-    // re-activate positions every child against it.
-    resize(minimumSizeHint());
-    force_activate_layouts(this);
+    relayout_and_shrink_to_fit(this);
 }
 
 Region DecorationFrame::hitTest(
@@ -258,12 +305,10 @@ void DecorationFrame::setMaximizedState(bool maximized) {
     // promptly (see layoutFor()'s own comment on why). A plain
     // force_activate_layouts() alone isn't enough either: activate() on a
     // top-level widget only ever grows it, so shrinking a border would just
-    // hand the freed space to the titlebar
-    // instead of shrinking the frame. The explicit resize(minimumSizeHint())
-    // below forces that shrink before the final re-activate.
-    force_activate_layouts(this);
-    resize(minimumSizeHint());
-    force_activate_layouts(this);
+    // hand the freed space to the titlebar instead of shrinking the frame -
+    // relayout_and_shrink_to_fit() forces that shrink before the final
+    // re-activate.
+    relayout_and_shrink_to_fit(this);
 }
 
 void DecorationFrame::setTitle(const QString &title) {
@@ -280,15 +325,17 @@ void DecorationFrame::setIcon(const IconImage &icon) {
         // QPixmap::fromImage() below copies out of it before this returns.
         QImage image(icon.pixels.data(), icon.size, icon.size, QImage::Format_ARGB32_Premultiplied);
         icon_button_->setIcon(QIcon(QPixmap::fromImage(image)));
+    } else {
+        icon_button_->setIcon(fallback_icon());
     }
-    if (has_icon == icon_button_->isHidden()) {
-        icon_button_->setVisible(has_icon);
-        // Same invalidate/resize/invalidate dance as setMaximizedState()'s
-        // border toggling - showing/hiding a layout item is a box-model
-        // change, not just paint.
-        force_activate_layouts(this);
-        resize(minimumSizeHint());
-        force_activate_layouts(this);
+    if (icon_button_->isHidden()) {
+        // First-ever setIcon() call: the constructor leaves icon_button_
+        // hidden, so showing it now is a box-model change, not just paint -
+        // same relayout_and_shrink_to_fit() as setMaximizedState()'s border
+        // toggling. Never hidden again afterwards (a real or fallback icon
+        // is always set above), so this only runs once.
+        icon_button_->setVisible(true);
+        relayout_and_shrink_to_fit(this);
     }
 }
 

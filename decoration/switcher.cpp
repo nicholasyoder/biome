@@ -2,7 +2,7 @@
 
 #include "switcher.h"
 
-#include "frame_widget.h" // repolish_tree, force_activate_layouts
+#include "frame_widget.h" // repolish_tree, relayout_and_shrink_to_fit, fallback_icon
 
 #include <QFontMetrics>
 #include <QFrame>
@@ -35,7 +35,7 @@ public:
     // Adds/removes icon buttons to match entries.size(), sets each one's
     // "selected" dynamic property and icon, and sets the title label to the
     // selected entry's full, not-yet-elided text. Callers must
-    // force_activate_layouts() the panel afterwards, then call
+    // relayout_and_shrink_to_fit() the panel afterwards, then call
     // elideTitle(), so the label's real laid-out width is known before
     // eliding against it.
     void setEntries(const std::vector<SwitcherEntry> &entries, int selected_index);
@@ -84,7 +84,14 @@ void SwitcherPanel::setEntries(const std::vector<SwitcherEntry> &entries, int se
         QToolButton *icon = icons_.back();
         icons_.pop_back();
         icons_layout_->removeWidget(icon);
-        icon->deleteLater();
+        // Synchronous delete, not deleteLater() - even with core/
+        // qt_glib_bridge.cpp making Qt's dispatcher genuinely live,
+        // DeferredDelete is only processed on Qt's next dispatch, not
+        // guaranteed before the very next render_switcher() call in this
+        // same synchronous code path (e.g. fast Alt-Tab cycling). Until
+        // then it'd stay a live, visible child at its last laid-out
+        // geometry, painted underneath the current icons.
+        delete icon;
     }
 
     for (size_t i = 0; i < entries.size(); i++) {
@@ -97,8 +104,10 @@ void SwitcherPanel::setEntries(const std::vector<SwitcherEntry> &entries, int se
             QImage image(icon_image.pixels.data(), icon_image.size, icon_image.size,
                 QImage::Format_ARGB32_Premultiplied);
             icon->setIcon(QIcon(QPixmap::fromImage(image)));
+        } else {
+            icon->setIcon(fallback_icon());
         }
-        icon->setVisible(has_icon);
+        icon->setVisible(true);
     }
 
     full_title_.clear();
@@ -163,8 +172,10 @@ RenderedFrame render_switcher(const std::vector<SwitcherEntry> &entries, int sel
 
     g_root->panel->setEntries(entries, selected_index);
     repolish_tree(g_root); // newly-added rows above need their QSS applied too
-    g_root->resize(g_root->minimumSizeHint());
-    force_activate_layouts(g_root);
+    // g_root is reused across calls, so minimumSizeHint() below must not
+    // read a stale hint left by the previous render's entry count - see
+    // relayout_and_shrink_to_fit()'s own doc comment (frame_widget.h).
+    relayout_and_shrink_to_fit(g_root);
     g_root->panel->elideTitle();
 
     int width = g_root->width();

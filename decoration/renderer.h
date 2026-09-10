@@ -25,8 +25,8 @@ struct RenderedFrame {
 
 // A resolved window icon - square ARGB32-premultiplied pixel data at
 // whatever fixed size desktop/app_icon.h rasterizes to. size == 0 (pixels
-// empty) means no icon was found - callers hide the icon widget entirely
-// rather than showing a generic placeholder.
+// empty) means no icon was found - callers show frame_widget.h's
+// fallback_icon() instead, rather than leaving a gap.
 struct IconImage {
     int size = 0;
     std::vector<uint8_t> pixels;

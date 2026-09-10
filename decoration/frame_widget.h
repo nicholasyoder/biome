@@ -16,12 +16,19 @@
 #include "layout.h" // Region
 #include "renderer.h" // IconImage
 
+#include <QIcon>
 #include <QLabel>
 #include <QString>
 #include <QToolButton>
 #include <QWidget>
 
 namespace biome_decoration {
+
+// Generic icon-theme fallback (hicolor's spec-mandated
+// application-x-executable) for a window whose own icon couldn't be
+// resolved - shown instead of leaving a gap. Shared by DecorationFrame's
+// titlebar icon and switcher.cpp's per-entry icons.
+QIcon fallback_icon();
 
 // Forces every widget in root's subtree (root included) to reapply its QSS
 // rules, including qproperty-* values - needed since Biome never
@@ -30,19 +37,35 @@ namespace biome_decoration {
 void repolish_tree(QWidget *root);
 
 // Forces root's QLayout (and every descendant's) to recompute geometry
-// immediately, top-down. A QLayout normally reflows via a posted
-// QEvent::LayoutRequest, which needs the Qt event loop to actually run to
-// get delivered - decoration/ is driven synchronously off Biome's own
-// wl_display loop instead and deliberately doesn't rely on Qt event
-// delivery for correctness (ipc/global_shortcuts_portal.cpp does now pump
-// QCoreApplication::processEvents() periodically for its own D-Bus needs,
-// but that's a coarse, independently-timed poll this code must not depend
-// on - hence forcing this explicitly rather than trusting the event to
-// arrive promptly, or at all, between two calls here). Shared by
+// immediately, in two passes: bottom-up invalidate, so an ancestor's own
+// activate() never sizes itself against a descendant widget's stale cached
+// minimumSizeHint()/sizeHint() (invalidate() alone is enough to freshen
+// that cache - it does no geometry math, so it's safe to do before the
+// ancestor even knows its own final size); then top-down activate, so
+// every descendant reflows against its real, final geometry after root's
+// own activate() potentially resized it - QLayout::activate() no-ops once
+// its "activated" flag is set, so without this second pass a resized
+// child's own contents would stay positioned for its old size.
+// A QLayout normally reflows via a posted QEvent::LayoutRequest, delivered
+// whenever Qt's event dispatcher next runs - core/qt_glib_bridge.cpp makes
+// that genuinely live (fd-driven off Biome's own wl_display loop, not a
+// poll), but decoration rendering still runs synchronously inside a
+// wlroots callback and needs correct geometry for that same call, not
+// "whenever Qt next dispatches" - hence forcing this explicitly rather
+// than trusting the event to arrive in time. Shared by
 // DecorationFrame::layoutFor() and switcher.cpp's SwitcherPanel, which both
 // resize() an offscreen top-level widget and need its subtree to reflect
 // that immediately.
 void force_activate_layouts(QWidget *root);
+
+// force_activate_layouts(root) (to freshen minimumSizeHint() against
+// current content), then resize root down to that hint (QLayout::activate()
+// on a top-level widget only ever grows it, never shrinks), then
+// force_activate_layouts(root) again so every descendant's geometry
+// reflects that final, possibly-shrunk size. The common "measure, then
+// commit" pattern behind DecorationFrame::layoutFor()/setMaximizedState()/
+// setIcon() and switcher.cpp's render_switcher().
+void relayout_and_shrink_to_fit(QWidget *root);
 
 // One left/right/bottom border strip - a plain styled widget rather than a
 // single CSS border spanning the whole frame, so each edge can be styled and
@@ -117,9 +140,10 @@ public:
     // this before querying those.
     void setMaximizedState(bool maximized);
     void setTitle(const QString &title);
-    // Sets (or, for an empty IconImage, hides) the titlebar icon slot -
-    // icon_button_ is a QToolButton rather than a QLabel so its rendered
-    // size stays QSS-controllable via qproperty-iconSize.
+    // Sets the titlebar icon slot - an empty IconImage gets fallback_icon()
+    // rather than leaving a gap. icon_button_ is a QToolButton rather than a
+    // QLabel so its rendered size stays QSS-controllable via
+    // qproperty-iconSize.
     void setIcon(const IconImage &icon);
 
     // Drives real QSS :hover/:pressed pseudo-states on whichever button (if
