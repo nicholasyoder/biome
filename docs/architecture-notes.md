@@ -179,3 +179,35 @@ identity otherwise) is done by also adopting `ext-foreign-toplevel-list-v1`
 purely for its auto-generated stable `identifier` string, and pairing the
 two handles by creation-order arrival in `foreign_toplevel_create()` — the
 same approach other wlr-ecosystem clients use for this exact gap.
+
+## Live output management (`core/output.cpp`, `core/output_management.cpp`)
+
+`wlr_output_manager_v1` handles `test`/`apply` for `wlr-randr`-style clients.
+`Biome.conf` stays the startup default only; applied changes are never
+persisted, so preset scripts are the source of truth.
+
+- **One geometry path.** `output_sync_geometry()` is the only place that
+  positions per-output scene state (layer trees, lock tree/rect) and re-runs
+  `arrange_layers`; `output_set_enabled()` owns layout/scene-output membership.
+  A disabled output is out of `output_layout` entirely (it keeps a
+  `current_mode`, so membership would give it hit-testable space).
+- **Gap validation is compositor policy.** `wlr_cursor` clamps to the closest
+  layout point, so a gap between outputs traps the cursor. `test` and `apply`
+  both run `layout_is_connected()` on the *resulting* boxes (effective size =
+  mode/scale, transform-swapped) and fail rather than auto-arrange; overlap is
+  allowed for mirroring. Hotplug can't be rejected, so it isn't covered.
+- **`output_layout_settled()`** runs once after a change settles (not from the
+  layout `change` signal, which fires per head mid-apply): layer surfaces
+  first (their exclusive zones feed maximize targets), then windows, then the
+  cursor. Windows still overlapping an output keep absolute coordinates;
+  only off-screen windows and their restore boxes are pulled to the nearest
+  output, and maximized/fullscreen ones re-fit.
+- **Layer surfaces have a `home`.** Disabling an output reparents its layer
+  surfaces to the first enabled output; re-enabling moves them back. Unplug
+  still closes them (protocol `closed`).
+- **DRM gotchas.** A disabled head has no mode, so clients send none and
+  wlroots makes a 0x0 custom mode; we substitute the current/preferred mode.
+  Batched `wlr_backend_test/commit` allocates no buffer, so enabling or
+  re-moding needs a cleared one attached ("No primary frame buffer"). A
+  modeset on an idle-blanked connector fails, so apply wakes the session first.
+

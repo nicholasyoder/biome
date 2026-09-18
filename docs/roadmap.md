@@ -42,14 +42,13 @@ not resolved by anything since:
   `forest/debian/control` still can't `Depends: biome` (it still wrongly
   lists X11-era deps). Needs a dedicated packaging pass (control file,
   install rules, changelog).
-- **Output `scale` + manual `x`/`y` can open a layout gap that traps the
-  cursor.** `core/output_config.{h,cpp}` stores per-connector offsets with no
-  cross-output validation against effective (scaled) size; a stale neighbor
-  offset opens a gap that `wlr_cursor_warp_closest` snaps the cursor out of.
-  Real fix: auto-arrange by default and/or validate+correct at
-  output-manager init, not defer entirely to a display-settings UI. Fold
-  into the live output management work below, since live layout changes make
-  this much easier to hit.
+- **Output layouts with a gap can still trap the cursor in two paths.**
+  Live `wlr-randr` applies are validated and rejected
+  (`layout_is_connected()`), but (1) unplugging a *middle* monitor can't be
+  rejected and leaves a gap between the remaining outputs, and (2) the startup
+  `Biome.conf` layout is never validated (stale `x`/`y` after a `scale`
+  change). Fix idea: auto-close gaps on unplug and validate/auto-arrange at
+  startup.
 - **An Xwayland override-redirect popup can render (and steal focus) behind
   a fullscreen window.** `BiomeUnmanaged` surfaces are parented directly to
   `layers.toplevels`, not nested under their owning toplevel, so they don't
@@ -57,24 +56,20 @@ not resolved by anything since:
   a real app; fix is likely raising unmanaged surfaces above
   `layers.fullscreen` while any toplevel is fullscreen.
 
-## Next up — Live output management
+## Live output management — done (2026-09-18)
 
-Pulled ahead of Phase 6: output settings are only read from `Biome.conf` at
-startup, so switching monitor layouts means restarting the session. Goal is
-`wlr-output-management-unstable-v1` (compositor side only), so `wlr-randr`
-works and layout presets can be plain shell scripts, same as the old
-xrandr ones. Findings and implementation plan:
-[`docs/output-management-plan.md`](output-management-plan.md).
+`wlr-output-management-unstable-v1`, window/layer-surface relocation and
+layout validation are in and hand-tested; design in `architecture-notes.md`.
+Layout presets are plain `wlr-randr` shell scripts. Forest-side
+display-settings UI (plugin, optionally via `libkscreen`'s backend for this
+protocol) stays later and is `forest/`-side work. Leftovers:
 
-- ~~Refactor `core/output.cpp` so output geometry/enabled state can change
-  after creation.~~ Done.
-- ~~Add the `wlr_output_manager_v1` handler (test/apply, republish on
-  hotplug/layout change).~~ Done (`core/output_management.cpp`).
-- Window relocation and cursor safety on live changes (subsumes the
-  scale + `x`/`y` cursor-trap known issue).
-
-Forest-side display-settings UI (plugin, optionally via `libkscreen`'s
-backend for this protocol) stays later and is `forest/`-side work.
+- Unplug/startup layout gaps (see Known issues).
+- Scanout-fade layer surfaces (logout dim / startup cover) aren't moved off a
+  disabled output.
+- `foreign_toplevel` output_enter/leave is only sent at window creation, not
+  updated when windows move between outputs.
+- `output_destroy` never destroys the per-output layer/lock scene trees.
 
 ## Phase 6 — Session, idle & display completeness
 
