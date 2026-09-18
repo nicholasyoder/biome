@@ -3,12 +3,24 @@
 #include "core/output.h"
 
 #include "core/layers.h"
+#include "core/output_management.h"
 #include "desktop/layer_shell.h"
 #include "desktop/session_lock.h"
 
 #include <ctime>
 
 static void server_new_output(wl_listener *listener, void *data);
+static void output_sync_geometry(BiomeOutput *output);
+
+static void output_layout_changed(wl_listener *listener, void *data) {
+    (void)data;
+    BiomeServer *server = wl_container_of(listener, server, output_layout_change);
+    BiomeOutput *output;
+    wl_list_for_each(output, &server->outputs, link) {
+        output_sync_geometry(output);
+    }
+    output_management_schedule_publish(server);
+}
 
 BiomeOutput *biome_output_from_wlr(BiomeServer *server, wlr_output *wlr_output) {
     BiomeOutput *candidate;
@@ -32,7 +44,10 @@ void output_manager_init(BiomeServer *server) {
     // the proper positions and wlr_scene_output_commit() renders a frame.
     server->scene = wlr_scene_create();
     server->scene_layout = wlr_scene_attach_output_layout(server->scene, server->output_layout);
+    server->output_layout_change.notify = output_layout_changed;
+    wl_signal_add(&server->output_layout->events.change, &server->output_layout_change);
     scene_layers_init(server);
+    output_management_init(server);
 
     // Self-contained: listens to output_layout's own add/change/destroy
     // signals itself, so nothing else needs to touch the returned pointer
@@ -65,6 +80,9 @@ static void output_frame(wl_listener *listener, void *data) {
     bool still_fading = update_layer_surface_fades(output);
 
     wlr_scene_output *scene_output = wlr_scene_get_scene_output(scene, output->wlr);
+    if (scene_output == nullptr) {
+        return; // disabled: out of the layout, no scene output
+    }
     bool rendered = wlr_scene_output_commit(scene_output, nullptr);
     timespec now;
     clock_gettime(CLOCK_MONOTONIC, &now);
@@ -97,19 +115,7 @@ static void output_frame(wl_listener *listener, void *data) {
     // began before declaring it satisfied.
     if (server->session_locked && output->pending_lock_frame) {
         output->pending_lock_frame = false;
-        if (server->active_lock != nullptr && !server->active_lock->locked_sent) {
-            bool any_pending = false;
-            BiomeOutput *other;
-            wl_list_for_each(other, &server->outputs, link) {
-                if (other->pending_lock_frame) {
-                    any_pending = true;
-                    break;
-                }
-            }
-            if (!any_pending) {
-                wlr_session_lock_v1_send_locked(server->active_lock);
-            }
-        }
+        session_lock_maybe_send_locked(server);
     }
 }
 
@@ -119,31 +125,8 @@ static void output_request_state(wl_listener *listener, void *data) {
     auto *event = static_cast<const wlr_output_event_request_state *>(data);
     wlr_output_commit_state(output->wlr, event->state);
 
-    // Keep the session-lock blank rect (and any live lock surface's
-    // configured size) in sync with a live resolution change - otherwise a
-    // shrunk rect would leave real desktop content visible around its edges
-    // while locked. Only realistically reachable on the nested dev backends
-    // today (a real DRM/KMS mode doesn't change without a fresh output_state
-    // commit from Biome itself), but this is a security-relevant gap if
-    // skipped, not just polish.
-    if (output->lock_rect != nullptr) {
-        int width, height;
-        wlr_output_effective_resolution(output->wlr, &width, &height);
-        if (output->lock_rect->width != width || output->lock_rect->height != height) {
-            wlr_scene_rect_set_size(output->lock_rect, width, height);
-            if (output->lock_surface != nullptr) {
-                wlr_session_lock_surface_v1_configure(
-                    output->lock_surface, static_cast<uint32_t>(width), static_cast<uint32_t>(height));
-            }
-        }
-    }
-
-    // Same reasoning as the lock-rect resize above: a layer surface's
-    // exclusive-zone reservation and full-width/height stretch both depend
-    // on the output's box, so a live resolution change needs its own
-    // re-arrange - otherwise a shrunk output would leave a bar sized for
-    // the old, larger box.
-    arrange_layers(output);
+    output_sync_geometry(output);
+    output_management_schedule_publish(output->server);
 }
 
 static void output_destroy(wl_listener *listener, void *data) {
@@ -161,7 +144,67 @@ static void output_destroy(wl_listener *listener, void *data) {
     wl_list_remove(&output->request_state.link);
     wl_list_remove(&output->destroy.link);
     wl_list_remove(&output->link);
+    BiomeServer *server = output->server;
     free(output);
+    output_management_schedule_publish(server);
+}
+
+// The single place output-position-dependent state is updated; idempotent.
+static void output_sync_geometry(BiomeOutput *output) {
+    wlr_output_layout_output *l_output = wlr_output_layout_get(output->server->output_layout, output->wlr);
+    int x = l_output != nullptr ? l_output->x : 0;
+    int y = l_output != nullptr ? l_output->y : 0;
+    if (l_output != nullptr) {
+        output->layout_x = x;
+        output->layout_y = y;
+    }
+    wlr_scene_node_set_position(&output->layer_background->node, x, y);
+    wlr_scene_node_set_position(&output->layer_bottom->node, x, y);
+    wlr_scene_node_set_position(&output->layer_top->node, x, y);
+    wlr_scene_node_set_position(&output->layer_overlay->node, x, y);
+    wlr_scene_node_set_position(&output->lock_tree->node, x, y);
+
+    // A stale-sized blank rect would expose desktop content around its edges
+    // while locked.
+    int width, height;
+    wlr_output_effective_resolution(output->wlr, &width, &height);
+    if (output->lock_rect->width != width || output->lock_rect->height != height) {
+        wlr_scene_rect_set_size(output->lock_rect, width, height);
+        if (output->lock_surface != nullptr) {
+            wlr_session_lock_surface_v1_configure(output->lock_surface, static_cast<uint32_t>(width),
+                                                   static_cast<uint32_t>(height));
+        }
+    }
+
+    arrange_layers(output);
+}
+
+void output_set_enabled(BiomeOutput *output, bool enabled, std::optional<std::pair<int, int>> position) {
+    BiomeServer *server = output->server;
+    if (enabled) {
+        wlr_output_layout_output *l_output =
+            position.has_value()
+                ? wlr_output_layout_add(server->output_layout, output->wlr, position->first, position->second)
+                : wlr_output_layout_add_auto(server->output_layout, output->wlr);
+        // Disabling destroys the scene output, so an existing one is already
+        // wired to the layout (re-adding it asserts).
+        if (wlr_scene_get_scene_output(server->scene, output->wlr) == nullptr) {
+            wlr_scene_output *scene_output = wlr_scene_output_create(server->scene, output->wlr);
+            wlr_scene_output_layout_add_output(server->scene_layout, l_output, scene_output);
+        }
+        output->disabled = false;
+    } else {
+        wlr_output_layout_remove(server->output_layout, output->wlr);
+        // Not guaranteed to have been destroyed along with the layout entry.
+        if (wlr_scene_output *scene_output = wlr_scene_get_scene_output(server->scene, output->wlr)) {
+            wlr_scene_output_destroy(scene_output);
+        }
+        output->disabled = true;
+        // A disabled output will never present the locked frame it's waiting on.
+        output->pending_lock_frame = false;
+        session_lock_maybe_send_locked(server);
+    }
+    output_sync_geometry(output);
 }
 
 // Searches wlr_output's advertised mode list for the best match to a
@@ -268,7 +311,6 @@ static void server_new_output(wl_listener *listener, void *data) {
     auto *output = static_cast<BiomeOutput *>(calloc(1, sizeof(BiomeOutput)));
     output->wlr = wlr_output;
     output->server = server;
-    output->config_disabled = !cfg.enabled;
 
     output->frame.notify = output_frame;
     wl_signal_add(&wlr_output->events.frame, &output->frame);
@@ -279,73 +321,26 @@ static void server_new_output(wl_listener *listener, void *data) {
 
     wl_list_insert(&server->outputs, &output->link);
 
-    // add_auto arranges outputs left-to-right in the order they appear, and
-    // (re)exposes this connector's wl_output global as a side effect -
-    // wlr_output_layout's own output_update_global() keys that purely off
-    // whether current_mode is non-null, not off output->enabled. current_mode
-    // is non-null here even for a config-disabled output (the bring-up
-    // commit above always sets one), so add/add_auto would give it a real,
-    // non-zero effective_resolution - not just a phantom wl_output global,
-    // but real hit-testable space in server->output_layout, the same shared
-    // coordinate system maximize/fullscreen/new-window placement
-    // (desktop/toplevel.cpp) hit-test against. A config-disabled output must
-    // never be a placement target, so it's kept out of the layout entirely
-    // instead - positioned/scened manually below rather than via
-    // wlr_output_layout_add[_auto]/wlr_scene_output_layout_add_output. (No
-    // explicit wlr_output_destroy_global() needed either: the global is only
-    // ever created by output_update_global(), which add/add_auto is what
-    // calls - skipping them means it's simply never created.) A configured
-    // position instead anchors an enabled output there directly -
-    // wlr_output_layout handles a mix of anchored and auto-arranged outputs
-    // on its own (auto ones flow to the right of the rightmost anchored one).
-    wlr_scene_output *scene_output = wlr_scene_output_create(server->scene, wlr_output);
-    int out_x = 0;
-    int out_y = 0;
-    if (cfg.enabled) {
-        wlr_output_layout_output *l_output =
-            cfg.position.has_value()
-                ? wlr_output_layout_add(server->output_layout, wlr_output, cfg.position->first,
-                                         cfg.position->second)
-                : wlr_output_layout_add_auto(server->output_layout, wlr_output);
-        wlr_scene_output_layout_add_output(server->scene_layout, l_output, scene_output);
-        out_x = l_output->x;
-        out_y = l_output->y;
-    } else {
-        // Never moves - not in output_layout, so nothing ever repositions
-        // it. Position is otherwise irrelevant: with no wl_output global, no
-        // client can target this output, so nothing is ever added under
-        // these trees to render.
-        wlr_scene_output_set_position(scene_output, out_x, out_y);
-    }
-
-    // wlr-layer-shell-unstable-v1: one child tree per output-scoped global
-    // layer, positioned at this output's layout coords - layer-shell
-    // surfaces anchor to a specific output rather than placing themselves
-    // in global coordinates the way toplevels do. See desktop/layer_shell.cpp.
+    // wlr-layer-shell: one child tree per output-scoped layer, positioned at
+    // this output's layout coords by output_sync_geometry().
     output->layer_background = wlr_scene_tree_create(server->layers.background);
     output->layer_bottom = wlr_scene_tree_create(server->layers.bottom);
     output->layer_top = wlr_scene_tree_create(server->layers.top);
     output->layer_overlay = wlr_scene_tree_create(server->layers.overlay);
-    wlr_scene_node_set_position(&output->layer_background->node, out_x, out_y);
-    wlr_scene_node_set_position(&output->layer_bottom->node, out_x, out_y);
-    wlr_scene_node_set_position(&output->layer_top->node, out_x, out_y);
-    wlr_scene_node_set_position(&output->layer_overlay->node, out_x, out_y);
 
-    // ext-session-lock-v1: created unconditionally for every output, locked
-    // or not, so a monitor that appears while already locked is blanked
-    // from its very first frame with no special hotplug-during-lock code -
-    // see desktop/session_lock.cpp. lock_rect is the opaque fallback layer;
-    // a client's own lock surface (added later, as a sibling within
-    // output->lock_tree) renders on top of it since it's created after.
+    // ext-session-lock-v1: created for every output, locked or not, so a
+    // monitor that appears while locked is blanked from its first frame.
+    // lock_rect is the opaque fallback under any client lock surface.
     output->lock_tree = wlr_scene_tree_create(server->layers.session_lock);
-    wlr_scene_node_set_position(&output->lock_tree->node, out_x, out_y);
     int lock_width, lock_height;
     wlr_output_effective_resolution(wlr_output, &lock_width, &lock_height);
     output->lock_rect =
         wlr_scene_rect_create(output->lock_tree, lock_width, lock_height, kSessionLockColor);
 
-    // No layer surfaces can target this output yet (it was just created),
-    // but this keeps output->usable_area initialized to the full output box
-    // rather than a zeroed wlr_box from the moment the output exists.
-    arrange_layers(output);
+    // A disabled output stays out of output_layout entirely: it has a
+    // current_mode, so layout membership would give it real hit-testable space
+    // that toplevel placement (desktop/toplevel.cpp) could target.
+    output->disabled = !cfg.enabled;
+    output_set_enabled(output, cfg.enabled, cfg.position);
+    output_management_schedule_publish(server);
 }

@@ -8,6 +8,9 @@
 
 #include "core/server.h"
 
+#include <optional>
+#include <utility>
+
 // Creates output_layout, scene, and scene_layout, and wires the new_output
 // listener. Must run before any other module that touches server->scene or
 // server->output_layout.
@@ -18,3 +21,10 @@ void output_manager_init(BiomeServer *server);
 // from output-hotplug-rate code paths (a handful of times per session at
 // most), not a hot path.
 BiomeOutput *biome_output_from_wlr(BiomeServer *server, wlr_output *wlr_output);
+
+// Adds/removes the output from output_layout (and its scene output) and
+// syncs geometry. `position` nullopt = auto-arrange. Doesn't touch the wlr
+// enabled state - callers commit that themselves. Disabling clears any
+// pending session-lock frame wait.
+void output_set_enabled(BiomeOutput *output, bool enabled,
+                        std::optional<std::pair<int, int>> position = std::nullopt);

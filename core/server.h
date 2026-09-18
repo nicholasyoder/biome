@@ -269,8 +269,14 @@ struct BiomeServer {
     bool modifier_tap_interrupted = false;
 
     wlr_output_layout *output_layout = nullptr;
+    wl_listener output_layout_change = {};
     wl_list outputs = {};
     wl_listener new_output = {};
+    // wlr-output-management (core/output_management.cpp).
+    wlr_output_manager_v1 *output_manager = nullptr;
+    wl_listener output_apply = {};
+    wl_listener output_test = {};
+    wl_event_source *output_publish_idle = nullptr;
     // Loaded once at startup by output_manager_init() - see output_config.h.
     std::unordered_map<std::string, OutputConfig> output_configs;
 
@@ -323,12 +329,13 @@ struct BiomeOutput {
     wl_listener request_state = {};
     wl_listener destroy = {};
 
-    // True for a connector configured Outputs/<name>/enabled=false
-    // (core/output_config.h) - permanently off, not just idle-blanked.
-    // core/idle_blank.cpp must never flip this output's enabled state in
-    // either direction: waking it back on would silently undo the user's
-    // config until next restart.
-    bool config_disabled = false;
+    // Logically off (Biome.conf enabled=false or a runtime change): not in
+    // output_layout. Distinct from idle-blank; core/idle_blank.cpp must never
+    // flip a disabled output's wlr enabled state, or it silently re-lights.
+    bool disabled = false;
+    // Last layout position; kept while disabled so it can be reported/restored.
+    int layout_x = 0;
+    int layout_y = 0;
 
     // ext-session-lock-v1 (desktop/session_lock.cpp). Created unconditionally
     // for every output, locked or not, so a monitor that appears while

@@ -47,13 +47,34 @@ not resolved by anything since:
   cross-output validation against effective (scaled) size; a stale neighbor
   offset opens a gap that `wlr_cursor_warp_closest` snaps the cursor out of.
   Real fix: auto-arrange by default and/or validate+correct at
-  output-manager init, not defer entirely to Phase 6's display-settings UI.
+  output-manager init, not defer entirely to a display-settings UI. Fold
+  into the live output management work below, since live layout changes make
+  this much easier to hit.
 - **An Xwayland override-redirect popup can render (and steal focus) behind
   a fullscreen window.** `BiomeUnmanaged` surfaces are parented directly to
   `layers.toplevels`, not nested under their owning toplevel, so they don't
   get carried into `layers.fullscreen` on reparent. Not yet confirmed against
   a real app; fix is likely raising unmanaged surfaces above
   `layers.fullscreen` while any toplevel is fullscreen.
+
+## Next up — Live output management
+
+Pulled ahead of Phase 6: output settings are only read from `Biome.conf` at
+startup, so switching monitor layouts means restarting the session. Goal is
+`wlr-output-management-unstable-v1` (compositor side only), so `wlr-randr`
+works and layout presets can be plain shell scripts, same as the old
+xrandr ones. Findings and implementation plan:
+[`docs/output-management-plan.md`](output-management-plan.md).
+
+- ~~Refactor `core/output.cpp` so output geometry/enabled state can change
+  after creation.~~ Done.
+- ~~Add the `wlr_output_manager_v1` handler (test/apply, republish on
+  hotplug/layout change).~~ Done (`core/output_management.cpp`).
+- Window relocation and cursor safety on live changes (subsumes the
+  scale + `x`/`y` cursor-trap known issue).
+
+Forest-side display-settings UI (plugin, optionally via `libkscreen`'s
+backend for this protocol) stays later and is `forest/`-side work.
 
 ## Phase 6 — Session, idle & display completeness
 
@@ -69,9 +90,6 @@ during the 2026-09-07 protocol audit.
   player / presentation app / game suppress idle-notify while running.
   Without it, idle-notify + a lock client will interrupt video playback —
   bundle this with the idle-notify work above, not as an afterthought.
-- **`wlr-output-management-unstable-v1`** — for a live display-settings
-  client. Reuse `libkscreen`'s existing backend for this protocol (has a
-  working KScreen-on-Sway implementation) rather than hand-binding it.
 - **`wlr-output-power-management-unstable-v1`** (DPMS) — replaces the power
   half of `idle_blank.cpp`'s stopgap; distinct protocol from
   output-management above.

@@ -23,3 +23,7 @@ inline constexpr float kSessionLockAbandonedColor[4] = {1.f, 0.f, 0.f, 1.f};
 
 // Creates the ext_session_lock_manager_v1 global and wires its listener.
 void session_lock_init(BiomeServer *server);
+
+// Sends `locked` once no output is still waiting on its first locked frame.
+// No-op if there's no live lock or `locked` already went out.
+void session_lock_maybe_send_locked(BiomeServer *server);

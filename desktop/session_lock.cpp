@@ -190,6 +190,19 @@ static void handle_new_session_lock(wl_listener *listener, void *data) {
     }
 }
 
+void session_lock_maybe_send_locked(BiomeServer *server) {
+    if (!server->session_locked || server->active_lock == nullptr || server->active_lock->locked_sent) {
+        return;
+    }
+    BiomeOutput *output;
+    wl_list_for_each(output, &server->outputs, link) {
+        if (output->pending_lock_frame) {
+            return;
+        }
+    }
+    wlr_session_lock_v1_send_locked(server->active_lock);
+}
+
 void session_lock_init(BiomeServer *server) {
     // server->layers.session_lock already exists (core/layers.cpp, called
     // from output_manager_init before this runs) and starts disabled -

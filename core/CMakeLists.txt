@@ -14,6 +14,8 @@ add_executable(biome
     layers.cpp
     output.h
     output.cpp
+    output_management.h
+    output_management.cpp
     output_config.h
     output_config.cpp
     fade_config.h

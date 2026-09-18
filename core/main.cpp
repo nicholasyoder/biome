@@ -183,6 +183,9 @@ int main(int argc, char *argv[]) {
     // the whole process lifetime with no matching teardown, so it has to be
     // removed explicitly here before wl_display_destroy() runs.
     wl_list_remove(&server.new_session_lock.link);
+    wl_list_remove(&server.output_layout_change.link);
+    wl_list_remove(&server.output_apply.link);
+    wl_list_remove(&server.output_test.link);
     wl_display_destroy(server.display);
     return 0;
 }
