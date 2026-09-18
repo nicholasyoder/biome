@@ -370,8 +370,8 @@ struct BiomeOutput {
     wlr_scene_tree *layer_overlay = nullptr;
     // The area left over after arrange_layers() (desktop/layer_shell.cpp)
     // subtracts every mapped layer surface's exclusive zone from this
-    // output's full box. Not consumed by toplevel placement/maximize yet -
-    // stored here for that follow-up step.
+    // output's full box. Output-local; output_target_box() offsets it into
+    // layout coordinates for window placement/maximize.
     wlr_box usable_area = {};
 };
 

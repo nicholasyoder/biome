@@ -28,3 +28,8 @@ BiomeOutput *biome_output_from_wlr(BiomeServer *server, wlr_output *wlr_output);
 // pending session-lock frame wait.
 void output_set_enabled(BiomeOutput *output, bool enabled,
                         std::optional<std::pair<int, int>> position = std::nullopt);
+
+// Call once after a batch of output changes (apply, unplug, nested resize):
+// moves layer surfaces off disabled outputs, pulls stranded windows back
+// on-screen, and keeps the cursor inside the layout.
+void output_layout_settled(BiomeServer *server);

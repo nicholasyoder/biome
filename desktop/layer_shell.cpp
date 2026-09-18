@@ -21,6 +21,9 @@ struct BiomeLayerSurface {
     wl_list link = {};
     BiomeServer *server = nullptr;
     BiomeOutput *output = nullptr;
+    // Where the client asked to be; `output` differs only while home is
+    // disabled (see layer_shell_reconcile_outputs).
+    BiomeOutput *home = nullptr;
     wlr_layer_surface_v1 *layer_surface = nullptr;
     wlr_scene_layer_surface_v1 *scene_layer_surface = nullptr;
 
@@ -781,7 +784,40 @@ void layer_shell_handle_output_destroy(BiomeOutput *output) {
             // itself is still valid until the caller frees it after this
             // returns.
             wlr_layer_surface_v1_destroy(wrapper->layer_surface);
+        } else if (wrapper->home == output) {
+            // Displaced here while its home was disabled; the home is gone now.
+            wrapper->home = wrapper->output;
         }
+    }
+}
+
+void layer_shell_reconcile_outputs(BiomeServer *server) {
+    BiomeOutput *fallback = nullptr;
+    BiomeOutput *candidate;
+    wl_list_for_each(candidate, &server->outputs, link) {
+        if (!candidate->disabled) {
+            fallback = candidate;
+            break;
+        }
+    }
+
+    BiomeLayerSurface *wrapper;
+    wl_list_for_each(wrapper, &server->layer_surfaces, link) {
+        // Scanout fades cache per-output swapchain/buffer state; retried on the next call.
+        if (wrapper->scanout_fade != nullptr) {
+            continue;
+        }
+        BiomeOutput *desired = !wrapper->home->disabled ? wrapper->home : fallback;
+        if (desired == nullptr || desired == wrapper->output) {
+            continue;
+        }
+        BiomeOutput *previous = wrapper->output;
+        wlr_scene_node_reparent(&wrapper->scene_layer_surface->tree->node,
+            output_layer_tree(desired, wrapper->layer_surface->current.layer));
+        wrapper->output = desired;
+        wrapper->layer_surface->output = desired->wlr;
+        arrange_layers(previous);
+        arrange_layers(desired);
     }
 }
 
@@ -842,6 +878,7 @@ static void handle_new_layer_surface(wl_listener *listener, void *data) {
     auto *wrapper = static_cast<BiomeLayerSurface *>(calloc(1, sizeof(BiomeLayerSurface)));
     wrapper->server = server;
     wrapper->output = output;
+    wrapper->home = output;
     wrapper->layer_surface = layer_surface;
     wrapper->scene_layer_surface = wlr_scene_layer_surface_v1_create(
         output_layer_tree(output, layer_surface->current.layer), layer_surface);

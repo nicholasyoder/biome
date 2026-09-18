@@ -6,11 +6,31 @@
 #include "core/output_management.h"
 #include "desktop/layer_shell.h"
 #include "desktop/session_lock.h"
+#include "desktop/toplevel.h"
 
 #include <ctime>
 
 static void server_new_output(wl_listener *listener, void *data);
 static void output_sync_geometry(BiomeOutput *output);
+
+// A cursor left outside every output (e.g. its output was disabled or moved)
+// would otherwise sit unreachable until the next motion event.
+static void rescue_cursor(BiomeServer *server) {
+    wlr_box layout_box = {};
+    wlr_output_layout_get_box(server->output_layout, nullptr, &layout_box);
+    if (wlr_box_empty(&layout_box) ||
+        wlr_output_layout_output_at(server->output_layout, server->cursor->x, server->cursor->y) != nullptr) {
+        return;
+    }
+    wlr_cursor_warp_closest(server->cursor, nullptr, server->cursor->x, server->cursor->y);
+}
+
+void output_layout_settled(BiomeServer *server) {
+    // Layer surfaces first: their exclusive zones feed the maximize targets.
+    layer_shell_reconcile_outputs(server);
+    toplevels_relocate_for_layout(server);
+    rescue_cursor(server);
+}
 
 static void output_layout_changed(wl_listener *listener, void *data) {
     (void)data;
@@ -126,6 +146,7 @@ static void output_request_state(wl_listener *listener, void *data) {
     wlr_output_commit_state(output->wlr, event->state);
 
     output_sync_geometry(output);
+    output_layout_settled(output->server);
     output_management_schedule_publish(output->server);
 }
 
@@ -140,12 +161,17 @@ static void output_destroy(wl_listener *listener, void *data) {
     // desktop/layer_shell.cpp for the full explanation.
     layer_shell_handle_output_destroy(output);
 
+    // Leaves the layout now (rather than in the layout's own destroy
+    // listener, which runs after this one) so the settle below sees it gone.
+    output_set_enabled(output, false);
+
     wl_list_remove(&output->frame.link);
     wl_list_remove(&output->request_state.link);
     wl_list_remove(&output->destroy.link);
     wl_list_remove(&output->link);
     BiomeServer *server = output->server;
     free(output);
+    output_layout_settled(server);
     output_management_schedule_publish(server);
 }
 

@@ -361,3 +361,9 @@ BiomeToplevel *desktop_toplevel_at_node(wlr_scene_node *node, wlr_surface **surf
 BiomeToplevel *desktop_toplevel_at(
     BiomeServer *server, double lx, double ly,
     wlr_surface **surface, double *sx, double *sy);
+
+// Call once after outputs were enabled/disabled/moved/resized/removed. Pulls
+// any window (and maximize/fullscreen restore box) that no longer overlaps an
+// output onto the nearest one, and re-fits maximized/fullscreen windows to
+// their output's current box. Windows still on an output stay put.
+void toplevels_relocate_for_layout(BiomeServer *server);

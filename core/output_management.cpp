@@ -5,6 +5,10 @@
 #include "core/idle_blank.h"
 #include "core/output.h"
 
+#include <algorithm>
+#include <utility>
+#include <vector>
+
 namespace {
 
 void publish_configuration(BiomeServer *server) {
@@ -24,18 +28,6 @@ void on_publish_idle(void *data) {
     auto *server = static_cast<BiomeServer *>(data);
     server->output_publish_idle = nullptr;
     publish_configuration(server);
-}
-
-// A cursor left outside every output (e.g. its output was disabled or moved)
-// would otherwise sit unreachable until the next motion event.
-void rescue_cursor(BiomeServer *server) {
-    wlr_box layout_box = {};
-    wlr_output_layout_get_box(server->output_layout, nullptr, &layout_box);
-    if (wlr_box_empty(&layout_box) ||
-        wlr_output_layout_output_at(server->output_layout, server->cursor->x, server->cursor->y) != nullptr) {
-        return;
-    }
-    wlr_cursor_warp_closest(server->cursor, nullptr, server->cursor->x, server->cursor->y);
 }
 
 // A batched wlr_backend_test/commit doesn't allocate a buffer the way
@@ -79,6 +71,88 @@ void attach_buffer_if_needed(wlr_backend_output_state *state) {
     wlr_render_pass_submit(pass);
 }
 
+// The layout box a head would occupy once applied. Mirrors
+// wlr_output_effective_resolution (integer truncation included).
+wlr_box head_layout_box(const wlr_output_head_v1_state &state) {
+    int width = 0, height = 0;
+    if (state.mode != nullptr) {
+        width = state.mode->width;
+        height = state.mode->height;
+    } else if (state.custom_mode.width > 0 && state.custom_mode.height > 0) {
+        width = state.custom_mode.width;
+        height = state.custom_mode.height;
+    } else {
+        // Same fallback handle_configuration uses for a mode-less enabled head.
+        wlr_output_mode *mode =
+            state.output->current_mode != nullptr ? state.output->current_mode : wlr_output_preferred_mode(state.output);
+        if (mode != nullptr) {
+            width = mode->width;
+            height = mode->height;
+        }
+    }
+    if (state.transform & 1) {
+        std::swap(width, height);
+    }
+    float scale = state.scale > 0.0f ? state.scale : 1.0f;
+    return wlr_box{state.x, state.y, static_cast<int>(width / scale), static_cast<int>(height / scale)};
+}
+
+// A gap between outputs traps the cursor (wlr_cursor clamps to the closest
+// layout point), so the enabled outputs must form one edge-connected group.
+// Overlap is allowed (mirroring).
+bool layout_is_connected(BiomeServer *server, wlr_output_configuration_v1 *config) {
+    std::vector<wlr_box> boxes;
+    BiomeOutput *output;
+    wl_list_for_each(output, &server->outputs, link) {
+        wlr_output_configuration_head_v1 *configured = nullptr;
+        wlr_output_configuration_head_v1 *head;
+        wl_list_for_each(head, &config->heads, link) {
+            if (head->state.output == output->wlr) {
+                configured = head;
+                break;
+            }
+        }
+        if (configured != nullptr) {
+            if (configured->state.enabled) {
+                boxes.push_back(head_layout_box(configured->state));
+            }
+        } else if (!output->disabled) {
+            wlr_box box = {};
+            wlr_output_layout_get_box(server->output_layout, output->wlr, &box);
+            boxes.push_back(box);
+        }
+    }
+    if (boxes.empty()) {
+        wlr_log(WLR_ERROR, "output-management: configuration leaves no enabled output");
+        return false;
+    }
+
+    std::vector<bool> reached(boxes.size(), false);
+    std::vector<size_t> pending = {0};
+    reached[0] = true;
+    while (!pending.empty()) {
+        const wlr_box a = boxes[pending.back()];
+        pending.pop_back();
+        for (size_t i = 0; i < boxes.size(); ++i) {
+            if (reached[i]) {
+                continue;
+            }
+            const wlr_box &b = boxes[i];
+            int overlap_w = std::min(a.x + a.width, b.x + b.width) - std::max(a.x, b.x);
+            int overlap_h = std::min(a.y + a.height, b.y + b.height) - std::max(a.y, b.y);
+            if ((overlap_w > 0 && overlap_h >= 0) || (overlap_h > 0 && overlap_w >= 0)) {
+                reached[i] = true;
+                pending.push_back(i);
+            }
+        }
+    }
+    if (std::find(reached.begin(), reached.end(), false) != reached.end()) {
+        wlr_log(WLR_ERROR, "output-management: layout has a gap between outputs; positions must be edge-adjacent");
+        return false;
+    }
+    return true;
+}
+
 void handle_configuration(BiomeServer *server, wlr_output_configuration_v1 *config, bool commit) {
     // Not input, so the idle timer wouldn't wake the outputs itself, and a
     // modeset on a blanked DRM connector fails.
@@ -88,7 +162,7 @@ void handle_configuration(BiomeServer *server, wlr_output_configuration_v1 *conf
 
     size_t states_len = 0;
     wlr_backend_output_state *states = wlr_output_configuration_v1_build_state(config, &states_len);
-    bool ok = states != nullptr;
+    bool ok = states != nullptr && layout_is_connected(server, config);
 
     for (size_t i = 0; ok && i < states_len; ++i) {
         wlr_output_state &base = states[i].base;
@@ -127,7 +201,7 @@ void handle_configuration(BiomeServer *server, wlr_output_configuration_v1 *conf
                 output_set_enabled(output, false);
             }
         }
-        rescue_cursor(server);
+        output_layout_settled(server);
     }
 
     if (states != nullptr) {

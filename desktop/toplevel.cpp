@@ -221,6 +221,20 @@ static wlr_output *output_with_largest_overlap(BiomeServer *server, const wlr_bo
     return best;
 }
 
+// Clamps a visible-content top-left so the *decorated* frame (not just the
+// content's top-left) stays inside `target`.
+static void clamp_content_into_box(BiomeToplevel *toplevel, const wlr_box &target, int width, int height,
+                                   int *vis_x, int *vis_y) {
+    int border = decoration_border_width(toplevel, false);
+    int border_right = decoration_border_right_width(toplevel, false);
+    int titlebar = decoration_titlebar_height(toplevel, false);
+    int border_bottom = decoration_border_bottom_height(toplevel, false);
+    int min_x = target.x + border;
+    int min_y = target.y + titlebar;
+    *vis_x = std::clamp(*vis_x, min_x, std::max(min_x, target.x + target.width - width - border_right));
+    *vis_y = std::clamp(*vis_y, min_y, std::max(min_y, target.y + target.height - height - border_bottom));
+}
+
 void place_new_toplevel(BiomeToplevel *toplevel) {
     BiomeServer *server = toplevel->server;
 
@@ -267,20 +281,9 @@ void place_new_toplevel(BiomeToplevel *toplevel) {
         vis_y = target.y + (target.height - height) / 2 + cascade;
         toplevel->workspace = server->active_workspace;
 
-        // Clamp so the *decorated* frame (content plus border/titlebar, not
-        // just the content's top-left) stays on this output - otherwise a
-        // window whose remembered/default content size approaches the
-        // output's size ends up with its titlebar and/or trailing border
-        // pushed off-screen even though its content technically still
-        // starts on-screen.
-        int border = decoration_border_width(toplevel, false);
-        int border_right = decoration_border_right_width(toplevel, false);
-        int titlebar = decoration_titlebar_height(toplevel, false);
-        int border_bottom = decoration_border_bottom_height(toplevel, false);
-        int min_x = target.x + border;
-        int min_y = target.y + titlebar;
-        vis_x = std::clamp(vis_x, min_x, std::max(min_x, target.x + target.width - width - border_right));
-        vis_y = std::clamp(vis_y, min_y, std::max(min_y, target.y + target.height - height - border_bottom));
+        // A remembered/default size near the output's size would otherwise
+        // push the titlebar or trailing border off-screen.
+        clamp_content_into_box(toplevel, target, width, height, &vis_x, &vis_y);
     }
 
     // A freshly placed toplevel is never already maximized.
@@ -334,6 +337,24 @@ static wlr_box maximize_target_box(BiomeToplevel *toplevel) {
     return content;
 }
 
+// Moves/resizes to `target` (visible content box) under the toplevel's
+// current maximized/fullscreen metrics. For xdg the node position waits for
+// the configure ack - see reposition_pending's declaration; the caller must
+// store the serial from its wlr_xdg_toplevel_set_* call.
+static void apply_target_box(BiomeToplevel *toplevel, const wlr_box &target) {
+    int node_x = target.x - decoration_border_width(toplevel, toplevel->maximized);
+    int node_y = target.y - decoration_titlebar_height(toplevel, toplevel->maximized);
+    if (toplevel->type == BiomeToplevelType::Xdg) {
+        toplevel->reposition_pending = true;
+        toplevel->reposition_pending_x = node_x;
+        toplevel->reposition_pending_y = node_y;
+    } else {
+        wlr_scene_node_set_position(&toplevel->scene_tree->node, node_x, node_y);
+    }
+    toplevel_set_size(toplevel, target.x, target.y, target.width, target.height);
+    toplevel_sync_position(toplevel, target.x, target.y);
+}
+
 void set_toplevel_maximized(BiomeToplevel *toplevel, bool maximized) {
     if (toplevel->maximized == maximized) {
         return;
@@ -361,19 +382,7 @@ void set_toplevel_maximized(BiomeToplevel *toplevel, bool maximized) {
         toplevel->maximized = false;
     }
 
-    int node_x = target.x - decoration_border_width(toplevel, toplevel->maximized);
-    int node_y = target.y - decoration_titlebar_height(toplevel, toplevel->maximized);
-    if (toplevel->type == BiomeToplevelType::Xdg) {
-        // Picked up by xdg_toplevel_commit once this request's configure is
-        // acked - see reposition_pending's declaration.
-        toplevel->reposition_pending = true;
-        toplevel->reposition_pending_x = node_x;
-        toplevel->reposition_pending_y = node_y;
-    } else {
-        wlr_scene_node_set_position(&toplevel->scene_tree->node, node_x, node_y);
-    }
-    toplevel_set_size(toplevel, target.x, target.y, target.width, target.height);
-    toplevel_sync_position(toplevel, target.x, target.y);
+    apply_target_box(toplevel, target);
 
     if (toplevel->type == BiomeToplevelType::Xdg) {
         // wlr_xdg_toplevel_set_maximized schedules (or joins an
@@ -448,18 +457,7 @@ void set_toplevel_fullscreen(BiomeToplevel *toplevel, bool fullscreen) {
         wlr_scene_node_reparent(&toplevel->scene_tree->node, toplevel->server->layers.toplevels);
     }
 
-    int node_x = target.x - decoration_border_width(toplevel, toplevel->maximized);
-    int node_y = target.y - decoration_titlebar_height(toplevel, toplevel->maximized);
-    if (toplevel->type == BiomeToplevelType::Xdg) {
-        // See reposition_pending's declaration.
-        toplevel->reposition_pending = true;
-        toplevel->reposition_pending_x = node_x;
-        toplevel->reposition_pending_y = node_y;
-    } else {
-        wlr_scene_node_set_position(&toplevel->scene_tree->node, node_x, node_y);
-    }
-    toplevel_set_size(toplevel, target.x, target.y, target.width, target.height);
-    toplevel_sync_position(toplevel, target.x, target.y);
+    apply_target_box(toplevel, target);
 
     if (toplevel->type == BiomeToplevelType::Xdg) {
         // See the maximized case's comment above.
@@ -469,6 +467,88 @@ void set_toplevel_fullscreen(BiomeToplevel *toplevel, bool fullscreen) {
     }
     render_toplevel_decoration(toplevel);
     foreign_toplevel_sync_state(toplevel);
+}
+
+// The enabled output nearest (cx, cy), or nullptr if none is enabled.
+static wlr_output *nearest_output(BiomeServer *server, double cx, double cy) {
+    double x, y;
+    wlr_output_layout_closest_point(server->output_layout, nullptr, cx, cy, &x, &y);
+    return wlr_output_layout_output_at(server->output_layout, x, y);
+}
+
+// If the decorated frame around `content` (a visible-content box) overlaps no
+// output, clamps it into the output nearest its center. Returns whether it moved.
+static bool rescue_content_box(BiomeToplevel *toplevel, wlr_box *content, bool maximized_metrics) {
+    BiomeServer *server = toplevel->server;
+    int left = decoration_border_width(toplevel, maximized_metrics);
+    int top = decoration_titlebar_height(toplevel, maximized_metrics);
+    wlr_box frame = {
+        content->x - left,
+        content->y - top,
+        left + content->width + decoration_border_right_width(toplevel, maximized_metrics),
+        top + content->height + decoration_border_bottom_height(toplevel, maximized_metrics),
+    };
+    if (output_with_largest_overlap(server, frame) != nullptr) {
+        return false;
+    }
+    wlr_box target = output_target_box(server, nearest_output(server, frame.x + frame.width / 2.0,
+                                                              frame.y + frame.height / 2.0));
+    if (wlr_box_empty(&target)) {
+        return false;
+    }
+    clamp_content_into_box(toplevel, target, content->width, content->height, &content->x, &content->y);
+    return true;
+}
+
+void toplevels_relocate_for_layout(BiomeServer *server) {
+    BiomeToplevel *toplevel;
+    wl_list_for_each(toplevel, &server->toplevels, link) {
+        if (!toplevel->placed) {
+            continue;
+        }
+        wlr_box geo;
+        toplevel_get_geometry(toplevel, &geo);
+        int left = decoration_border_width(toplevel, toplevel->maximized);
+        int top = decoration_titlebar_height(toplevel, toplevel->maximized);
+        wlr_box content = {static_cast<int>(toplevel->scene_tree->node.x) + left,
+                           static_cast<int>(toplevel->scene_tree->node.y) + top, geo.width, geo.height};
+
+        bool changed = rescue_content_box(toplevel, &content, toplevel->maximized);
+        if (changed) {
+            wlr_scene_node_set_position(&toplevel->scene_tree->node, content.x - left, content.y - top);
+            toplevel_sync_position(toplevel, content.x, content.y);
+        }
+        if (toplevel->maximized) {
+            rescue_content_box(toplevel, &toplevel->restore_box, false);
+        }
+        if (toplevel->fullscreen) {
+            rescue_content_box(toplevel, &toplevel->fullscreen_restore_box, false);
+        }
+
+        // Fullscreen wins over maximized, as in set_toplevel_fullscreen.
+        wlr_box target = {};
+        if (toplevel->fullscreen) {
+            target = fullscreen_target_box(toplevel);
+        } else if (toplevel->maximized) {
+            target = maximize_target_box(toplevel);
+        }
+        if (!wlr_box_empty(&target) &&
+            (target.x != content.x || target.y != content.y || target.width != geo.width ||
+             target.height != geo.height)) {
+            apply_target_box(toplevel, target);
+            if (toplevel->type == BiomeToplevelType::Xdg) {
+                toplevel->reposition_pending_serial = toplevel->fullscreen
+                    ? wlr_xdg_toplevel_set_fullscreen(toplevel->xdg_toplevel, true)
+                    : wlr_xdg_toplevel_set_maximized(toplevel->xdg_toplevel, true);
+            }
+            render_toplevel_decoration(toplevel);
+            changed = true;
+        }
+
+        if (changed && toplevel == server->grabbed_toplevel) {
+            reset_cursor_mode(server);
+        }
+    }
 }
 
 void set_toplevel_minimized(BiomeToplevel *toplevel, bool minimized) {

@@ -46,3 +46,8 @@ bool update_layer_surface_fades(BiomeOutput *output);
 // its own destroy listener fires later (e.g. its client disconnecting),
 // which then dereferences freed memory in arrange_layers().
 void layer_shell_handle_output_destroy(BiomeOutput *output);
+
+// Moves layer surfaces bound to a disabled output onto the first enabled one,
+// and back to their original output once it is enabled again. Idempotent.
+// Skips surfaces mid scanout-fade (transient); they move on a later call.
+void layer_shell_reconcile_outputs(BiomeServer *server);
