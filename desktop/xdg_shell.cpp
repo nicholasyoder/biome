@@ -196,12 +196,18 @@ static void xdg_toplevel_request_resize(wl_listener *listener, void *data) {
 }
 
 // Maximize and unmaximize both go through this one signal, distinguished by
-// requested.maximized. Ignored before the initial commit, letting the
-// client finish its initial setup.
+// requested.maximized. Ignored before place_new_toplevel() has run (a client
+// may call set_maximized() before its first commit, to restore previous
+// window state) - base->initialized is true by then but position/geometry
+// aren't, so maximize_target_box() would find no output to overlap and fall
+// back to output_target_box()'s full-combined-layout-extents behavior,
+// spanning every monitor. toplevel_map() re-reads requested.maximized itself
+// once placement has happened, so this is safe to just skip - not a request
+// to lose.
 static void xdg_toplevel_request_maximize(wl_listener *listener, void *data) {
     (void)data;
     BiomeToplevel *toplevel = wl_container_of(listener, toplevel, request_maximize);
-    if (!toplevel->xdg_toplevel->base->initialized) {
+    if (!toplevel->placed) {
         return;
     }
     bool requested = toplevel->xdg_toplevel->requested.maximized;
@@ -214,13 +220,14 @@ static void xdg_toplevel_request_maximize(wl_listener *listener, void *data) {
     }
 }
 
-// Same shape as xdg_toplevel_request_maximize just above: a configure reply
-// is required even when the request no-ops because it asks for the state
-// the toplevel is already in.
+// Same shape as xdg_toplevel_request_maximize just above, including the
+// !placed guard (fullscreen_target_box() has the same no-output-to-overlap
+// failure mode pre-placement) - a configure reply is required even when the
+// request no-ops because it asks for the state the toplevel is already in.
 static void xdg_toplevel_request_fullscreen(wl_listener *listener, void *data) {
     (void)data;
     BiomeToplevel *toplevel = wl_container_of(listener, toplevel, request_fullscreen);
-    if (!toplevel->xdg_toplevel->base->initialized) {
+    if (!toplevel->placed) {
         return;
     }
     bool requested = toplevel->xdg_toplevel->requested.fullscreen;
