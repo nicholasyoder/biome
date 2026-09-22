@@ -1,0 +1,17 @@
+Source: biome
+Section: x11
+Priority: optional
+Maintainer: Nicholas Yoder <nicholasyoder@proton.me>
+Build-Depends: debhelper-compat (= 13), cmake, pkgconf, qt6-base-dev, libwlroots-0.18-dev, libwayland-dev, libwayland-bin, wayland-protocols, libxkbcommon-dev, libglib2.0-dev
+Standards-Version: 4.5.1
+Homepage: https://github.com/nicholasyoder/biome
+Rules-Requires-Root: no
+
+Package: biome
+Architecture: amd64
+Depends: ${shlibs:Depends}, ${misc:Depends}
+Recommends: xdg-desktop-portal
+Description: fixed-policy Wayland compositor for Forest
+ Biome is an opinionated, single-policy Wayland compositor built on
+ wlroots, used as Forest's compositor. It is not user-configurable
+ like sway or river; policy is fixed in code.

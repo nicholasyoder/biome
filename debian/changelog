@@ -1,0 +1,5 @@
+biome (0.1.0) unstable; urgency=medium
+
+  * Initial Debian packaging
+
+ -- Nicholas Yoder <nicholasyoder@proton.me>  Tue, 22 Sep 2026 09:49:22 -0400

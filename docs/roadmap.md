@@ -38,10 +38,6 @@ or re-scoped — not by accumulating session logs or design discussion.
 Carried over from `history.md`'s former "Open risks" section — still open,
 not resolved by anything since:
 
-- **No Debian packaging.** `biome` has no `debian/` directory at all yet, so
-  `forest/debian/control` still can't `Depends: biome` (it still wrongly
-  lists X11-era deps). Needs a dedicated packaging pass (control file,
-  install rules, changelog).
 - **Output layouts with a gap can still trap the cursor in two paths.**
   Live `wlr-randr` applies are validated and rejected
   (`layout_is_connected()`), but (1) unplugging a *middle* monitor can't be
@@ -55,6 +51,17 @@ not resolved by anything since:
   get carried into `layers.fullscreen` on reparent. Not yet confirmed against
   a real app; fix is likely raising unmanaged surfaces above
   `layers.fullscreen` while any toplevel is fullscreen.
+
+## Debian packaging — done (2026-09-22)
+
+`debian/` added (control, rules, changelog, copyright, native source
+format). Single binary package `biome`; `${shlibs:Depends}` picks up
+wlroots/Qt6/glib/wayland/xkbcommon automatically, `Recommends:
+xdg-desktop-portal` since biome only hosts the `GlobalShortcuts` portal
+backend rather than calling it. Includes a minimal `biome(1)` man page.
+Verified with a local `dpkg-buildpackage -us -uc -b` + `lintian` pass (clean).
+`forest/debian/control` now `Depends: biome`. Install/runtime behavior itself
+still wants a real VM test, not just a build-time check.
 
 ## Live output management — done (2026-09-18)
 

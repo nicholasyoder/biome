@@ -4,5 +4,6 @@
 .claude/
 .cache/
 build/
+obj-*-linux-gnu/
 audit_*/
 CMakeLists.txt.user

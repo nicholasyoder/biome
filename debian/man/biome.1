@@ -1,0 +1,36 @@
+.TH BIOME 1 "September 2026" "biome" "Biome Wayland compositor"
+.SH NAME
+biome \- fixed-policy Wayland compositor for Forest
+.SH SYNOPSIS
+.B biome
+.RB [ \-s
+.IR "startup command" ]
+.br
+.B biome
+.B \-h
+.SH DESCRIPTION
+.B biome
+is an opinionated, single-policy Wayland compositor built on wlroots. It is
+not user-configurable like sway or river; window and output policy is fixed
+in code. It owns the seat and DRM output and is normally the top-level
+process of a session.
+.SH OPTIONS
+.TP
+.BI \-s " command"
+Fork and exec
+.I command
+as a child process once Biome's Wayland socket is live, inheriting
+.BR WAYLAND_DISPLAY .
+Used to start a session's own process (see
+.BR forest-session (1)).
+.TP
+.B \-h
+Print usage and exit.
+.SH FILES
+.I ~/.config/Forest/Biome.conf
+.RS
+Per-user output layout and fade settings.
+.RE
+.SH SEE ALSO
+.BR forest (1),
+.BR forest-session (1)
