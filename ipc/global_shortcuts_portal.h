@@ -10,12 +10,13 @@
 // "GlobalShortcuts portal architecture (Workstream C)" section for the full
 // research behind this choice.
 //
-// Scope for this first prototype step (Biome-side only, no forest/ changes,
-// no portals.conf/xdg-desktop-portal system wiring yet - see the plan doc):
-// CreateSession/BindShortcuts/ListShortcuts, auto-accepting every requested
-// shortcut with no confirmation dialog (matches Biome's fixed-policy
-// identity - there's no shortcut-picker UI and none is planned).
-// ConfigureShortcuts replies "not supported". Trigger parsing and the
+// CreateSession/BindShortcuts/ListShortcuts are implemented, auto-accepting
+// every requested shortcut with no confirmation dialog (matches Biome's
+// fixed-policy identity - there's no shortcut-picker UI and none is
+// planned). ConfigureShortcuts replies "not supported". System wiring
+// (data/xdg-desktop-portal/biome-portals.conf and portals/biome.portal,
+// installed by the top-level CMakeLists.txt) is done - see
+// docs/architecture-notes.md's Workstream C section. Trigger parsing and the
 // actual key-press matching/dispatch live in core/keybindings.h, shared
 // with Biome's own built-in compositor keybindings - this class only
 // forwards BindShortcuts requests into that registry and re-emits

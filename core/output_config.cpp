@@ -99,7 +99,7 @@ std::unordered_map<std::string, OutputConfig> load_output_configs() {
     // "<type>-<index>" (eDP-1, HDMI-A-1, DP-1, ...) per the kernel's
     // connector-type table, and the nested dev backends use "WL-<n>"/
     // "X11-<n>".
-    QSettings settings("Forest", "Biome");
+    QSettings settings("Biome", "Biome");
     settings.beginGroup("Outputs");
     const QStringList connectors = settings.childGroups();
     for (const QString &connector : connectors) {

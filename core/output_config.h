@@ -2,8 +2,8 @@
 //
 // Bridge between the Qt/QSettings-based output config file and
 // core/output.cpp - output_config.cpp is the only file in core/ that
-// includes Qt headers. Config lives at ~/.config/Forest/Biome.conf
-// (QSettings("Forest", "Biome")), group "Outputs" with a subgroup per
+// includes Qt headers. Config lives at ~/.config/Biome/Biome.conf
+// (QSettings("Biome", "Biome")), group "Outputs" with a subgroup per
 // output keyed by the wlr connector name (e.g. "eDP-1", "HDMI-A-1") - same
 // beginGroup()-per-item convention forest itself uses (e.g. panel plugins).
 // On disk that's a single [Outputs] section with backslash-escaped keys,
@@ -35,7 +35,7 @@ struct OutputConfig {
     wl_output_transform transform = WL_OUTPUT_TRANSFORM_NORMAL;
 };
 
-// Reads ~/.config/Forest/Biome.conf once and returns per-connector
+// Reads ~/.config/Biome/Biome.conf once and returns per-connector
 // overrides keyed by wlr connector name. A connector absent from the file,
 // or with individually malformed fields, gets OutputConfig{}'s defaults for
 // the affected field(s) (a warning is logged for malformed fields, see

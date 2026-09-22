@@ -31,7 +31,7 @@ std::unordered_set<std::string> parse_namespace_list(const QVariant &raw) {
 } // namespace
 
 FadeConfig load_fade_config() {
-    QSettings settings("Forest", "Biome");
+    QSettings settings("Biome", "Biome");
     settings.beginGroup("LayerShell");
     FadeConfig config;
     config.fading_namespaces = parse_namespace_list(settings.value("fadingNamespaces"));

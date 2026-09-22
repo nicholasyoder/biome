@@ -124,13 +124,13 @@ biome/
   CMakeLists.txt
   cmake/           # wayland-scanner protocol codegen (mirrors forest/cmake/ForestDeps.cmake)
   protocol/        # xdg-shell, wlr-layer-shell, xdg-decoration, foreign-toplevel, etc.
-  core/            # event loop, backend/output/input setup, scene graph, seat
+  core/            # event loop, backend/output/input setup, scene graph, seat,
+                   # output-management (wlr-output-management-unstable-v1), main.cpp
   desktop/         # xdg-shell + XWayland surface management, window state, focus
   decoration/      # Qt-based offscreen title bar / border renderer
   ipc/             # DBus service under org.biome (kept separate from org.forest —
                    # see Decoupling goal), implements org.freedesktop.portal.GlobalShortcuts
-                   # for hotkeys, output-management wiring, etc.
-  main.cpp
+                   # for hotkeys, cursor theme push, toplevel<->workspace linkage
 ```
 
 ## Protocols needed, mapped to Forest components
@@ -219,7 +219,7 @@ upstream GTK4 bug in `gdk_wayland_toplevel_set_decorated()` that silently
 drops the request for exactly the HeaderBar case.
 
 A monitor's mode/scale/position/rotation can be pinned via a static,
-hand-edited `~/.config/Forest/Biome.conf` (`QSettings("Forest", "Biome")` —
+hand-edited `~/.config/Biome/Biome.conf` (`QSettings("Biome", "Biome")` —
 see `core/output_config.h`), read once at startup. This is *not* the
 `wlr-output-management-unstable-v1` Wayland protocol listed in the table
 above — that protocol is what would let a *running* display-settings client
