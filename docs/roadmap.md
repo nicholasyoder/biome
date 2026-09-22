@@ -77,6 +77,14 @@ Already-scoped work (was Phase 6 in the old plan), plus idle-inhibit found
 during the 2026-09-07 protocol audit.
 
 - **Screenshots** — `wlr-screencopy-unstable-v1` or `ext-image-copy-capture-v1`.
+- **Screen sharing (portal `ScreenCast`)** — not urgent, but should stay tracked.
+  Needs `org.freedesktop.impl.portal.ScreenCast` added to biome's portal
+  (currently `data/xdg-desktop-portal/portals/biome.portal` only declares
+  `GlobalShortcuts`) implemented via the screencopy protocol above + PipeWire.
+  Confirmed 2026-09-22: no compositor-side capture protocol and no ScreenCast
+  portal backend at all currently (system has `xdg-desktop-portal-gtk`/`-lxqt`
+  but not `-wlr`), so Zoom-style screen share has zero path to work under
+  biome today.
 - **`ext-idle-notify-v1`** — drives idle timeout; replaces `core/idle_blank.cpp`'s
   hardcoded stopgap (delete that module once this lands, per its own
   `STOPGAP(idle-blank)` comments). Needed before a lock-screen client is
