@@ -21,6 +21,8 @@ add_library(biome_desktop STATIC
     session_lock.cpp
     layer_shell.h
     layer_shell.cpp
+    layer_shell_internal.h
+    layer_shell_fade.cpp
     foreign_toplevel.h
     foreign_toplevel.cpp
     ext_workspace.h
