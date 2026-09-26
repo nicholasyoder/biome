@@ -51,6 +51,18 @@ not resolved by anything since:
   get carried into `layers.fullscreen` on reparent. Not yet confirmed against
   a real app; fix is likely raising unmanaged surfaces above
   `layers.fullscreen` while any toplevel is fullscreen.
+- **A client already mapped on an output keeps stale fractional-scale info
+  after a live rescale.** `wlr_scene`'s `handle_scene_buffer_outputs_update()`
+  (wlroots `types/scene/surface.c`) only re-sends `wp-fractional-scale-v1` +
+  `wl_surface.preferred_buffer_scale` when a surface's *set* of overlapping
+  outputs changes, not when an already-overlapped output's own `scale`
+  changes (e.g. a live `wlr-randr --scale` apply via `output_management.cpp`,
+  found 2026-09-26 debugging a FreeCAD cursor-stutter report). A window
+  opened before the rescale never gets renegotiated at its new scale, only
+  one opened after. No fix designed yet - likely needs biome to force a
+  per-surface update (mirroring wlroots' own `force` param on the
+  outputs-update path) for every surface already on an output whenever that
+  output's scale changes.
 
 ## Debian packaging — done (2026-09-22)
 
