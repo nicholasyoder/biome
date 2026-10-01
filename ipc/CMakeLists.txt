@@ -3,8 +3,8 @@ find_package(Qt6 REQUIRED COMPONENTS Core DBus)
 set(CMAKE_AUTOMOC ON)
 
 add_library(biome_ipc STATIC
-    cursor_bridge.h
-    cursor_bridge.cpp
+    cursor_theme_watcher.h
+    cursor_theme_watcher.cpp
     global_shortcuts_portal.h
     global_shortcuts_portal.cpp
     workspace_bridge.h

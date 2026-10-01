@@ -24,7 +24,7 @@ void cursor_init(BiomeServer *server);
 // cursors, XWayland's default) and cursor-shape-v1 clients see this take
 // effect immediately - a client that loaded its own cursor images at
 // startup keeps them until restarted, which is a Wayland-wide limitation,
-// not something this can work around. Called from ipc/cursor_bridge.cpp.
+// not something this can work around. Called from ipc/cursor_theme_watcher.cpp.
 void cursor_reload_theme(BiomeServer *server, const char *theme, uint32_t size);
 
 void reset_cursor_mode(BiomeServer *server);

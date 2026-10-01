@@ -159,7 +159,7 @@ struct BiomeServer {
     // cursor-shape-v1 - lets a client (Qt 6.6+'s QtWayland client plugin
     // among others) ask for a named CSS-style cursor shape instead of
     // rendering its own image, so a live cursor_mgr reload (ipc/
-    // cursor_bridge.h) reaches it immediately, unlike clients that load and
+    // cursor_theme_watcher.h) reaches it immediately, unlike clients that load and
     // cache their own Xcursor theme once at startup.
     wlr_cursor_shape_manager_v1 *cursor_shape_manager = nullptr;
     wl_listener request_set_shape = {};

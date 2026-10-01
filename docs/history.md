@@ -148,7 +148,7 @@ biome/
 | Display settings (multi-monitor) *(Phase 6 — net-new, not a port)* | `wlr-output-management-unstable-v1` |
 | Global hotkeys (currently `qxtglobalshortcut`/`XGrabKey`) | No Wayland equivalent exists (by design) — Biome implements `org.freedesktop.portal.GlobalShortcuts`; Forest's hotkey client targets that same portal interface rather than a Biome-specific one (see Decoupling goal) |
 | System tray | Already DBus/StatusNotifierItem-based — no change needed |
-| Cursor theme / numlock | Numlock: keyboard state, no protocol needed. Cursor rendering: `wlr_xcursor_manager` + `cursor-shape-v1`; live theme-change push uses a Biome-specific `org.biome.Cursor` DBus interface (`ipc/cursor_bridge.h`) since no protocol covers pushing a cursor-theme change to a running compositor — see the Phase 5 cursor note below |
+| Cursor theme / numlock | Numlock: keyboard state, no protocol needed. Cursor rendering: `wlr_xcursor_manager` + `cursor-shape-v1`; live theme changes are picked up by watching the freedesktop `~/.icons/default/index.theme` (`ipc/cursor_theme_watcher.h`; replaced an earlier bespoke `org.biome.Cursor` D-Bus interface) — see the Phase 5 cursor note below |
 
 ## Phased roadmap
 
