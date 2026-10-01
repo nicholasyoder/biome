@@ -18,11 +18,10 @@
 // Creates the wlr_layer_shell_v1 global and wires its new_surface listener.
 void layer_shell_init(BiomeServer *server);
 
-// Re-arranges every mapped layer surface on this output: iterates its four
-// layers (overlay -> top -> bottom -> background, so a higher layer's
-// exclusive-zone claim is resolved against the still-full area before a
-// lower one's), calling wlr_scene_layer_surface_v1_configure() for each and
-// leaving the leftover box in output->usable_area. Called on output
+// Re-arranges every mapped layer surface on this output: exclusive-zone
+// surfaces first (overlay -> background), then the rest against what's left,
+// calling wlr_scene_layer_surface_v1_configure() for each and leaving the
+// leftover box in output->usable_area. Called on output
 // add/resolution-change (core/output.cpp) and on any layer surface's own
 // commit/map/unmap/destroy (this file).
 void arrange_layers(BiomeOutput *output);

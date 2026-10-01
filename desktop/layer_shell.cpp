@@ -102,22 +102,30 @@ void arrange_layers(BiomeOutput *output) {
         ZWLR_LAYER_SHELL_V1_LAYER_BOTTOM,
         ZWLR_LAYER_SHELL_V1_LAYER_BACKGROUND,
     };
-    for (uint32_t layer : kLayersMostToLeastPriority) {
-        BiomeLayerSurface *wrapper;
-        wl_list_for_each(wrapper, &output->server->layer_surfaces, link) {
-            if (wrapper->output != output || wrapper->layer_surface->current.layer != layer) {
-                continue;
+    // Two passes (as sway): every exclusive-zone claim across all layers is
+    // resolved before any non-exclusive surface is placed, so e.g. an
+    // overlay-layer popup still avoids a top-layer panel's reserved strip.
+    for (bool exclusive_pass : {true, false}) {
+        for (uint32_t layer : kLayersMostToLeastPriority) {
+            BiomeLayerSurface *wrapper;
+            wl_list_for_each(wrapper, &output->server->layer_surfaces, link) {
+                if (wrapper->output != output || wrapper->layer_surface->current.layer != layer) {
+                    continue;
+                }
+                // A surface only becomes `initialized` after its first real
+                // commit - configuring it earlier (e.g. right at creation, before
+                // any commit) sends a bogus default-state box that the client can
+                // briefly render before its real commit corrects it. Skipping
+                // here just means "wait for that"; handle_layer_surface_commit()
+                // re-arranges once real state lands.
+                if (!wrapper->layer_surface->initialized) {
+                    continue;
+                }
+                if ((wrapper->layer_surface->current.exclusive_zone > 0) != exclusive_pass) {
+                    continue;
+                }
+                wlr_scene_layer_surface_v1_configure(wrapper->scene_layer_surface, &full_area, &usable_area);
             }
-            // A surface only becomes `initialized` after its first real
-            // commit - configuring it earlier (e.g. right at creation, before
-            // any commit) sends a bogus default-state box that the client can
-            // briefly render before its real commit corrects it. Skipping
-            // here just means "wait for that"; handle_layer_surface_commit()
-            // re-arranges once real state lands.
-            if (!wrapper->layer_surface->initialized) {
-                continue;
-            }
-            wlr_scene_layer_surface_v1_configure(wrapper->scene_layer_surface, &full_area, &usable_area);
         }
     }
     output->usable_area = usable_area;
