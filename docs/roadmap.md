@@ -63,6 +63,15 @@ not resolved by anything since:
   per-surface update (mirroring wlroots' own `force` param on the
   outputs-update path) for every surface already on an output whenever that
   output's scale changes.
+- **Layer-surface keyboard focus ignores `keyboard_interactivity`.** Clicking
+  any non-toplevel surface grants focus (`core/cursor.cpp`), even a layer
+  surface that asked for `NONE`; and map grants focus to anything not `NONE`
+  (`desktop/layer_shell.cpp`), so an `on_demand` surface (Forest's panel)
+  steals focus every time it maps, e.g. on each panel rebuild after a screen
+  change. Spec: `NONE` never gets focus, `on_demand` only on click, only
+  `exclusive` on map. Land *after* Forest switches its desktop-icons surface
+  to `on_demand` (Forest roadmap), which currently relies on this to get
+  keyboard input.
 
 ## Debian packaging — done (2026-09-22)
 
