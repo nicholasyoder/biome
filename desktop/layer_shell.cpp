@@ -131,6 +131,16 @@ void arrange_layers(BiomeOutput *output) {
     output->usable_area = usable_area;
 }
 
+// Re-fits maximized/fullscreen windows when a client's exclusive zone moved
+// usable_area. Output changes re-fit via output_layout_settled() instead.
+static void arrange_layers_refitting(BiomeOutput *output) {
+    wlr_box before = output->usable_area;
+    arrange_layers(output);
+    if (!wlr_box_equal(&before, &output->usable_area)) {
+        toplevels_relocate_for_layout(output->server);
+    }
+}
+
 // Layout-relevant state only - a plain content commit (a client just
 // repainting, e.g. every frame a wallpaper or panel widget redraws) leaves
 // all of these bits clear and must not retrigger arrange_layers().
@@ -178,7 +188,7 @@ static void handle_layer_surface_commit(wl_listener *listener, void *data) {
             output_layer_tree(wrapper->output, layer_surface->current.layer));
     }
 
-    arrange_layers(wrapper->output);
+    arrange_layers_refitting(wrapper->output);
 }
 
 static void handle_layer_surface_map(wl_listener *listener, void *data) {
@@ -194,7 +204,7 @@ static void handle_layer_surface_map(wl_listener *listener, void *data) {
     // takes effect promptly - handle_layer_surface_commit() above is now
     // gated on layout-relevant committed state and won't reliably re-arrange
     // on its own right at this exact point.
-    arrange_layers(wrapper->output);
+    arrange_layers_refitting(wrapper->output);
 
     switch (layer_surface_fade_kind(wrapper->server, layer_surface)) {
     case FadeKind::Opacity: {
@@ -305,7 +315,7 @@ static void handle_layer_surface_destroy(wl_listener *listener, void *data) {
     wl_list_remove(&wrapper->new_popup.link);
     free(wrapper);
 
-    arrange_layers(output);
+    arrange_layers_refitting(output);
 }
 
 void layer_shell_handle_output_destroy(BiomeOutput *output) {
