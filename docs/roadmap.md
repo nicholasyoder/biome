@@ -72,6 +72,13 @@ not resolved by anything since:
   `exclusive` on map. Land *after* Forest switches its desktop-icons surface
   to `on_demand` (Forest roadmap), which currently relies on this to get
   keyboard input.
+- **Non-grabbing layer-shell popups get keyboard focus.**
+  `popup_wants_keyboard_focus()` (`desktop/xdg_shell.cpp`, also used by
+  `core/cursor.cpp`) focuses any popup chain rooted on a layer surface, a
+  Forest-shaped exception for `panel-library/popup.h`'s non-grabbing popups.
+  Per spec only grabbing popups get focus. Drop the layer-shell branch *after*
+  Forest moves those popups off it (Forest roadmap), or panel popup keyboard
+  input breaks.
 
 ## Debian packaging — done (2026-09-22)
 
