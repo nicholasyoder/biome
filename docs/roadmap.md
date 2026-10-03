@@ -105,6 +105,9 @@ Already-scoped work (was Phase 6 in the old plan), plus idle-inhibit found
 during the 2026-09-07 protocol audit.
 
 - **Screenshots** — `wlr-screencopy-unstable-v1` or `ext-image-copy-capture-v1`.
+  Per-window capture (Forest's task view / windowlist previews) needs the
+  latter plus `ext-foreign-toplevel-image-capture-source-v1`; both arrive
+  in wlroots 0.19, past Biome's 0.18 pin.
 - **Screen sharing (portal `ScreenCast`)** — not urgent, but should stay tracked.
   Needs `org.freedesktop.impl.portal.ScreenCast` added to biome's portal
   (currently `data/xdg-desktop-portal/portals/biome.portal` only declares
@@ -124,13 +127,18 @@ during the 2026-09-07 protocol audit.
 - **`wlr-output-power-management-unstable-v1`** (DPMS) — replaces the power
   half of `idle_blank.cpp`'s stopgap; distinct protocol from
   output-management above.
+- **Data control** (`wlr-data-control-unstable-v1`, available in wlroots
+  0.18; `ext-data-control-v1` needs a newer wlroots) — lets a clipboard
+  manager read/set the selection without focus. Needed for Forest's
+  clipboard manager; also used by `wl-clipboard`/`cliphist`.
 - **`wlr-gamma-control-unstable-v1`** — night-light/redshift-style color
   temperature. Not previously tracked; cheap to add once output code is
   already being touched for the items above.
 
 Forest-side: a lock-screen client speaking `ext-session-lock-v1` (Biome's
-compositor side already works, confirmed with swaylock in Phase 3.5) and a
-display-settings plugin are `forest/`-side work, tracked there — not detailed
+compositor side already works, confirmed with swaylock in Phase 3.5), a
+display-settings plugin, a clipboard manager and a task view (toplevel
+capture) are `forest/`-side work, tracked there — not detailed
 here.
 
 ## Phase 7 — Input completeness
