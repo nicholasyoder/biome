@@ -274,3 +274,18 @@ frame, since anything that shows or hides a surface damages an output.
   everything is dark; the next frame after wake restores them.
 - Opaque lock surfaces occlude everything, so a locked session isn't held
   awake by a video behind the lock.
+
+## Screencopy (`core/main.cpp`)
+
+wlroots implements `wlr-screencopy-unstable-v1` entirely; Biome only creates
+the global.
+
+- Unrestricted: any client, sandboxed or not, can capture. Same stance as
+  session-lock (no allowlist mechanism); `security-context-v1` (Phase 8) is
+  the eventual fix.
+- wlroots 0.18.2 attaches the frame's `output_enable` listener to
+  `events.destroy`, so a frame pending when its output is DPMS'd/disabled
+  stalls until the output comes back (then completes). Requests on an
+  already-off output fail at once. Fixed upstream in 0.19 (31f9d6bb); not
+  worked around, since sending `failed` ourselves risks a later `ready`.
+- Captures while locked show the lock screen: it copies what's presented.

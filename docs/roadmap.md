@@ -25,8 +25,9 @@ of why per item. When an item is actually worked on:
   used to bloat `plan.md` phase-by-phase) → its own `docs/<topic>.md`, linked
   from here, rather than inlined.
 
-`roadmap.md` itself should only ever grow by items being added, checked off,
-or re-scoped — not by accumulating session logs or design discussion.
+`roadmap.md` should only change by items being added, re-scoped, or removed
+once done (no "done" markers; history lives in git) — not by accumulating
+session logs or design discussion.
 
 ## Guiding principles
 
@@ -42,19 +43,6 @@ or re-scoped — not by accumulating session logs or design discussion.
 ## 0.1.0 — first release
 
 Ships with Forest 0.9.0. Everything here is required before tagging.
-
-### Idle & display power (Phase 6, core)
-
-`ext-idle-notify-v1`, `idle-inhibit-unstable-v1` (`desktop/idle.cpp`) and
-`wlr-output-power-management-unstable-v1` (`core/output_power.cpp`) are done.
-Forest 0.9.0's session locker (`forest-locker`) is the client that drives
-these.
-
-### Screenshots (Phase 6)
-
-- **`wlr-screencopy-unstable-v1`** — available in wlroots 0.18; enough for
-  `grim` or a native Forest screenshot client (Forest 0.9.0). Per-window
-  capture needs `ext-image-copy-capture-v1` (wlroots 0.19, see Later).
 
 ### Output management fixes
 

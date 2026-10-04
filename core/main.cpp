@@ -126,6 +126,10 @@ int main(int argc, char *argv[]) {
     wlr_fractional_scale_manager_v1_create(server.display, 1);
     wlr_viewporter_create(server.display);
 
+    // wlroots captures straight off output commits and requests the frame
+    // itself; nothing else to wire. See architecture-notes.md "Screencopy".
+    wlr_screencopy_manager_v1_create(server.display);
+
     output_manager_init(&server);
     session_lock_init(&server);
     layer_shell_init(&server);
