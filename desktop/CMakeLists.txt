@@ -19,6 +19,8 @@ add_library(biome_desktop STATIC
     decoration_bridge.cpp
     session_lock.h
     session_lock.cpp
+    idle.h
+    idle.cpp
     layer_shell.h
     layer_shell.cpp
     layer_shell_internal.h

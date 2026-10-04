@@ -6,6 +6,7 @@
 #include "core/idle_blank.h" // STOPGAP(idle-blank)
 #include "core/keybindings.h"
 #include "desktop/decoration_bridge.h"
+#include "desktop/idle.h"
 #include "desktop/toplevel.h"
 
 #include <xkbcommon/xkbcommon.h>
@@ -72,6 +73,7 @@ static void keyboard_handle_key(wl_listener *listener, void *data) {
     auto *event = static_cast<wlr_keyboard_key_event *>(data);
     wlr_seat *seat = server->seat;
 
+    idle_notify_activity(server);
     idle_blank_notify_activity(server); // STOPGAP(idle-blank)
 
     uint32_t keycode = event->keycode + 8; // libinput keycode -> xkbcommon

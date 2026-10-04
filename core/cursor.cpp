@@ -4,6 +4,7 @@
 
 #include "core/idle_blank.h" // STOPGAP(idle-blank)
 #include "desktop/decoration_bridge.h"
+#include "desktop/idle.h"
 #include "desktop/toplevel.h"
 #include "desktop/xdg_shell.h"
 
@@ -458,6 +459,8 @@ void server_cursor_frame(wl_listener *listener, void *data) {
     // Frame events group preceding pointer events sent in the same batch
     // (e.g. simultaneous axis events).
     BiomeServer *server = wl_container_of(listener, server, cursor_frame);
+    // libinput emits a frame after every motion/button/axis event.
+    idle_notify_activity(server);
     idle_blank_notify_activity(server); // STOPGAP(idle-blank)
     wlr_seat_pointer_notify_frame(server->seat);
 }

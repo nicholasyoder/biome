@@ -73,9 +73,14 @@ void schedule_retry(BiomeServer *server, bool enabled) {
 }
 
 // Fires after kIdleBlankTimeoutMs of no input. Blanks the outputs and then
-// goes dormant - idle_blank_notify_activity() is what re-arms it.
+// goes dormant - idle_blank_notify_activity() is what re-arms it. A visible
+// idle inhibitor (desktop/idle.cpp) defers the blank instead.
 int on_idle_timeout(void *data) {
     auto *server = static_cast<BiomeServer *>(data);
+    if (server->idle_inhibited) {
+        wl_event_source_timer_update(server->idle_blank_timer, kIdleBlankTimeoutMs);
+        return 0;
+    }
     if (!set_all_outputs_enabled(server, false)) {
         schedule_retry(server, false);
     }

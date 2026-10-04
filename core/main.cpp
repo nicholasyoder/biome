@@ -18,6 +18,7 @@
 #include "desktop/decoration_bridge.h"
 #include "desktop/ext_workspace.h"
 #include "desktop/foreign_toplevel.h"
+#include "desktop/idle.h"
 #include "desktop/layer_shell.h"
 #include "desktop/session_lock.h"
 #include "desktop/xdg_shell.h"
@@ -136,6 +137,7 @@ int main(int argc, char *argv[]) {
     xdg_shell_init(&server);
     cursor_init(&server);
     input_init(&server);
+    idle_init(&server);
     idle_blank_init(&server); // STOPGAP(idle-blank)
     xwayland_init(&server, compositor);
     global_shortcuts_portal_init(&server);
@@ -183,6 +185,7 @@ int main(int argc, char *argv[]) {
     // the whole process lifetime with no matching teardown, so it has to be
     // removed explicitly here before wl_display_destroy() runs.
     wl_list_remove(&server.new_session_lock.link);
+    wl_list_remove(&server.new_idle_inhibitor.link);
     wl_list_remove(&server.output_layout_change.link);
     wl_list_remove(&server.output_apply.link);
     wl_list_remove(&server.output_test.link);

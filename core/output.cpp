@@ -4,6 +4,7 @@
 
 #include "core/layers.h"
 #include "core/output_management.h"
+#include "desktop/idle.h"
 #include "desktop/layer_shell.h"
 #include "desktop/session_lock.h"
 #include "desktop/toplevel.h"
@@ -98,6 +99,7 @@ static void output_frame(wl_listener *listener, void *data) {
     wlr_scene *scene = server->scene;
 
     bool still_fading = update_layer_surface_fades(output);
+    idle_update_inhibited(server);
 
     wlr_scene_output *scene_output = wlr_scene_get_scene_output(scene, output->wlr);
     if (scene_output == nullptr) {

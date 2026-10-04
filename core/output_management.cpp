@@ -2,7 +2,7 @@
 
 #include "core/output_management.h"
 
-#include "core/idle_blank.h"
+#include "core/idle_blank.h" // STOPGAP(idle-blank)
 #include "core/output.h"
 
 #include <algorithm>
@@ -174,10 +174,10 @@ bool layout_is_connected(BiomeServer *server, wlr_output_configuration_v1 *confi
 }
 
 void handle_configuration(BiomeServer *server, wlr_output_configuration_v1 *config, bool commit) {
-    // Not input, so the idle timer wouldn't wake the outputs itself, and a
-    // modeset on a blanked DRM connector fails.
+    // STOPGAP(idle-blank): not input, so the idle timer wouldn't wake the
+    // outputs itself, and a modeset on a blanked DRM connector fails.
     if (commit) {
-        idle_blank_notify_activity(server);
+        idle_blank_notify_activity(server); // STOPGAP(idle-blank)
     }
 
     size_t states_len = 0;

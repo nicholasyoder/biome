@@ -72,7 +72,7 @@ asked to pause and get this written up rather than pick a direction under time p
   anywhere in the tree — this is Biome's actual main loop today.
 - **Three `wl_event_loop_add_timer()` call sites total**, no `add_fd`/`add_signal`/`add_idle`
   anywhere in Biome's own code:
-  - `core/idle_blank.cpp:91` — 10-minute idle-blank timeout, re-armed on activity.
+  - `core/idle_blank.cpp:96` — 10-minute idle-blank timeout, re-armed on activity.
   - `core/idle_blank.cpp:71` — 250ms commit-retry timer, only armed after a failed
     `wlr_output_commit_state()`.
   - `ipc/global_shortcuts_portal.cpp:268` — the Qt pump (see above). This is the one that

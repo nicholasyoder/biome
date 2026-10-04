@@ -45,18 +45,17 @@ Ships with Forest 0.9.0. Everything here is required before tagging.
 
 ### Idle & display power (Phase 6, core)
 
-Replaces `core/idle_blank.cpp`'s hardcoded stopgap (delete that module and
-every `STOPGAP(idle-blank)` touch point once this lands). Forest 0.9.0's
-session locker is the client that drives these.
+`ext-idle-notify-v1` and `idle-inhibit-unstable-v1` are done
+(`desktop/idle.cpp`). Forest 0.9.0's session locker is the client that
+drives these.
 
-- **`ext-idle-notify-v1`** — idle timing for a locker/screensaver client.
-- **`idle-inhibit-unstable-v1`** — lets a video player / presentation app /
-  game suppress idle-notify while running. Ship with idle-notify, not after,
-  or the locker interrupts video playback.
 - **`wlr-output-power-management-unstable-v1`** (DPMS) — the client blanks
   and wakes outputs through this; distinct protocol from output-management.
   Some DP monitors drop HPD while off (destroy + re-create the output), so a
   power-off reconnect must come back off; live layout is already restored.
+  Lands together with deleting `core/idle_blank.cpp`'s hardcoded stopgap
+  (every `STOPGAP(idle-blank)` touch point) — its wake-on-input would fight
+  a DPMS client.
 
 ### Screenshots (Phase 6)
 

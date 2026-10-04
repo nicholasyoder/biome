@@ -309,10 +309,15 @@ struct BiomeServer {
     bool session_locked = false;
     wlr_scene_tree *lock_tree = nullptr;
 
-    // STOPGAP(idle-blank): see core/idle_blank.h. Delete this block plus
-    // that module and its two call sites (input.cpp, cursor.cpp) once
-    // Phase 6's real idle-notify/output-power-management lands
-    // (docs/roadmap.md).
+    // ext-idle-notify-v1 + idle-inhibit-unstable-v1 (desktop/idle.cpp).
+    wlr_idle_notifier_v1 *idle_notifier = nullptr;
+    wlr_idle_inhibit_manager_v1 *idle_inhibit_manager = nullptr;
+    wl_listener new_idle_inhibitor = {};
+    // A visible inhibitor exists; mirrors what was last sent to idle_notifier.
+    bool idle_inhibited = false;
+
+    // STOPGAP(idle-blank): see core/idle_blank.h. Delete this block with
+    // that module once output-power-management lands (docs/roadmap.md).
     wl_event_source *idle_blank_timer = nullptr;
     bool idle_blanked = false;
     // One-shot; re-attempts a wlr_output_commit_state() that failed for some

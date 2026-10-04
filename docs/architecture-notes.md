@@ -211,3 +211,18 @@ persisted, so preset scripts are the source of truth.
   re-moding needs a cleared one attached ("No primary frame buffer"). A
   modeset on an idle-blanked connector fails, so apply wakes the session first.
 
+## Idle inhibit visibility (`desktop/idle.cpp`)
+
+An inhibitor counts only while its surface is visible on some enabled
+output, on any monitor, focused or not. It's re-evaluated on every output
+frame, since anything that shows or hides a surface damages an output.
+
+- Visibility = an enabled scene buffer for that surface with nonzero
+  `active_outputs` (this covers occlusion and offscreen). The walk must skip
+  disabled subtrees (`wlr_scene_node_for_each_buffer` does): wlroots 0.18
+  doesn't refresh `active_outputs` or fire `output_leave` when an *ancestor*
+  is disabled, so minimized and other-workspace windows keep stale values.
+- Disabled (DPMS/blanked) outputs don't count, so inhibitors drop while
+  everything is dark; the next frame after wake restores them.
+- Opaque lock surfaces occlude everything, so a locked session isn't held
+  awake by a video behind the lock.
