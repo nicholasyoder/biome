@@ -273,6 +273,9 @@ static void server_new_output(wl_listener *listener, void *data) {
             cfg = it->second;
         }
     }
+    wlr_log(WLR_INFO, "output %s connected: enabled=%d scale=%.2f pos=%s%d,%d", wlr_output->name, cfg.enabled,
+            cfg.scale, cfg.position ? "" : "auto ", cfg.position ? cfg.position->first : 0,
+            cfg.position ? cfg.position->second : 0);
 
     wlr_output_state state;
     wlr_output_state_init(&state);

@@ -277,7 +277,9 @@ struct BiomeServer {
     wl_listener output_apply = {};
     wl_listener output_test = {};
     wl_event_source *output_publish_idle = nullptr;
-    // Loaded once at startup by output_manager_init() - see output_config.h.
+    // Loaded at startup by output_manager_init() (see output_config.h), then
+    // overwritten in memory by each live output-management apply so a
+    // connector that reconnects (hotplug, HPD bounce) gets its live state back.
     std::unordered_map<std::string, OutputConfig> output_configs;
 
     // ext-session-lock-v1 (desktop/session_lock.cpp). lock_tree is created

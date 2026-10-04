@@ -11,6 +11,26 @@
 
 namespace {
 
+// Records an output's committed state as its config, for server_new_output()
+// to re-apply if the connector reconnects.
+void remember_live_state(BiomeOutput *output) {
+    wlr_output *wlr_output = output->wlr;
+    if (wlr_output->name == nullptr) {
+        return;
+    }
+    OutputConfig &cfg = output->server->output_configs[wlr_output->name];
+    cfg.enabled = !output->disabled;
+    if (wlr_output->current_mode != nullptr) {
+        cfg.mode = OutputConfig::Mode{wlr_output->current_mode->width, wlr_output->current_mode->height,
+                                      wlr_output->current_mode->refresh};
+    }
+    cfg.scale = wlr_output->scale;
+    cfg.transform = wlr_output->transform;
+    if (cfg.enabled) {
+        cfg.position = std::make_pair(output->layout_x, output->layout_y);
+    }
+}
+
 void publish_configuration(BiomeServer *server) {
     wlr_output_configuration_v1 *config = wlr_output_configuration_v1_create();
     BiomeOutput *output;
@@ -200,6 +220,7 @@ void handle_configuration(BiomeServer *server, wlr_output_configuration_v1 *conf
             } else if (!output->disabled) {
                 output_set_enabled(output, false);
             }
+            remember_live_state(output);
         }
         output_layout_settled(server);
     }

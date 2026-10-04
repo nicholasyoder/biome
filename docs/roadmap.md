@@ -55,14 +55,8 @@ session locker is the client that drives these.
   or the locker interrupts video playback.
 - **`wlr-output-power-management-unstable-v1`** (DPMS) — the client blanks
   and wakes outputs through this; distinct protocol from output-management.
-- **Bug: waking from idle-blank loses a live `wlr-randr` layout.** After
-  applying a layout with a `wlr-randr` script, waking from the stopgap's blank
-  doesn't restore it; re-running the script is needed. Likely cause (not yet
-  confirmed): some DP monitors/docks drop HPD while their CRTC is disabled, so
-  the output is destroyed and re-created, and `server_new_output()` applies
-  the startup `Biome.conf` layout, not the live one. Output-power off can
-  trigger the same reconnect, so the fix is to remember each output's live
-  state and re-apply it on reconnect, not just to delete the stopgap.
+  Some DP monitors drop HPD while off (destroy + re-create the output), so a
+  power-off reconnect must come back off; live layout is already restored.
 
 ### Screenshots (Phase 6)
 
