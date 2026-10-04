@@ -5,6 +5,7 @@
 #include "core/fade_config.h"
 #include "core/output.h"
 #include "desktop/toplevel.h"
+#include "desktop/workspace.h"
 
 #include <cstring>
 
@@ -292,14 +293,7 @@ static void handle_layer_surface_unmap(wl_listener *listener, void *data) {
     if (seat->keyboard_state.focused_surface != wrapper->layer_surface->surface) {
         return;
     }
-    // Same fallback desktop/xwayland_shell.cpp's unmanaged_unmap uses: hand
-    // focus back to the topmost managed toplevel, if any.
-    if (!wl_list_empty(&wrapper->server->toplevels)) {
-        BiomeToplevel *top = wl_container_of(wrapper->server->toplevels.next, top, link);
-        focus_toplevel(top);
-    } else {
-        wlr_seat_keyboard_notify_clear_focus(seat);
-    }
+    focus_topmost_on_active_workspace(wrapper->server);
 }
 
 static void handle_layer_surface_destroy(wl_listener *listener, void *data) {

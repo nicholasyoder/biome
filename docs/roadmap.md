@@ -70,20 +70,6 @@ these.
 - **`foreign_toplevel` output_enter/leave** is only sent at window creation,
   not updated when windows move between outputs.
 
-### Focus & input bugs
-
-Found by code reading in the 2026-10-04 deviation audit.
-
-- **Unmap focus fallback can pick a hidden window.** Layer-surface,
-  xdg_popup and Xwayland-unmanaged unmap handlers focus the MRU-front
-  toplevel without checking minimized/workspace; use
-  `focus_topmost_on_active_workspace()` like the other paths.
-- **Opening a menu deactivates its window.** A grabbing xdg_popup gets focus
-  via `grant_keyboard_focus_to_non_toplevel()`, which clears the parent's
-  `activated` state (decoration unfocused, windowlist highlight dropped, GTK
-  headerbars go backdrop) until the menu closes. Mutter/KWin keep the parent
-  activated; skip the clear when the popup's root is the focused toplevel.
-
 ### Forest integration
 
 - **Default fade-namespace config shipped by Forest.** Forest's
@@ -146,6 +132,9 @@ Found by code reading in the 2026-10-04 deviation audit.
   get carried into `layers.fullscreen` on reparent. Not yet confirmed against
   a real app; fix is likely raising unmanaged surfaces above
   `layers.fullscreen` while any toplevel is fullscreen.
+- **An Xwayland menu deactivates its window.** xdg_popups keep their root
+  toplevel activated, but focus granted to an override-redirect surface still
+  clears it; resolve the owner via `xsurface->parent`.
 
 ### Spec-compliant focus
 

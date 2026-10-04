@@ -7,6 +7,7 @@
 #include "desktop/decoration_bridge.h"
 #include "desktop/foreign_toplevel.h"
 #include "desktop/toplevel.h"
+#include "desktop/workspace.h"
 
 #include <cassert>
 #include <cstdlib>
@@ -454,9 +455,8 @@ static void xdg_popup_unmap(wl_listener *listener, void *data) {
     // focus_toplevel so its raise/activate bookkeeping stays right), or
     // otherwise the bare parent surface itself - a layer surface (e.g. the
     // panel) or an enclosing popup in a submenu chain, neither of which is a
-    // BiomeToplevel. Falls back to the topmost toplevel, same as
-    // desktop/layer_shell.cpp's own unmap handler, if the parent is already
-    // gone.
+    // BiomeToplevel. Falls back to the topmost visible toplevel if the parent
+    // is already gone.
     wlr_surface *parent = popup->xdg_popup->parent;
     BiomeToplevel *parent_toplevel = nullptr;
     if (parent != nullptr) {
@@ -478,12 +478,7 @@ static void xdg_popup_unmap(wl_listener *listener, void *data) {
         grant_keyboard_focus_to_non_toplevel(server, parent);
         return;
     }
-    if (!wl_list_empty(&server->toplevels)) {
-        BiomeToplevel *top = wl_container_of(server->toplevels.next, top, link);
-        focus_toplevel(top);
-    } else {
-        wlr_seat_keyboard_notify_clear_focus(seat);
-    }
+    focus_topmost_on_active_workspace(server);
 }
 
 static void server_new_xdg_popup(wl_listener *listener, void *data) {

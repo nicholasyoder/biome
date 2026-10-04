@@ -280,8 +280,9 @@ void clear_focused_toplevel(BiomeServer *server);
 // *isn't* a BiomeToplevel: a keyboard-interactive layer-shell surface (the
 // panel), an xdg_popup (any of Forest's panel/panel-library popup/popupmenu
 // widgets - context menus, the main menu, tooltips), an Xwayland
-// override-redirect surface, or a plain click on one of those. Always calls
-// clear_focused_toplevel() first, then grants via the grab-bypassing
+// override-redirect surface, or a plain click on one of those. Calls
+// clear_focused_toplevel() first (skipped when surface is a popup of the
+// focused toplevel, which stays activated), then grants via the grab-bypassing
 // wlr_seat_keyboard_enter() (safe and equivalent to the grab-aware
 // wlr_seat_keyboard_notify_enter() whenever no seat keyboard grab is
 // active, and necessary when `surface` is an xdg_popup that installed its

@@ -101,28 +101,47 @@ void set_toplevel_focused(BiomeToplevel *toplevel, bool focused) {
     foreign_toplevel_sync_state(toplevel);
 }
 
+// The toplevel surface is, or whose xdg_popup chain is rooted on; null for
+// layer surfaces, layer-owned popups and Xwayland unmanaged surfaces.
+static BiomeToplevel *toplevel_owning_surface(wlr_surface *surface) {
+    wlr_xdg_popup *popup;
+    while (surface != nullptr && (popup = wlr_xdg_popup_try_from_wlr_surface(surface)) != nullptr) {
+        surface = popup->parent;
+    }
+    if (surface == nullptr) {
+        return nullptr;
+    }
+    if (wlr_xdg_toplevel *xdg = wlr_xdg_toplevel_try_from_wlr_surface(surface)) {
+        return toplevel_from_xdg(xdg);
+    }
+    wlr_xwayland_surface *xsurface = wlr_xwayland_surface_try_from_wlr_surface(surface);
+    if (xsurface != nullptr && !xsurface->override_redirect) {
+        return toplevel_from_xwayland(xsurface);
+    }
+    return nullptr;
+}
+
 void clear_focused_toplevel(BiomeServer *server) {
-    wlr_surface *prev_surface = server->seat->keyboard_state.focused_surface;
-    if (prev_surface == nullptr) {
+    BiomeToplevel *prev =
+        toplevel_owning_surface(server->seat->keyboard_state.focused_surface);
+    if (prev == nullptr) {
         return;
     }
-    wlr_xdg_toplevel *prev_xdg_toplevel =
-        wlr_xdg_toplevel_try_from_wlr_surface(prev_surface);
-    if (prev_xdg_toplevel != nullptr) {
-        wlr_xdg_toplevel_set_activated(prev_xdg_toplevel, false);
-        set_toplevel_focused(toplevel_from_xdg(prev_xdg_toplevel), false);
-        return;
+    if (prev->type == BiomeToplevelType::Xdg) {
+        wlr_xdg_toplevel_set_activated(prev->xdg_toplevel, false);
+    } else {
+        wlr_xwayland_surface_activate(prev->xwayland_surface, false);
     }
-    wlr_xwayland_surface *prev_xwayland_surface =
-        wlr_xwayland_surface_try_from_wlr_surface(prev_surface);
-    if (prev_xwayland_surface != nullptr) {
-        wlr_xwayland_surface_activate(prev_xwayland_surface, false);
-        set_toplevel_focused(toplevel_from_xwayland(prev_xwayland_surface), false);
-    }
+    set_toplevel_focused(prev, false);
 }
 
 void grant_keyboard_focus_to_non_toplevel(BiomeServer *server, wlr_surface *surface) {
-    clear_focused_toplevel(server);
+    // A window's own menu keeps it activated, as in Mutter/KWin.
+    BiomeToplevel *owner = toplevel_owning_surface(surface);
+    if (owner == nullptr ||
+            owner != toplevel_owning_surface(server->seat->keyboard_state.focused_surface)) {
+        clear_focused_toplevel(server);
+    }
     wlr_seat *seat = server->seat;
     wlr_keyboard *keyboard = wlr_seat_get_keyboard(seat);
     wlr_seat_keyboard_enter(seat, surface,
@@ -158,7 +177,12 @@ void focus_toplevel(BiomeToplevel *toplevel) {
     if (prev_surface == surface) {
         return;
     }
-    clear_focused_toplevel(server);
+    // Returning from the toplevel's own popup: it's still activated, and a
+    // deactivate/reactivate round trip would flicker foreign-toplevel state.
+    bool from_own_popup = toplevel_owning_surface(prev_surface) == toplevel;
+    if (!from_own_popup) {
+        clear_focused_toplevel(server);
+    }
     wlr_keyboard *keyboard = wlr_seat_get_keyboard(seat);
     wlr_scene_node_raise_to_top(&toplevel->scene_tree->node);
     wl_list_remove(&toplevel->link);
@@ -173,7 +197,15 @@ void focus_toplevel(BiomeToplevel *toplevel) {
         wlr_xwayland_surface_restack(toplevel->xwayland_surface, nullptr, XCB_STACK_MODE_ABOVE);
     }
     set_toplevel_focused(toplevel, true);
-    if (keyboard != nullptr) {
+    if (keyboard == nullptr) {
+        return;
+    }
+    // xdg_popup_unmap runs before wlroots ends the popup's keyboard grab,
+    // whose .enter is a no-op - bypass it or the enter is silently dropped.
+    if (from_own_popup) {
+        wlr_seat_keyboard_enter(seat, surface,
+            keyboard->keycodes, keyboard->num_keycodes, &keyboard->modifiers);
+    } else {
         wlr_seat_keyboard_notify_enter(seat, surface,
             keyboard->keycodes, keyboard->num_keycodes, &keyboard->modifiers);
     }

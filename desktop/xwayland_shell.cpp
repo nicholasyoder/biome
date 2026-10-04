@@ -7,6 +7,7 @@
 #include "desktop/decoration_bridge.h"
 #include "desktop/foreign_toplevel.h"
 #include "desktop/toplevel.h"
+#include "desktop/workspace.h"
 
 #include <cstdlib>
 
@@ -182,17 +183,10 @@ static void unmanaged_associate(wl_listener *listener, void *data) {
     surface->unmap.notify = [](wl_listener *l, void *d) {
         (void)d;
         BiomeUnmanaged *s = wl_container_of(l, s, unmap);
-        wlr_seat *seat = s->server->seat;
-        if (seat->keyboard_state.focused_surface != s->xwayland_surface->surface) {
+        if (s->server->seat->keyboard_state.focused_surface != s->xwayland_surface->surface) {
             return;
         }
-        // Hand focus back to the topmost managed toplevel, if any.
-        if (!wl_list_empty(&s->server->toplevels)) {
-            BiomeToplevel *top = wl_container_of(s->server->toplevels.next, top, link);
-            focus_toplevel(top);
-        } else {
-            wlr_seat_keyboard_notify_clear_focus(seat);
-        }
+        focus_topmost_on_active_workspace(s->server);
     };
     wl_signal_add(&xsurface->surface->events.unmap, &surface->unmap);
 }
