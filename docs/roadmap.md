@@ -1,11 +1,17 @@
 # Biome Roadmap
 
-Biome-focused, forward-looking roadmap. Phases 0–5 (skeleton through
-Forest-shell integration and cutover) are done — see
+Biome-focused, forward-looking roadmap, grouped by target release. Phases 0–5
+(skeleton through Forest-shell integration and cutover) are done — see
 [`docs/history.md`](history.md) for that narrative and the design rationale
 behind it (Decoupling goal, wlroots version pin, decoration/session-lock
 invariants, etc.). This file starts from "what's next" and stays a punch
 list, not a narrative.
+
+Releases usually ship alongside a Forest release (`forest/docs/roadmap.md`,
+same layout), but a Biome-only bugfix release is fine whenever warranted.
+Release assignments are a plan: move items between releases freely. Old
+phase names (Phase 6/7/8) are kept in headings since code comments
+reference them.
 
 ## Documentation conventions
 
@@ -33,10 +39,38 @@ or re-scoped — not by accumulating session logs or design discussion.
   Forest-specific shortcut needs justification, not just convenience. Full
   reasoning in `docs/history.md`'s "Decoupling goal" section (2026-08-22).
 
-## Known issues
+## 0.1.0 — first release
 
-Carried over from `history.md`'s former "Open risks" section — still open,
-not resolved by anything since:
+Ships with Forest 0.9.0. Everything here is required before tagging.
+
+### Idle & display power (Phase 6, core)
+
+Replaces `core/idle_blank.cpp`'s hardcoded stopgap (delete that module and
+every `STOPGAP(idle-blank)` touch point once this lands). Forest 0.9.0's
+session locker is the client that drives these.
+
+- **`ext-idle-notify-v1`** — idle timing for a locker/screensaver client.
+- **`idle-inhibit-unstable-v1`** — lets a video player / presentation app /
+  game suppress idle-notify while running. Ship with idle-notify, not after,
+  or the locker interrupts video playback.
+- **`wlr-output-power-management-unstable-v1`** (DPMS) — the client blanks
+  and wakes outputs through this; distinct protocol from output-management.
+- **Bug: waking from idle-blank loses a live `wlr-randr` layout.** After
+  applying a layout with a `wlr-randr` script, waking from the stopgap's blank
+  doesn't restore it; re-running the script is needed. Likely cause (not yet
+  confirmed): some DP monitors/docks drop HPD while their CRTC is disabled, so
+  the output is destroyed and re-created, and `server_new_output()` applies
+  the startup `Biome.conf` layout, not the live one. Output-power off can
+  trigger the same reconnect, so the fix is to remember each output's live
+  state and re-apply it on reconnect, not just to delete the stopgap.
+
+### Screenshots (Phase 6)
+
+- **`wlr-screencopy-unstable-v1`** — available in wlroots 0.18; enough for
+  `grim` or a native Forest screenshot client (Forest 0.9.0). Per-window
+  capture needs `ext-image-copy-capture-v1` (wlroots 0.19, see Later).
+
+### Output management fixes
 
 - **Output layouts with a gap can still trap the cursor in two paths.**
   Live `wlr-randr` applies are validated and rejected
@@ -45,148 +79,121 @@ not resolved by anything since:
   `Biome.conf` layout is never validated (stale `x`/`y` after a `scale`
   change). Fix idea: auto-close gaps on unplug and validate/auto-arrange at
   startup.
+- **`output_destroy` never destroys the per-output layer/lock scene trees**
+  (leaks on every hotplug).
+- **Scanout-fade layer surfaces** (logout dim / startup cover) aren't moved
+  off a disabled output.
+- **`foreign_toplevel` output_enter/leave** is only sent at window creation,
+  not updated when windows move between outputs.
+
+### Forest integration
+
+- **Default fade-namespace config shipped by Forest.** Forest's
+  `forest-logout-dim`/`forest-startup`/`forest-logout` namespaces need
+  `[LayerShell]` fade settings or a fresh install gets no fades. Decide how
+  Forest's package supplies them (system-wide `/etc` file Biome reads,
+  drop-in directory, or compiled-in default); check `core/fade_config.cpp`'s
+  lookup order first. Tracked on both roadmaps.
+
+### Verify
+
+- **`linux-dmabuf-v1`** — never created anywhere in the tree
+  (`wlr_linux_dmabuf_v1_create_with_renderer` doesn't appear; confirmed
+  tinywl doesn't wire this implicitly either). Without it, GPU clients can't
+  negotiate zero-copy buffers — affects hardware video decode, some GL/Vulkan
+  paths, and zero-copy screencopy. Verify the real-world impact, then wire it
+  either way so it's a deliberate choice, not an accident.
+
+### Release checklist
+
+- `debian/changelog` entry for 0.1.0 summarizing the release (currently just
+  "Initial Debian packaging"); `CMakeLists.txt` is already `0.1.0`.
+- Fresh-install VM test together with Forest 0.9.0's packages (packaging has
+  only been build-checked with `dpkg-buildpackage` + `lintian`).
+- Tag `v0.1.0`, push.
+- Switch to the `develop`/`master` branch model: create `develop`, and update
+  the branching note in `ForestProject/CLAUDE.md`.
+
+## 0.2.0 — input, clipboard & spec compliance (Phases 6–7)
+
+- **Pointer lock/confinement** (`pointer-constraints-unstable-v1`) +
+  **`relative-pointer-unstable-v1`** — required for FPS-style mouse look in
+  any game or 3D app. Ship together; they're used together.
+- **Trackpad gestures** (`pointer-gestures-unstable-v1`) — pinch/swipe/hold;
+  sway and Hyprland both support it. Without it, GTK/Qt apps that key off
+  trackpad swipes just see raw pointer motion.
+- **Data control** (`wlr-data-control-unstable-v1`, available in wlroots
+  0.18; `ext-data-control-v1` needs a newer wlroots) — lets a clipboard
+  manager read/set the selection without focus. Needed for Forest 0.11.0's
+  clipboard manager; also used by `wl-clipboard`/`cliphist`.
+- **`wlr-gamma-control-unstable-v1`** — night-light/redshift-style color
+  temperature.
+- **Stale fractional-scale info after a live rescale.** `wlr_scene`'s
+  `handle_scene_buffer_outputs_update()` (wlroots `types/scene/surface.c`)
+  only re-sends `wp-fractional-scale-v1` + `wl_surface.preferred_buffer_scale`
+  when a surface's *set* of overlapping outputs changes, not when an
+  already-overlapped output's own `scale` changes (e.g. a live
+  `wlr-randr --scale` apply, found 2026-09-26 debugging a FreeCAD
+  cursor-stutter report). Likely needs biome to force a per-surface update
+  (mirroring wlroots' own `force` param) for every surface on an output
+  whenever its scale changes.
 - **An Xwayland override-redirect popup can render (and steal focus) behind
   a fullscreen window.** `BiomeUnmanaged` surfaces are parented directly to
   `layers.toplevels`, not nested under their owning toplevel, so they don't
   get carried into `layers.fullscreen` on reparent. Not yet confirmed against
   a real app; fix is likely raising unmanaged surfaces above
   `layers.fullscreen` while any toplevel is fullscreen.
-- **A client already mapped on an output keeps stale fractional-scale info
-  after a live rescale.** `wlr_scene`'s `handle_scene_buffer_outputs_update()`
-  (wlroots `types/scene/surface.c`) only re-sends `wp-fractional-scale-v1` +
-  `wl_surface.preferred_buffer_scale` when a surface's *set* of overlapping
-  outputs changes, not when an already-overlapped output's own `scale`
-  changes (e.g. a live `wlr-randr --scale` apply via `output_management.cpp`,
-  found 2026-09-26 debugging a FreeCAD cursor-stutter report). A window
-  opened before the rescale never gets renegotiated at its new scale, only
-  one opened after. No fix designed yet - likely needs biome to force a
-  per-surface update (mirroring wlroots' own `force` param on the
-  outputs-update path) for every surface already on an output whenever that
-  output's scale changes.
+
+### Spec-compliant focus
+
+Each lands only *after* its Forest-side counterpart (Forest roadmap 0.10.0,
+"Compositor portability"), or Forest input breaks.
+
 - **Layer-surface keyboard focus ignores `keyboard_interactivity`.** Clicking
   any non-toplevel surface grants focus (`core/cursor.cpp`), even a layer
   surface that asked for `NONE`; and map grants focus to anything not `NONE`
   (`desktop/layer_shell.cpp`), so an `on_demand` surface (Forest's panel)
   steals focus every time it maps, e.g. on each panel rebuild after a screen
   change. Spec: `NONE` never gets focus, `on_demand` only on click, only
-  `exclusive` on map. Land *after* Forest switches its desktop-icons surface
-  to `on_demand` (Forest roadmap), which currently relies on this to get
-  keyboard input.
+  `exclusive` on map.
 - **Non-grabbing layer-shell popups get keyboard focus.**
   `popup_wants_keyboard_focus()` (`desktop/xdg_shell.cpp`, also used by
   `core/cursor.cpp`) focuses any popup chain rooted on a layer surface, a
   Forest-shaped exception for `panel-library/popup.h`'s non-grabbing popups.
-  Per spec only grabbing popups get focus. Drop the layer-shell branch *after*
-  Forest moves those popups off it (Forest roadmap), or panel popup keyboard
-  input breaks.
+  Per spec only grabbing popups get focus; drop the layer-shell branch.
 
-## Debian packaging — done (2026-09-22)
+## 0.3.0 — touch, tablet & accessibility input (Phase 7)
 
-`debian/` added (control, rules, changelog, copyright, native source
-format). Single binary package `biome`; `${shlibs:Depends}` picks up
-wlroots/Qt6/glib/wayland/xkbcommon automatically, `Recommends:
-xdg-desktop-portal` since biome only hosts the `GlobalShortcuts` portal
-backend rather than calling it. Includes a minimal `biome(1)` man page.
-Verified with a local `dpkg-buildpackage -us -uc -b` + `lintian` pass (clean).
-`forest/debian/control` now `Depends: biome`. Install/runtime behavior itself
-still wants a real VM test, not just a build-time check.
-
-## Live output management — done (2026-09-18)
-
-`wlr-output-management-unstable-v1`, window/layer-surface relocation and
-layout validation are in and hand-tested; design in `architecture-notes.md`.
-Layout presets are plain `wlr-randr` shell scripts. Forest-side
-display-settings UI (plugin, optionally via `libkscreen`'s backend for this
-protocol) stays later and is `forest/`-side work. Leftovers:
-
-- Unplug/startup layout gaps (see Known issues).
-- Scanout-fade layer surfaces (logout dim / startup cover) aren't moved off a
-  disabled output.
-- `foreign_toplevel` output_enter/leave is only sent at window creation, not
-  updated when windows move between outputs.
-- `output_destroy` never destroys the per-output layer/lock scene trees.
-
-## Phase 6 — Session, idle & display completeness
-
-Already-scoped work (was Phase 6 in the old plan), plus idle-inhibit found
-during the 2026-09-07 protocol audit.
-
-- **Screenshots** — `wlr-screencopy-unstable-v1` or `ext-image-copy-capture-v1`.
-  Per-window capture (Forest's task view / windowlist previews) needs the
-  latter plus `ext-foreign-toplevel-image-capture-source-v1`; both arrive
-  in wlroots 0.19, past Biome's 0.18 pin.
-- **Screen sharing (portal `ScreenCast`)** — not urgent, but should stay tracked.
-  Needs `org.freedesktop.impl.portal.ScreenCast` added to biome's portal
-  (currently `data/xdg-desktop-portal/portals/biome.portal` only declares
-  `GlobalShortcuts`) implemented via the screencopy protocol above + PipeWire.
-  Confirmed 2026-09-22: no compositor-side capture protocol and no ScreenCast
-  portal backend at all currently (system has `xdg-desktop-portal-gtk`/`-lxqt`
-  but not `-wlr`), so Zoom-style screen share has zero path to work under
-  biome today.
-- **`ext-idle-notify-v1`** — drives idle timeout; replaces `core/idle_blank.cpp`'s
-  hardcoded stopgap (delete that module once this lands, per its own
-  `STOPGAP(idle-blank)` comments). Needed before a lock-screen client is
-  useful.
-- **`idle-inhibit-unstable-v1`** — net new, not in the old plan. Lets a video
-  player / presentation app / game suppress idle-notify while running.
-  Without it, idle-notify + a lock client will interrupt video playback —
-  bundle this with the idle-notify work above, not as an afterthought.
-- **`wlr-output-power-management-unstable-v1`** (DPMS) — replaces the power
-  half of `idle_blank.cpp`'s stopgap; distinct protocol from
-  output-management above.
-- **Data control** (`wlr-data-control-unstable-v1`, available in wlroots
-  0.18; `ext-data-control-v1` needs a newer wlroots) — lets a clipboard
-  manager read/set the selection without focus. Needed for Forest's
-  clipboard manager; also used by `wl-clipboard`/`cliphist`.
-- **`wlr-gamma-control-unstable-v1`** — night-light/redshift-style color
-  temperature. Not previously tracked; cheap to add once output code is
-  already being touched for the items above.
-
-Forest-side: a lock-screen client speaking `ext-session-lock-v1` (Biome's
-compositor side already works, confirmed with swaylock in Phase 3.5), a
-display-settings plugin, a clipboard manager and a task view (toplevel
-capture) are `forest/`-side work, tracked there — not detailed
-here.
-
-## Phase 7 — Input completeness
-
-Found via the 2026-09-07 protocol audit (`core/input.cpp`/`cursor.cpp` have
-zero touch/tablet/gesture handling). Currently the single biggest
-user-visible gap versus sway/Hyprland.
+Currently the single biggest user-visible gap versus sway/Hyprland
+(`core/input.cpp`/`cursor.cpp` have zero touch/tablet/gesture handling).
 
 - **Touch** — no `wlr_touch` handling at all; touchscreens/tablet-PC hardware
   unusable.
 - **Tablet input** (`tablet-v2`) — no pen/stylus support (`cursor.cpp` notes
   this explicitly). Affects Krita/GIMP and 2-in-1 hardware.
-- **Trackpad gestures** (`pointer-gestures-unstable-v1`) — pinch/swipe/hold;
-  sway and Hyprland both support it. Without it, GTK/Qt apps that key off
-  trackpad swipes just see raw pointer motion.
-- **Pointer lock/confinement** (`pointer-constraints-unstable-v1`) +
-  **`relative-pointer-unstable-v1`** — required for FPS-style mouse look in
-  any game or 3D app. Ship together; they're used together.
 - **Virtual input** (`virtual-keyboard-unstable-v1`,
   `virtual-pointer-unstable-v1`) — on-screen keyboards, remote-desktop/
   screen-share input injection (wayvnc-style), accessibility input tools.
 - **IME / text input** (`text-input-v3`, `input-method-unstable-v1`) — no
   CJK input method support, no on-screen-keyboard text injection path.
+- **Screen sharing (portal `ScreenCast`)** — add
+  `org.freedesktop.impl.portal.ScreenCast` to biome's portal (currently
+  `data/xdg-desktop-portal/portals/biome.portal` only declares
+  `GlobalShortcuts`), implemented via 0.1.0's screencopy + PipeWire. Until
+  then Zoom-style screen share has no path under biome (no `-wlr` portal
+  backend installed either).
 
-## Phase 8 — Rendering & sandboxing protocol gaps
+## Later (unscheduled) — rendering & wlroots bump (Phase 8)
 
-- **`linux-dmabuf-v1`** — never created anywhere in the tree
-  (`wlr_linux_dmabuf_v1_create_with_renderer` doesn't appear; confirmed
-  tinywl doesn't wire this implicitly either, so it's a real gap, not an
-  oversight-safe default). Without it, GPU clients can't negotiate zero-copy
-  buffers — affects hardware video decode, some GL/Vulkan paths, and
-  zero-copy screencopy (interacts with Phase 6's screenshot work). Verify
-  it's actually needed given XWayland's own path, then wire it either way so
-  it's a deliberate choice, not an accident.
+- **wlroots bump past 0.18.** Unlocks `ext-image-copy-capture-v1` +
+  `ext-foreign-toplevel-image-capture-source-v1` (0.19; per-window capture
+  for Forest's task view / windowlist previews), `ext-data-control-v1`, and
+  `color-management-v1` / HDR (Hyprland and Sway 1.12 have it on wlroots
+  0.20).
 - **`tearing-control-v1`** — lets fullscreen games/mpv request immediate
   presentation for lower latency. Supported by sway, Hyprland, gamescope.
 - **`wp_presentation`** (presentation-time) — frame-timing feedback for
   vsync-aware scheduling in video players/games/toolkits.
-- **`color-management-v1` / HDR** — Hyprland and Sway 1.12 (on wlroots 0.20)
-  just landed this. Not urgent at Biome's current wlroots 0.18 target;
-  revisit alongside any future wlroots version bump.
 - **`security-context-v1`** — lets a compositor apply sandbox-aware policy to
   requests brokered through `xdg-desktop-portal` for Flatpak apps. Doesn't
   block Flatpak apps without it, just means no sandbox-aware policy the way
