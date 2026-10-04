@@ -2,8 +2,8 @@
 
 #include "core/output_management.h"
 
-#include "core/idle_blank.h" // STOPGAP(idle-blank)
 #include "core/output.h"
+#include "core/output_power.h"
 
 #include <algorithm>
 #include <utility>
@@ -36,7 +36,7 @@ void publish_configuration(BiomeServer *server) {
     BiomeOutput *output;
     wl_list_for_each(output, &server->outputs, link) {
         wlr_output_configuration_head_v1 *head = wlr_output_configuration_head_v1_create(config, output->wlr);
-        // wlr->enabled is false while idle-blanked; report the logical state.
+        // wlr->enabled is false while powered off; report the logical state.
         head->state.enabled = !output->disabled;
         head->state.x = output->layout_x;
         head->state.y = output->layout_y;
@@ -174,10 +174,8 @@ bool layout_is_connected(BiomeServer *server, wlr_output_configuration_v1 *confi
 }
 
 void handle_configuration(BiomeServer *server, wlr_output_configuration_v1 *config, bool commit) {
-    // STOPGAP(idle-blank): not input, so the idle timer wouldn't wake the
-    // outputs itself, and a modeset on a blanked DRM connector fails.
     if (commit) {
-        idle_blank_notify_activity(server); // STOPGAP(idle-blank)
+        output_power_wake_all(server);
     }
 
     size_t states_len = 0;

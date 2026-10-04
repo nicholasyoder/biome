@@ -8,9 +8,9 @@
 #include "wlroots.hpp"
 
 #include "core/cursor.h"
-#include "core/idle_blank.h" // STOPGAP(idle-blank)
 #include "core/input.h"
 #include "core/output.h"
+#include "core/output_power.h"
 #include "core/qt_glib_bridge.h"
 #include "core/server.h"
 #include "decoration/theme.h"
@@ -136,7 +136,7 @@ int main(int argc, char *argv[]) {
     cursor_init(&server);
     input_init(&server);
     idle_init(&server);
-    idle_blank_init(&server); // STOPGAP(idle-blank)
+    output_power_init(&server);
     xwayland_init(&server, compositor);
     global_shortcuts_portal_init(&server);
     workspace_bridge_init(&server);

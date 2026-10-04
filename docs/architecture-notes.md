@@ -233,7 +233,7 @@ persisted, so preset scripts are the source of truth.
   wlroots makes a 0x0 custom mode; we substitute the current/preferred mode.
   Batched `wlr_backend_test/commit` allocates no buffer, so enabling or
   re-moding needs a cleared one attached ("No primary frame buffer"). A
-  modeset on an idle-blanked connector fails, so apply wakes the session first.
+  modeset on a DPMS-off connector fails, so apply powers outputs on first.
 
 ## Idle inhibit visibility (`desktop/idle.cpp`)
 

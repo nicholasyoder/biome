@@ -45,17 +45,10 @@ Ships with Forest 0.9.0. Everything here is required before tagging.
 
 ### Idle & display power (Phase 6, core)
 
-`ext-idle-notify-v1` and `idle-inhibit-unstable-v1` are done
-(`desktop/idle.cpp`). Forest 0.9.0's session locker is the client that
-drives these.
-
-- **`wlr-output-power-management-unstable-v1`** (DPMS) — the client blanks
-  and wakes outputs through this; distinct protocol from output-management.
-  Some DP monitors drop HPD while off (destroy + re-create the output), so a
-  power-off reconnect must come back off; live layout is already restored.
-  Lands together with deleting `core/idle_blank.cpp`'s hardcoded stopgap
-  (every `STOPGAP(idle-blank)` touch point) — its wake-on-input would fight
-  a DPMS client.
+`ext-idle-notify-v1`, `idle-inhibit-unstable-v1` (`desktop/idle.cpp`) and
+`wlr-output-power-management-unstable-v1` (`core/output_power.cpp`) are done.
+Forest 0.9.0's session locker is the client that drives these; until it
+lands, `swayidle` + `wlopm` stand in for blanking.
 
 ### Screenshots (Phase 6)
 

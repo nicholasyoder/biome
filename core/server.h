@@ -14,6 +14,8 @@
 #include "core/output_config.h"
 #include "wlroots.hpp"
 
+#include <ctime>
+#include <string>
 #include <unordered_map>
 #include <vector>
 
@@ -316,16 +318,12 @@ struct BiomeServer {
     // A visible inhibitor exists; mirrors what was last sent to idle_notifier.
     bool idle_inhibited = false;
 
-    // STOPGAP(idle-blank): see core/idle_blank.h. Delete this block with
-    // that module once output-power-management lands (docs/roadmap.md).
-    wl_event_source *idle_blank_timer = nullptr;
-    bool idle_blanked = false;
-    // One-shot; re-attempts a wlr_output_commit_state() that failed for some
-    // output (this can happen transiently even for a valid state - see
-    // idle_blank.cpp). Target state lives in idle_blank_retry_target since
-    // the timer callback has no other way to know which way it was headed.
-    wl_event_source *idle_blank_retry_timer = nullptr;
-    bool idle_blank_retry_target = false;
+    // wlr-output-power-management-unstable-v1 (core/output_power.cpp).
+    wlr_output_power_manager_v1 *output_power_manager = nullptr;
+    wl_listener output_power_set_mode = {};
+    // Connector name -> when it was destroyed while powered off; lets an HPD
+    // bounce on power-off come back off (server_new_output).
+    std::unordered_map<std::string, timespec> recently_unplugged_off;
 };
 
 struct BiomeOutput {
@@ -337,9 +335,12 @@ struct BiomeOutput {
     wl_listener destroy = {};
 
     // Logically off (Biome.conf enabled=false or a runtime change): not in
-    // output_layout. Distinct from idle-blank; core/idle_blank.cpp must never
-    // flip a disabled output's wlr enabled state, or it silently re-lights.
+    // output_layout. Distinct from powered_off; DPMS never re-lights it.
     bool disabled = false;
+    // DPMS off (core/output_power.cpp): wlr disabled but still in the layout.
+    bool powered_off = false;
+    // One-shot retry of a failed power commit; target is !powered_off.
+    wl_event_source *power_retry_timer = nullptr;
     // Last layout position; kept while disabled so it can be reported/restored.
     int layout_x = 0;
     int layout_y = 0;

@@ -4,6 +4,7 @@
 
 #include "core/layers.h"
 #include "core/output_management.h"
+#include "core/output_power.h"
 #include "desktop/idle.h"
 #include "desktop/layer_shell.h"
 #include "desktop/session_lock.h"
@@ -162,6 +163,7 @@ static void output_destroy(wl_listener *listener, void *data) {
     // which then dereferences freed memory via arrange_layers(). See
     // desktop/layer_shell.cpp for the full explanation.
     layer_shell_handle_output_destroy(output);
+    output_power_handle_output_destroy(output);
 
     // Leaves the layout now (rather than in the layout's own destroy
     // listener, which runs after this one) so the settle below sees it gone.
@@ -285,9 +287,7 @@ static void server_new_output(wl_listener *listener, void *data) {
     // Always bring the output up enabled on this first commit, even one
     // configured enabled=false - committing enabled=false as a connector's
     // very first-ever state (mode included or not) crashes the backend on
-    // real DRM/KMS. A config-disabled output gets blanked below instead,
-    // via the same bring-up-then-blank two-step idle_blank.cpp already uses
-    // successfully on every other output.
+    // real DRM/KMS. A config-disabled output gets blanked below instead.
     wlr_output_state_set_enabled(&state, true);
 
     if (cfg.mode.has_value()) {
@@ -323,15 +323,10 @@ static void server_new_output(wl_listener *listener, void *data) {
     wlr_output_commit_state(wlr_output, &state);
     wlr_output_state_finish(&state);
 
-    // STOPGAP(idle-blank): blank this output with a second commit if it
-    // should not end up enabled - either it's configured enabled=false, or
-    // (a connector can bounce its HPD line - disconnect then immediately
-    // reconnect - when its CRTC is disabled, which some DP monitors/docks do
-    // on every blank) it reconnected while the whole session is
-    // idle-blanked, and left alone would instantly re-light a screen that's
-    // supposed to be dark. See core/idle_blank.h - delete the
-    // idle_blanked half of this once Phase 6 lands.
-    if (!cfg.enabled || server->idle_blanked) {
+    // Second commit to blank: configured off, or an HPD bounce on power-off
+    // (some DP monitors/docks do this) that must not re-light the screen.
+    bool reconnected_off = output_power_reconnected_off(server, wlr_output->name) && cfg.enabled;
+    if (!cfg.enabled || reconnected_off) {
         wlr_output_state blank_state;
         wlr_output_state_init(&blank_state);
         wlr_output_state_set_enabled(&blank_state, false);
@@ -372,6 +367,7 @@ static void server_new_output(wl_listener *listener, void *data) {
     // current_mode, so layout membership would give it real hit-testable space
     // that toplevel placement (desktop/toplevel.cpp) could target.
     output->disabled = !cfg.enabled;
+    output->powered_off = reconnected_off;
     output_set_enabled(output, cfg.enabled, cfg.position);
     output_management_schedule_publish(server);
 }

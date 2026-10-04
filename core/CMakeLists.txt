@@ -13,6 +13,8 @@ add_executable(biome
     output.cpp
     output_management.h
     output_management.cpp
+    output_power.h
+    output_power.cpp
     output_config.h
     output_config.cpp
     fade_config.h
@@ -23,8 +25,6 @@ add_executable(biome
     keybindings.cpp
     cursor.h
     cursor.cpp
-    idle_blank.h # STOPGAP(idle-blank)
-    idle_blank.cpp # STOPGAP(idle-blank)
     qt_glib_bridge.h
     qt_glib_bridge.cpp
     wlroots.hpp
@@ -32,7 +32,7 @@ add_executable(biome
 
 add_dependencies(biome biome_wlroots_cxx_shim
     ${XDG_SHELL_PROTOCOL_HEADER_TARGET} ${LAYER_SHELL_PROTOCOL_HEADER_TARGET}
-    ${CURSOR_SHAPE_PROTOCOL_HEADER_TARGET})
+    ${CURSOR_SHAPE_PROTOCOL_HEADER_TARGET} ${OUTPUT_POWER_PROTOCOL_HEADER_TARGET})
 
 # BIOME_WLROOTS_SHIM_DIR must come before PkgConfig::WLROOTS's own include
 # dir so the patched copies of wlr_scene.h/wlr_matrix.h are the ones found.
