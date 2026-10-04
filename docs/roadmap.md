@@ -74,19 +74,6 @@ these.
 
 Found by code reading in the 2026-10-04 deviation audit.
 
-- **Modifier release swallowed after every combo.** `handle_modifier_tap()`
-  (`core/keybindings.cpp`) swallows a lone-held modifier's release whenever
-  any key went down mid-hold, including client combos like Ctrl+C, not just
-  compositor-consumed ones like Alt+Tab. Clients get an unbalanced
-  press/release (Xwayland keeps the key logically down). Only swallow when
-  the interrupting key was consumed by Biome. Side effect of the bare-`LOGO`
-  tap behind Forest's menu hotkey. Confirmed live 2026-10-04 (`xev`: no
-  `KeyRelease Control_L` after Ctrl+C; same for Shift/Alt).
-- **Foreign-toplevel `activate` doesn't restore a minimized window.**
-  `handle_request_activate()` (`desktop/foreign_toplevel.cpp`) only calls
-  `focus_toplevel()`, so windowlist's left-click focuses a minimized window
-  but leaves it hidden. Unminimize (and switch to its workspace) first.
-  Confirmed live 2026-10-04.
 - **Unmap focus fallback can pick a hidden window.** Layer-surface,
   xdg_popup and Xwayland-unmanaged unmap handlers focus the MRU-front
   toplevel without checking minimized/workspace; use

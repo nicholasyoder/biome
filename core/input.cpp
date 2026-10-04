@@ -93,8 +93,9 @@ static void keyboard_handle_key(wl_listener *listener, void *data) {
 
     // Runs on both press and release, independent of handle_key_press()
     // above - a bare-modifier trigger fires on release, not press.
+    const bool consumed = handled;
     for (int i = 0; i < nsyms; i++) {
-        if (handle_modifier_tap(server, syms[i], modifiers, pressed)) {
+        if (handle_modifier_tap(server, syms[i], modifiers, pressed, consumed)) {
             handled = true;
         }
     }

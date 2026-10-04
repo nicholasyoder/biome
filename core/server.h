@@ -266,9 +266,11 @@ struct BiomeServer {
     // modifier_tap_candidate is the single matchable-modifier bitmask
     // currently held alone (0 = no candidate hold in progress);
     // modifier_tap_interrupted becomes true once some other key goes down
-    // during that hold, disqualifying it from firing on release.
+    // during that hold, disqualifying it from firing on release;
+    // modifier_tap_forwarded once one of those keys reached the client.
     uint32_t modifier_tap_candidate = 0;
     bool modifier_tap_interrupted = false;
+    bool modifier_tap_forwarded = false;
 
     wlr_output_layout *output_layout = nullptr;
     wl_listener output_layout_change = {};

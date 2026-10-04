@@ -68,9 +68,11 @@ bool handle_key_press(BiomeServer *server, xkb_keysym_t sym, uint32_t modifiers)
 // matchable modifier is held alone, drops it (without firing) if any other
 // key goes down meanwhile, and fires the matching portal-registered
 // bare-modifier binding on release of that same lone modifier if nothing
-// interrupted it. Returns true if a tap fired and the release should be
-// considered handled (not forwarded to the focused client).
-bool handle_modifier_tap(BiomeServer *server, xkb_keysym_t sym, uint32_t modifiers, bool pressed);
+// interrupted it. `consumed`: Biome already swallowed this press. Returns
+// true if the release should be considered handled (not forwarded to the
+// focused client).
+bool handle_modifier_tap(BiomeServer *server, xkb_keysym_t sym, uint32_t modifiers, bool pressed,
+    bool consumed);
 
 // Called from keyboard_handle_key() for every key release. Swallows a
 // Tab/ISO_Left_Tab release while the Alt-Tab switcher is active, mirroring
