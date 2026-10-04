@@ -65,8 +65,6 @@ lands, `swayidle` + `wlopm` stand in for blanking.
   `Biome.conf` layout is never validated (stale `x`/`y` after a `scale`
   change). Fix idea: auto-close gaps on unplug and validate/auto-arrange at
   startup.
-- **`output_destroy` never destroys the per-output layer/lock scene trees**
-  (leaks on every hotplug).
 - **Scanout-fade layer surfaces** (logout dim / startup cover) aren't moved
   off a disabled output.
 - **`foreign_toplevel` output_enter/leave** is only sent at window creation,

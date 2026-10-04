@@ -169,6 +169,14 @@ static void output_destroy(wl_listener *listener, void *data) {
     // listener, which runs after this one) so the settle below sees it gone.
     output_set_enabled(output, false);
 
+    // Otherwise they leak at (0,0), and the opaque lock_rect covers whatever output sits
+    // there while locked. The layer trees are empty by now (surfaces destroyed above).
+    wlr_scene_node_destroy(&output->layer_background->node);
+    wlr_scene_node_destroy(&output->layer_bottom->node);
+    wlr_scene_node_destroy(&output->layer_top->node);
+    wlr_scene_node_destroy(&output->layer_overlay->node);
+    wlr_scene_node_destroy(&output->lock_tree->node);
+
     wl_list_remove(&output->frame.link);
     wl_list_remove(&output->request_state.link);
     wl_list_remove(&output->destroy.link);
