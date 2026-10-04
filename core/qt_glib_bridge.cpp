@@ -1,10 +1,7 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 //
-// See qt_glib_bridge.h for what this is and why. Implementation follows
-// docs/qt-event-loop-integration-research.md's "Core algorithm" section -
-// see that doc for the reasoning behind each piece, especially the
-// resync-every-cycle in rearm() (skipping it is exactly how a D-Bus reply
-// can silently never dispatch) and the "acquire, never release" choice below.
+// See qt_glib_bridge.h, and docs/architecture-notes.md for the invariants
+// (resync every cycle, acquire-never-release, livelock guard).
 
 #include "core/qt_glib_bridge.h"
 
@@ -27,30 +24,15 @@ std::unordered_map<int, wl_event_source *> g_fd_sources;
 wl_event_source *g_timeout_source = nullptr;
 wl_event_loop *g_loop = nullptr;
 
-// Diagnostics - same cadence/level as the polling pump this replaces, and
-// the practical safety net for the livelock risk noted in the research doc:
-// a spike in rearm cycles with no matching wall-clock time passing would
-// show up here immediately, rather than manifesting only as "compositor
-// seems frozen".
+// Diagnostics: a spike in rearm cycles makes a livelock visible instead of
+// just "compositor seems frozen".
 uint64_t g_rearm_cycles_since_log = 0;
 uint64_t g_pump_calls_since_log = 0;
 uint64_t g_pump_dispatched_since_log = 0;
 timespec g_last_log{};
 
-// Livelock guard: if some GLib/Qt source's prepare() reports "ready right
-// now" on every single cycle (not expected in normal Qt/QtDBus usage - see
-// docs/qt-event-loop-integration-research.md's "Livelock" risk), rearm()'s
-// inner loop would otherwise spin forever without returning control to
-// wl_event_loop_dispatch(). That doesn't just waste CPU: while stuck inside
-// this callback, wl_display_run()'s own outer `while (display->run)` loop
-// never gets back around to recheck the terminate flag either, so a fatal
-// backend condition (nested-backend host window closing, a DRM/libinput
-// failure) that calls wl_display_terminate() from a *different* fd's
-// callback in the same dispatch batch goes unnoticed and Biome hangs
-// instead of exiting. Capping iterations and deferring the rest via an idle
-// source (rather than looping unboundedly) keeps control flowing back
-// through wl_event_loop_dispatch() regularly so termination and every other
-// subsystem still get a turn.
+// A source whose prepare() is always ready would otherwise spin rearm()
+// forever, starving wl_display_run() (including its terminate check).
 constexpr int kRearmLivelockGuard = 256;
 
 void rearm();
@@ -162,8 +144,7 @@ void rearm() {
             wlr_log(WLR_ERROR,
                 "qt-glib-bridge: rearm() hit its %d-iteration livelock guard - a GLib/Qt "
                 "source's prepare() is reporting ready every cycle; deferring the rest via "
-                "an idle source instead of spinning (see docs/qt-event-loop-integration-"
-                "research.md's Livelock risk)",
+                "an idle source instead of spinning",
                 kRearmLivelockGuard);
             wl_event_loop_add_idle(g_loop, continue_rearm_via_idle, nullptr);
             return;
@@ -182,6 +163,7 @@ void rearm() {
             g_poll_fds.resize(n);
         }
 
+        // Every cycle: dispatch can change the fd set.
         sync_fd_sources();
         arm_timeout(timeout_ms);
 

@@ -1,10 +1,7 @@
 find_package(Qt6 REQUIRED COMPONENTS Core DBus)
 
 find_package(PkgConfig REQUIRED)
-# Needed by qt_glib_bridge.cpp to dispatch g_main_context_default() directly
-# (see docs/qt-event-loop-integration-research.md) - already present on the
-# target system as a transitive dependency of GTK/other desktop packages, but
-# wasn't declared as a Biome dependency anywhere until now.
+# qt_glib_bridge.cpp drives g_main_context_default() directly.
 pkg_check_modules(GLIB REQUIRED IMPORTED_TARGET glib-2.0)
 
 add_executable(biome

@@ -3,8 +3,8 @@
 // Bridges Qt's GLib-backed event dispatcher (QEventDispatcherGlib, which
 // drives g_main_context_default() on the main thread) into wl_event_loop, so
 // Biome's own wl_display_run() loop dispatches Qt/QtDBus fd-driven instead of
-// via a polling timer. See docs/qt-event-loop-integration-research.md for the
-// full design/feasibility writeup. Needs zero Qt API - it only ever touches
+// via a polling timer. See docs/architecture-notes.md for the invariants.
+// Needs zero Qt API - it only ever touches
 // the process-wide default GLib context through public <glib.h> calls, so
 // anything else attached to that context (now or later) rides along free.
 

@@ -77,6 +77,30 @@ cancelling an in-flight drag if a lock starts mid-drag, and
 `idle-notify`/auto-lock-on-idle (Phase 6 — this only makes a
 manually-triggered lock actually secure).
 
+## Qt/GLib event loop bridge (`core/qt_glib_bridge.{h,cpp}`)
+
+Qt runs on `QEventDispatcherGlib`, but Biome never calls `QApplication::exec()`.
+The bridge drives `g_main_context_default()` from `wl_event_loop` instead, so
+Qt/QtDBus (posted events, `deleteLater()`, D-Bus replies) dispatch fd-driven
+with zero idle CPU. Replaced a 10ms polling pump (`8677ffb` has the full
+research writeup).
+
+- **`wl_display_run()` stays primary.** Flipping to `exec()` would lose
+  wlroots' `wl_display_terminate()` (host hangup, DRM/libinput failure).
+- **Re-query and resync fds every cycle.** Dispatch changes GLib's fd set;
+  skipping the resync is how a D-Bus reply silently never dispatches.
+- **Acquire once, never release.** Single-threaded and the context's sole
+  driver for the process lifetime.
+- **Livelock guard.** A source whose `prepare()` always reports ready would
+  spin `rearm()` and starve the compositor (including the terminate check);
+  it's capped at `kRearmLivelockGuard` iterations, then deferred via an idle
+  source.
+- Any future `GSource` on the default context is dispatched for free.
+
+Closing a nested backend's host window doesn't terminate Biome: wlroots 0.18
+handles `xdg_toplevel.close` with `wlr_output_destroy()`, not
+`wl_display_terminate()`. Intended, not a bridge bug.
+
 ## Layer-shell reconfigure-storm bug (Workstream A)
 
 Found on the first bare-metal multi-monitor test: cursor motion was jerky

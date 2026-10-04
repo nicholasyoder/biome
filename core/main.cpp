@@ -75,10 +75,8 @@ int main(int argc, char *argv[]) {
     init_icon_theme();
     server.display = wl_display_create();
     // Bridges Qt's GLib-backed dispatcher into wl_event_loop so Qt/QtDBus
-    // dispatch fd-driven off Biome's own loop - see
-    // docs/qt-event-loop-integration-research.md. Called this early so it's
-    // live for the entire rest of startup, not just from whenever IPC init
-    // happens to run.
+    // dispatch fd-driven off Biome's own loop. Called this early so it's live
+    // for the entire rest of startup.
     qt_glib_bridge_init(&server);
     // Autocreate picks the most suitable backend for the environment (e.g.
     // an X11 window if an X11 server is running).
