@@ -132,9 +132,9 @@ these.
   get carried into `layers.fullscreen` on reparent. Not yet confirmed against
   a real app; fix is likely raising unmanaged surfaces above
   `layers.fullscreen` while any toplevel is fullscreen.
-- **An Xwayland menu deactivates its window.** xdg_popups keep their root
-  toplevel activated, but focus granted to an override-redirect surface still
-  clears it; resolve the owner via `xsurface->parent`.
+- **Possible: untyped Xwayland popups deactivate their window.** Typed X11
+  menus never get focus, so this is fine for Qt/GTK; watch for apps whose
+  override-redirect popups lack a window type.
 
 ### Spec-compliant focus
 
