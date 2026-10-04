@@ -27,9 +27,16 @@ Used to start a session's own process (see
 .B \-h
 Print usage and exit.
 .SH FILES
-.I ~/.config/Forest/Biome.conf
+.I /etc/biome/conf.d/*.conf
 .RS
-Per-user output layout and fade settings.
+System-wide defaults, read in filename order; typically installed by a
+desktop shell package.
+.RE
+.I ~/.config/Biome/Biome.conf
+.RS
+Per-user output layout and fade settings. A key set here overrides the
+same key from
+.IR /etc/biome/conf.d .
 .RE
 .SH SEE ALSO
 .BR forest (1),

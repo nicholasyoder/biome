@@ -85,6 +85,9 @@ add_subdirectory(tests)
 # org.freedesktop.impl.portal.desktop.biome bus name at runtime (see
 # ipc/global_shortcuts_portal.cpp), these two files just make the frontend
 # aware it exists and should be preferred for that interface.
+# Drop-ins for other packages (e.g. a shell); see core/config.h.
+install(DIRECTORY DESTINATION /etc/biome/conf.d)
+
 install(FILES data/xdg-desktop-portal/biome-portals.conf
     DESTINATION /usr/share/xdg-desktop-portal)
 install(FILES data/xdg-desktop-portal/portals/biome.portal

@@ -9,6 +9,14 @@ is where the reasoning behind specific pieces of code lives once it's
 settled, so a future change doesn't have to re-derive it or accidentally
 regress an invariant nothing else documents.
 
+## Config sources (`core/config.{h,cpp}`)
+
+`/etc/biome/conf.d/*.conf` (filename order), then `~/.config/Biome/Biome.conf`;
+later sources replace earlier ones per key, never merge values. Drop-ins are
+how a shell package supplies defaults (Forest ships `50-forest.conf`) without
+Biome hardcoding shell names. The `/etc/xdg` QSettings fallback is disabled
+so conf.d is the only system location.
+
 ## Session lock (`desktop/session_lock.{h,cpp}`, Phase 3.5)
 
 Wraps `wlr_session_lock_manager_v1`. The whole implementation leans on one
@@ -257,7 +265,8 @@ Forest depends on. Open ones (bugs, spec gaps slated for removal) live in
   grammar, so Forest's Meta menu hotkey won't bind on other backends.
 - **Layer-shell fades keyed by namespace** (`[LayerShell]` config,
   `core/fade_config.h`). Compositor-side animation picked by client
-  namespace; Hyprland's `layerrule` is the precedent.
+  namespace; Hyprland's `layerrule` is the precedent. The shell's package
+  supplies its namespaces via a conf.d drop-in (see "Config sources").
 - **Every newly mapped toplevel takes focus**, with no xdg-activation token
   check. Common floating-WM convention (sway does the same); xdg-activation
   is under "Later" in the roadmap.

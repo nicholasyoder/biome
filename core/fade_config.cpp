@@ -2,7 +2,8 @@
 
 #include "core/fade_config.h"
 
-#include <QSettings>
+#include "core/config.h"
+
 #include <QString>
 #include <QStringList>
 #include <QVariant>
@@ -31,11 +32,9 @@ std::unordered_set<std::string> parse_namespace_list(const QVariant &raw) {
 } // namespace
 
 FadeConfig load_fade_config() {
-    QSettings settings("Biome", "Biome");
-    settings.beginGroup("LayerShell");
+    const BiomeConfig &settings = biome_config();
     FadeConfig config;
-    config.fading_namespaces = parse_namespace_list(settings.value("fadingNamespaces"));
-    config.scanout_fading_namespaces = parse_namespace_list(settings.value("scanoutFadingNamespaces"));
-    settings.endGroup();
+    config.fading_namespaces = parse_namespace_list(settings.value("LayerShell/fadingNamespaces"));
+    config.scanout_fading_namespaces = parse_namespace_list(settings.value("LayerShell/scanoutFadingNamespaces"));
     return config;
 }

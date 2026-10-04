@@ -17,6 +17,8 @@ add_executable(biome
     output_management.cpp
     output_power.h
     output_power.cpp
+    config.h
+    config.cpp
     output_config.h
     output_config.cpp
     fade_config.h

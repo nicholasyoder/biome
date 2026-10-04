@@ -51,15 +51,6 @@ Ships with Forest 0.9.0. Everything here is required before tagging.
 - **`foreign_toplevel` output_enter/leave** is only sent at window creation,
   not updated when windows move between outputs.
 
-### Forest integration
-
-- **Default fade-namespace config shipped by Forest.** Forest's
-  `forest-logout-dim`/`forest-startup`/`forest-logout` namespaces need
-  `[LayerShell]` fade settings or a fresh install gets no fades. Decide how
-  Forest's package supplies them (system-wide `/etc` file Biome reads,
-  drop-in directory, or compiled-in default); check `core/fade_config.cpp`'s
-  lookup order first. Tracked on both roadmaps.
-
 ### Verify
 
 - **`linux-dmabuf-v1`** — never created anywhere in the tree
@@ -116,6 +107,11 @@ Ships with Forest 0.9.0. Everything here is required before tagging.
 - **Possible: untyped Xwayland popups deactivate their window.** Typed X11
   menus never get focus, so this is fine for Qt/GTK; watch for apps whose
   override-redirect popups lack a window type.
+- **Opacity fades lose most of their frames on logout.** `forest-logout`
+  barely fades in: its map follows three `forest-logout-dim` scanout-fade
+  setups (fresh output-sized buffers, 4K on DP-1) and the log shows a ~73 ms
+  main-loop stall, a third of the 220 ms wall-clock fade. Find the stall,
+  and whether per-pixel fades can be made cheaper in general.
 
 ### Spec-compliant focus
 

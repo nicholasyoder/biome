@@ -2,8 +2,9 @@
 
 #include "core/output_config.h"
 
+#include "core/config.h"
+
 #include <QDebug>
-#include <QSettings>
 #include <QString>
 #include <QStringList>
 
@@ -99,32 +100,29 @@ std::unordered_map<std::string, OutputConfig> load_output_configs() {
     // "<type>-<index>" (eDP-1, HDMI-A-1, DP-1, ...) per the kernel's
     // connector-type table, and the nested dev backends use "WL-<n>"/
     // "X11-<n>".
-    QSettings settings("Biome", "Biome");
-    settings.beginGroup("Outputs");
-    const QStringList connectors = settings.childGroups();
+    const BiomeConfig &settings = biome_config();
+    const QStringList connectors = settings.child_groups("Outputs");
     for (const QString &connector : connectors) {
-        settings.beginGroup(connector);
+        const QString group = "Outputs/" + connector + '/';
 
         OutputConfig cfg;
-        cfg.enabled = settings.value("enabled", true).toBool();
-        cfg.mode = parse_mode(settings.value("mode", "preferred").toString(), connector);
-        cfg.scale = parse_scale(settings.value("scale", "1.0").toString(), connector);
+        cfg.enabled = settings.value(group + "enabled", true).toBool();
+        cfg.mode = parse_mode(settings.value(group + "mode", "preferred").toString(), connector);
+        cfg.scale = parse_scale(settings.value(group + "scale", "1.0").toString(), connector);
 
-        const bool has_x = settings.contains("x");
-        const bool has_y = settings.contains("y");
+        const bool has_x = settings.contains(group + "x");
+        const bool has_y = settings.contains(group + "y");
         if (has_x && has_y) {
-            cfg.position = {settings.value("x").toInt(), settings.value("y").toInt()};
+            cfg.position = {settings.value(group + "x").toInt(), settings.value(group + "y").toInt()};
         } else if (has_x != has_y) {
             qWarning() << "Biome: output" << connector
                        << "has only one of x/y set - ignoring, using auto-arrange";
         }
 
-        cfg.transform = parse_transform(settings.value("transform", "normal").toString(), connector);
+        cfg.transform = parse_transform(settings.value(group + "transform", "normal").toString(), connector);
 
-        settings.endGroup(); // connector
         result.emplace(connector.toStdString(), cfg);
     }
-    settings.endGroup(); // Outputs
 
     return result;
 }

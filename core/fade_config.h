@@ -1,10 +1,8 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 //
-// Bridge between the Qt/QSettings-based config file and desktop/layer_shell.cpp
-// - fade_config.cpp is the only file in core/ (besides output_config.cpp)
-// that includes Qt headers. Config lives at ~/.config/Biome/Biome.conf
-// (QSettings("Biome", "Biome")), group "LayerShell", two keys - each a
-// comma-separated string when hand-typed with more than one namespace, e.g.:
+// Bridge between Biome's config (core/config.h) and desktop/layer_shell.cpp.
+// Group "LayerShell", two keys - each a comma-separated string when
+// hand-typed with more than one namespace, e.g.:
 //   [LayerShell]
 //   fadingNamespaces=forest-logout
 //   scanoutFadingNamespaces=forest-logout-dim,forest-startup
@@ -34,8 +32,5 @@ struct FadeConfig {
     std::unordered_set<std::string> scanout_fading_namespaces;
 };
 
-// Reads ~/.config/Biome/Biome.conf once. Absent config = empty sets = no
-// namespace fades, same "caller doesn't special-case a missing file"
-// contract as load_output_configs(). Safe to call even if the file doesn't
-// exist. Startup-only - not meant to be called from a hot path.
+// Absent keys = empty sets = no namespace fades. Startup-only.
 FadeConfig load_fade_config();
