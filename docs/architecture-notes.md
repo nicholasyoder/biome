@@ -219,7 +219,12 @@ persisted, so preset scripts are the source of truth.
   layout point, so a gap between outputs traps the cursor. `test` and `apply`
   both run `layout_is_connected()` on the *resulting* boxes (effective size =
   mode/scale, transform-swapped) and fail rather than auto-arrange; overlap is
-  allowed for mirroring. Hotplug can't be rejected, so it isn't covered.
+  allowed for mirroring. Hotplug/unplug can't be rejected, so
+  `output_relayout()` repairs instead: restore every output's last live
+  position (`output_configs`), auto-place positions older than the latest
+  apply (`position_generation`), then close gaps around the top-left output
+  (`core/output_arrange.cpp`: drop empty bands, then attach leftover groups).
+  The repair is never written back, so replug restores the last live layout.
 - **`output_layout_settled()`** runs once after a change settles (not from the
   layout `change` signal, which fires per head mid-apply): layer surfaces
   first (their exclusive zones feed maximize targets), then windows, then the

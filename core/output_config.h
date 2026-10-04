@@ -32,6 +32,8 @@ struct OutputConfig {
 
     double scale = 1.0;
     std::optional<std::pair<int, int>> position; // nullopt = auto-arrange
+    // BiomeServer::output_layout_generation when `position` was recorded (Biome.conf = 0).
+    unsigned position_generation = 0;
     wl_output_transform transform = WL_OUTPUT_TRANSFORM_NORMAL;
 };
 

@@ -285,6 +285,8 @@ struct BiomeServer {
     // overwritten in memory by each live output-management apply so a
     // connector that reconnects (hotplug, HPD bounce) gets its live state back.
     std::unordered_map<std::string, OutputConfig> output_configs;
+    // Bumped per successful apply; older OutputConfig::position_generation = stale position.
+    unsigned output_layout_generation = 0;
 
     // ext-session-lock-v1 (desktop/session_lock.cpp). lock_tree is created
     // once at startup and just enabled/raised on lock, disabled on unlock -

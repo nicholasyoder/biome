@@ -29,6 +29,10 @@ BiomeOutput *biome_output_from_wlr(BiomeServer *server, wlr_output *wlr_output);
 void output_set_enabled(BiomeOutput *output, bool enabled,
                         std::optional<std::pair<int, int>> position = std::nullopt);
 
+// For hardware-driven changes (hotplug, unplug, nested resize): restores the last live
+// layout and closes any gap, never persisting the repair.
+void output_relayout(BiomeServer *server);
+
 // Call once after a batch of output changes (apply, unplug, nested resize):
 // moves layer surfaces off disabled outputs, pulls stranded windows back
 // on-screen, and keeps the cursor inside the layout.

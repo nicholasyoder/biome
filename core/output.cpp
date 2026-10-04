@@ -3,6 +3,7 @@
 #include "core/output.h"
 
 #include "core/layers.h"
+#include "core/output_arrange.h"
 #include "core/output_management.h"
 #include "core/output_power.h"
 #include "desktop/idle.h"
@@ -10,7 +11,9 @@
 #include "desktop/session_lock.h"
 #include "desktop/toplevel.h"
 
+#include <algorithm>
 #include <ctime>
+#include <vector>
 
 static void server_new_output(wl_listener *listener, void *data);
 static void output_sync_geometry(BiomeOutput *output);
@@ -32,6 +35,84 @@ void output_layout_settled(BiomeServer *server) {
     layer_shell_reconcile_outputs(server);
     toplevels_relocate_for_layout(server);
     rescue_cursor(server);
+}
+
+static const OutputConfig *output_config_of(BiomeServer *server, BiomeOutput *output) {
+    if (output->wlr->name == nullptr) {
+        return nullptr;
+    }
+    auto it = server->output_configs.find(output->wlr->name);
+    return it != server->output_configs.end() ? &it->second : nullptr;
+}
+
+void output_relayout(BiomeServer *server) {
+    wlr_output_layout *layout = server->output_layout;
+
+    unsigned newest = 0;
+    BiomeOutput *output;
+    wl_list_for_each(output, &server->outputs, link) {
+        const OutputConfig *cfg = output_config_of(server, output);
+        if (!output->disabled && cfg != nullptr && cfg->position.has_value()) {
+            newest = std::max(newest, cfg->position_generation);
+        }
+    }
+
+    // Back to the last live layout; positions predating the latest apply are auto-placed instead.
+    std::vector<BiomeOutput *> manual;
+    wl_list_for_each(output, &server->outputs, link) {
+        wlr_output_layout_output *l_output = wlr_output_layout_get(layout, output->wlr);
+        if (output->disabled || l_output == nullptr) {
+            continue;
+        }
+        const OutputConfig *cfg = output_config_of(server, output);
+        if (cfg == nullptr || !cfg->position.has_value()) {
+            if (!l_output->auto_configured) {
+                manual.push_back(output);
+            }
+            continue;
+        }
+        if (cfg->position_generation < newest) {
+            if (!l_output->auto_configured) {
+                wlr_log(WLR_INFO, "output %s: position predates the last layout change, auto-placing",
+                        output->wlr->name);
+                wlr_output_layout_add_auto(layout, output->wlr);
+            }
+            continue;
+        }
+        auto [x, y] = *cfg->position;
+        if (l_output->auto_configured || l_output->x != x || l_output->y != y) {
+            wlr_output_layout_add(layout, output->wlr, x, y);
+        }
+        manual.push_back(output);
+    }
+    // Auto-placed outputs are chained right of the rightmost manual one, so can't cause a gap.
+    if (manual.size() < 2) {
+        return;
+    }
+
+    // Top-left anchor, so the result doesn't depend on hotplug order.
+    std::vector<wlr_box> boxes(manual.size());
+    size_t anchor = 0;
+    for (size_t i = 0; i < manual.size(); ++i) {
+        wlr_output_layout_get_box(layout, manual[i]->wlr, &boxes[i]);
+        if (boxes[i].x < boxes[anchor].x || (boxes[i].x == boxes[anchor].x && boxes[i].y < boxes[anchor].y)) {
+            anchor = i;
+        }
+    }
+
+    std::vector<wlr_box> arranged = boxes;
+    bool ok = close_layout_gaps(arranged, anchor);
+    std::vector<int> components = layout_components(arranged);
+    for (size_t i = 0; i < manual.size(); ++i) {
+        const char *name = manual[i]->wlr->name;
+        if (!ok && components[i] != components[anchor]) {
+            wlr_log(WLR_INFO, "output %s: can't close layout gap without overlap, auto-placing", name);
+            wlr_output_layout_add_auto(layout, manual[i]->wlr);
+        } else if (arranged[i].x != boxes[i].x || arranged[i].y != boxes[i].y) {
+            wlr_log(WLR_INFO, "output %s: closed layout gap, moved to %d,%d", name, arranged[i].x, arranged[i].y);
+            wlr_output_layout_add(layout, manual[i]->wlr, arranged[i].x, arranged[i].y);
+        }
+    }
 }
 
 static void output_layout_changed(wl_listener *listener, void *data) {
@@ -149,6 +230,7 @@ static void output_request_state(wl_listener *listener, void *data) {
     wlr_output_commit_state(output->wlr, event->state);
 
     output_sync_geometry(output);
+    output_relayout(output->server);
     output_layout_settled(output->server);
     output_management_schedule_publish(output->server);
 }
@@ -183,6 +265,7 @@ static void output_destroy(wl_listener *listener, void *data) {
     wl_list_remove(&output->link);
     BiomeServer *server = output->server;
     free(output);
+    output_relayout(server);
     output_layout_settled(server);
     output_management_schedule_publish(server);
 }
@@ -377,5 +460,8 @@ static void server_new_output(wl_listener *listener, void *data) {
     output->disabled = !cfg.enabled;
     output->powered_off = reconnected_off;
     output_set_enabled(output, cfg.enabled, cfg.position);
+    // Can move already-present outputs (restoring the last live layout), hence the settle.
+    output_relayout(server);
+    output_layout_settled(server);
     output_management_schedule_publish(server);
 }

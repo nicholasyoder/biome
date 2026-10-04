@@ -11,6 +11,8 @@ add_executable(biome
     layers.cpp
     output.h
     output.cpp
+    output_arrange.h
+    output_arrange.cpp
     output_management.h
     output_management.cpp
     output_power.h

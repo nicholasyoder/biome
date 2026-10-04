@@ -3,6 +3,7 @@
 #include "core/output_management.h"
 
 #include "core/output.h"
+#include "core/output_arrange.h"
 #include "core/output_power.h"
 
 #include <algorithm>
@@ -29,6 +30,7 @@ void remember_live_state(BiomeOutput *output) {
     if (cfg.enabled) {
         cfg.position = std::make_pair(output->layout_x, output->layout_y);
     }
+    cfg.position_generation = output->server->output_layout_generation;
 }
 
 void publish_configuration(BiomeServer *server) {
@@ -147,26 +149,8 @@ bool layout_is_connected(BiomeServer *server, wlr_output_configuration_v1 *confi
         return false;
     }
 
-    std::vector<bool> reached(boxes.size(), false);
-    std::vector<size_t> pending = {0};
-    reached[0] = true;
-    while (!pending.empty()) {
-        const wlr_box a = boxes[pending.back()];
-        pending.pop_back();
-        for (size_t i = 0; i < boxes.size(); ++i) {
-            if (reached[i]) {
-                continue;
-            }
-            const wlr_box &b = boxes[i];
-            int overlap_w = std::min(a.x + a.width, b.x + b.width) - std::max(a.x, b.x);
-            int overlap_h = std::min(a.y + a.height, b.y + b.height) - std::max(a.y, b.y);
-            if ((overlap_w > 0 && overlap_h >= 0) || (overlap_h > 0 && overlap_w >= 0)) {
-                reached[i] = true;
-                pending.push_back(i);
-            }
-        }
-    }
-    if (std::find(reached.begin(), reached.end(), false) != reached.end()) {
+    std::vector<int> components = layout_components(boxes);
+    if (*std::max_element(components.begin(), components.end()) != 0) {
         wlr_log(WLR_ERROR, "output-management: layout has a gap between outputs; positions must be edge-adjacent");
         return false;
     }
@@ -207,6 +191,7 @@ void handle_configuration(BiomeServer *server, wlr_output_configuration_v1 *conf
     }
 
     if (ok && commit) {
+        ++server->output_layout_generation;
         wlr_output_configuration_head_v1 *head;
         wl_list_for_each(head, &config->heads, link) {
             BiomeOutput *output = biome_output_from_wlr(server, head->state.output);

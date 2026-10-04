@@ -46,13 +46,6 @@ Ships with Forest 0.9.0. Everything here is required before tagging.
 
 ### Output management fixes
 
-- **Output layouts with a gap can still trap the cursor in two paths.**
-  Live `wlr-randr` applies are validated and rejected
-  (`layout_is_connected()`), but (1) unplugging a *middle* monitor can't be
-  rejected and leaves a gap between the remaining outputs, and (2) the startup
-  `Biome.conf` layout is never validated (stale `x`/`y` after a `scale`
-  change). Fix idea: auto-close gaps on unplug and validate/auto-arrange at
-  startup.
 - **Scanout-fade layer surfaces** (logout dim / startup cover) aren't moved
   off a disabled output.
 - **`foreign_toplevel` output_enter/leave** is only sent at window creation,

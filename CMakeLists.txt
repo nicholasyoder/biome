@@ -77,6 +77,9 @@ add_subdirectory(desktop)
 add_subdirectory(ipc)
 add_subdirectory(core)
 
+enable_testing()
+add_subdirectory(tests)
+
 # Registers biome as an org.freedesktop.impl.portal.GlobalShortcuts backend
 # with the system's xdg-desktop-portal frontend - biome itself owns the
 # org.freedesktop.impl.portal.desktop.biome bus name at runtime (see
