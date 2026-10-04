@@ -47,8 +47,8 @@ Ships with Forest 0.9.0. Everything here is required before tagging.
 
 `ext-idle-notify-v1`, `idle-inhibit-unstable-v1` (`desktop/idle.cpp`) and
 `wlr-output-power-management-unstable-v1` (`core/output_power.cpp`) are done.
-Forest 0.9.0's session locker is the client that drives these; until it
-lands, `swayidle` + `wlopm` stand in for blanking.
+Forest 0.9.0's session locker (`forest-locker`) is the client that drives
+these.
 
 ### Screenshots (Phase 6)
 
