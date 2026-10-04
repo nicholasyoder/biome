@@ -35,6 +35,7 @@
 #include "core/server.h"
 
 #include <QDBusArgument>
+#include <QDBusContext>
 #include <QDBusObjectPath>
 #include <QHash>
 #include <QList>
@@ -54,7 +55,7 @@ Q_DECLARE_METATYPE(GlobalShortcutSpec)
 QDBusArgument &operator<<(QDBusArgument &arg, const GlobalShortcutSpec &spec);
 const QDBusArgument &operator>>(const QDBusArgument &arg, GlobalShortcutSpec &spec);
 
-class GlobalShortcutsPortal : public QObject {
+class GlobalShortcutsPortal : public QObject, protected QDBusContext {
     Q_OBJECT
     Q_CLASSINFO("D-Bus Interface", "org.freedesktop.impl.portal.GlobalShortcuts")
 
@@ -91,12 +92,16 @@ signals:
         const QList<GlobalShortcutSpec> &shortcuts);
 
 private:
-    // Called by PortalSession::Close() once it has unregistered itself
-    // from the bus - drops the session's portal keybindings and its
-    // bookkeeping entries. Not a D-Bus slot itself, just a plain call from
-    // PortalSession back to its owning portal.
+    // Unexports the session object and drops its keybindings and bookkeeping.
+    // Called from PortalSession::Close() and when the session's caller exits.
     void closeSession(const QString &owner);
     friend class PortalSession;
+
+    // xdg-desktop-portal never calls Close() for its sessions if it dies;
+    // without this their bindings outlive it and shadow its replacement's.
+    class QDBusServiceWatcher *m_callerWatcher;
+    // session_handle path -> unique bus name that created it.
+    QHash<QString, QString> m_sessionCallers;
 
     // session_handle path -> the bound shortcuts array last returned for
     // it, for ListShortcuts to hand back.
@@ -109,8 +114,8 @@ private:
 // org.freedesktop.impl.portal.Session - the per-session object the real
 // portal daemon expects at the session_handle path (see this file's header
 // comment). One instance per session: created and registered on the bus in
-// GlobalShortcutsPortal::CreateSession(), unregistered and deleted once
-// Close() fires.
+// GlobalShortcutsPortal::CreateSession(), unregistered and deleted by
+// GlobalShortcutsPortal::closeSession().
 class PortalSession : public QObject {
     Q_OBJECT
     Q_CLASSINFO("D-Bus Interface", "org.freedesktop.impl.portal.Session")

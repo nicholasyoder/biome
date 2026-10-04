@@ -6,7 +6,9 @@
 
 #include <QDBusConnection>
 #include <QDBusError>
+#include <QDBusMessage>
 #include <QDBusMetaType>
+#include <QDBusServiceWatcher>
 #include <QDateTime>
 
 #include <utility>
@@ -25,7 +27,16 @@ const QDBusArgument &operator>>(const QDBusArgument &arg, GlobalShortcutSpec &sp
     return arg;
 }
 
-GlobalShortcutsPortal::GlobalShortcutsPortal(QObject *parent) : QObject(parent) {
+GlobalShortcutsPortal::GlobalShortcutsPortal(QObject *parent)
+    : QObject(parent),
+      m_callerWatcher(new QDBusServiceWatcher(QString(), QDBusConnection::sessionBus(),
+          QDBusServiceWatcher::WatchForUnregistration, this)) {
+    connect(m_callerWatcher, &QDBusServiceWatcher::serviceUnregistered, this, [this](const QString &caller) {
+        wlr_log(WLR_INFO, "GlobalShortcuts: %s exited, closing its sessions", qPrintable(caller));
+        for (const QString &owner : m_sessionCallers.keys(caller)) {
+            closeSession(owner);
+        }
+    });
 }
 
 uint GlobalShortcutsPortal::CreateSession(const QDBusObjectPath &handle,
@@ -46,6 +57,12 @@ uint GlobalShortcutsPortal::CreateSession(const QDBusObjectPath &handle,
             qPrintable(owner), qPrintable(bus.lastError().message()));
     }
     m_sessionObjects.insert(owner, sessionObject);
+
+    if (calledFromDBus()) {
+        const QString caller = message().service();
+        m_sessionCallers.insert(owner, caller);
+        m_callerWatcher->addWatchedService(caller);
+    }
 
     results.clear();
     return 0; // success
@@ -149,9 +166,17 @@ uint GlobalShortcutsPortal::ConfigureShortcuts(const QDBusObjectPath &handle,
 }
 
 void GlobalShortcutsPortal::closeSession(const QString &owner) {
+    QDBusConnection::sessionBus().unregisterObject(owner);
     remove_session_keybindings(owner);
     m_sessions.remove(owner);
-    m_sessionObjects.remove(owner);
+    if (PortalSession *sessionObject = m_sessionObjects.take(owner)) {
+        sessionObject->deleteLater();
+    }
+
+    const QString caller = m_sessionCallers.take(owner);
+    if (!caller.isEmpty() && m_sessionCallers.keys(caller).isEmpty()) {
+        m_callerWatcher->removeWatchedService(caller);
+    }
 }
 
 PortalSession::PortalSession(GlobalShortcutsPortal *portal, QString path)
@@ -159,9 +184,7 @@ PortalSession::PortalSession(GlobalShortcutsPortal *portal, QString path)
 }
 
 void PortalSession::Close() {
-    QDBusConnection::sessionBus().unregisterObject(m_path);
     m_portal->closeSession(m_path);
-    deleteLater();
 }
 
 void global_shortcuts_portal_init(BiomeServer *server) {
