@@ -235,6 +235,30 @@ persisted, so preset scripts are the source of truth.
   re-moding needs a cleared one attached ("No primary frame buffer"). A
   modeset on a DPMS-off connector fails, so apply powers outputs on first.
 
+## Accepted non-standard behavior
+
+Deliberate deviations from protocol or common compositor practice that
+Forest depends on. Open ones (bugs, spec gaps slated for removal) live in
+`docs/roadmap.md`. Audited 2026-10-04.
+
+- **`org.biome.Workspaces` D-Bus** for toplevel↔workspace linkage (see
+  "Workspace protocol" above). Forest's windowlist/deskswitch check
+  `isAvailable()` and degrade without it.
+- **ext-foreign-toplevel-list ↔ wlr-foreign-toplevel paired by creation
+  order.** Forest's windowlist relies on Biome creating both handles
+  back-to-back; neither protocol guarantees it.
+- **Bare-modifier triggers in the GlobalShortcuts backend.** A lone
+  `LOGO` (etc.) fires on an uninterrupted tap; not in the shortcuts-spec
+  grammar, so Forest's Meta menu hotkey won't bind on other backends.
+- **Layer-shell fades keyed by namespace** (`[LayerShell]` config,
+  `core/fade_config.h`). Compositor-side animation picked by client
+  namespace; Hyprland's `layerrule` is the precedent.
+- **Every newly mapped toplevel takes focus**, with no xdg-activation token
+  check. Common floating-WM convention (sway does the same); xdg-activation
+  is under "Later" in the roadmap.
+- **ext-workspace: one global group, no `output_enter`.** Workspaces are
+  global, not per-output; per-output-filtering clients may show none.
+
 ## Idle inhibit visibility (`desktop/idle.cpp`)
 
 An inhibitor counts only while its surface is visible on some enabled

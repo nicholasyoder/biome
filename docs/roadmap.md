@@ -70,6 +70,33 @@ these.
 - **`foreign_toplevel` output_enter/leave** is only sent at window creation,
   not updated when windows move between outputs.
 
+### Focus & input bugs
+
+Found by code reading in the 2026-10-04 deviation audit.
+
+- **Modifier release swallowed after every combo.** `handle_modifier_tap()`
+  (`core/keybindings.cpp`) swallows a lone-held modifier's release whenever
+  any key went down mid-hold, including client combos like Ctrl+C, not just
+  compositor-consumed ones like Alt+Tab. Clients get an unbalanced
+  press/release (Xwayland keeps the key logically down). Only swallow when
+  the interrupting key was consumed by Biome. Side effect of the bare-`LOGO`
+  tap behind Forest's menu hotkey. Confirmed live 2026-10-04 (`xev`: no
+  `KeyRelease Control_L` after Ctrl+C; same for Shift/Alt).
+- **Foreign-toplevel `activate` doesn't restore a minimized window.**
+  `handle_request_activate()` (`desktop/foreign_toplevel.cpp`) only calls
+  `focus_toplevel()`, so windowlist's left-click focuses a minimized window
+  but leaves it hidden. Unminimize (and switch to its workspace) first.
+  Confirmed live 2026-10-04.
+- **Unmap focus fallback can pick a hidden window.** Layer-surface,
+  xdg_popup and Xwayland-unmanaged unmap handlers focus the MRU-front
+  toplevel without checking minimized/workspace; use
+  `focus_topmost_on_active_workspace()` like the other paths.
+- **Opening a menu deactivates its window.** A grabbing xdg_popup gets focus
+  via `grant_keyboard_focus_to_non_toplevel()`, which clears the parent's
+  `activated` state (decoration unfocused, windowlist highlight dropped, GTK
+  headerbars go backdrop) until the menu closes. Mutter/KWin keep the parent
+  activated; skip the clear when the popup's root is the focused toplevel.
+
 ### Forest integration
 
 - **Default fade-namespace config shipped by Forest.** Forest's
@@ -92,6 +119,8 @@ these.
 
 - `debian/changelog` entry for 0.1.0 summarizing the release (currently just
   "Initial Debian packaging"); `CMakeLists.txt` is already `0.1.0`.
+- Remove or gate the `ALT+Escape` built-in (`core/keybindings.cpp`): it
+  terminates the compositor, and with it the whole session, on one chord.
 - Default to `WLR_INFO` in release builds; `main.cpp` hardcodes `WLR_DEBUG`,
   which Forest's `startforest-wayland` captures to `biome.log` every session.
   Keep a way to turn debug back on (flag or env var) for bug reports.
@@ -148,6 +177,30 @@ Each lands only *after* its Forest-side counterpart (Forest roadmap 0.10.0,
   `core/cursor.cpp`) focuses any popup chain rooted on a layer surface, a
   Forest-shaped exception for `panel-library/popup.h`'s non-grabbing popups.
   Per spec only grabbing popups get focus; drop the layer-shell branch.
+- **`exclusive` keyboard interactivity isn't enforced.** Clicking elsewhere
+  steals focus from an exclusive top/overlay surface, and a post-map change
+  to `keyboard_interactivity` is ignored. Needed once Forest's logout dialog
+  moves to `exclusive`.
+
+### Other protocol deviations
+
+- **Layer surfaces survive their output being disabled.** Biome reparents
+  them to another output and rewrites `layer_surface->output` rather than
+  sending `closed`, though the `wl_output` global is gone
+  (`wlr_output_layout_remove`). Sway closes them. Deliberate (see
+  architecture notes, "Layer surfaces have a home"); decide whether to keep.
+- **Null-output layer surfaces go to the first output**, not the
+  focused/cursor output as in sway/Hyprland.
+- **xdg-shell advertised at v3** (wlroots 0.18 supports v6): no
+  `configure_bounds`, `wm_capabilities` or `suspended`. Also ignored:
+  `show_window_menu`, `set_fullscreen`'s output argument, and min/max size
+  hints during interactive resize.
+- **GlobalShortcuts backend gaps** (`ipc/global_shortcuts_portal.cpp`):
+  `Activated`+`Deactivated` both fire on press (no hold semantics); a second
+  `BindShortcuts` on a session double-registers; `trigger_description` is
+  the raw trigger string; no consent UI.
+- **Foreign-toplevel `parent` never set**, so dialogs list as independent
+  windows.
 
 ## 0.3.0 — touch, tablet & accessibility input (Phase 7)
 
