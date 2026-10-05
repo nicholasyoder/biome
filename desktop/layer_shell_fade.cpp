@@ -45,12 +45,14 @@ static wlr_swapchain *create_scanout_swapchain(BiomeServer *server, BiomeOutput 
     return swapchain;
 }
 
-// Tears down a BiomeScanoutFade once its fade-out finishes. Order matters:
-// the scene node must be destroyed before the swapchain, since
+// Tears down a BiomeScanoutFade, normally once its fade-out finishes; if
+// ended early while still mapped, the client's own content is shown again.
+// Order matters: the scene node must be destroyed before the swapchain, since
 // wlr_scene_node_destroy() drops the node's lock on its last-set buffer (a
 // swapchain slot), which must unwind against a still-live swapchain.
 void scanout_fade_destroy(BiomeScanoutFade *fade) {
     if (fade->wrapper != nullptr) {
+        wlr_scene_node_set_enabled(&fade->wrapper->scene_layer_surface->tree->node, true);
         fade->wrapper->scanout_fade = nullptr;
     }
     wlr_scene_node_destroy(&fade->scene_buffer->node);

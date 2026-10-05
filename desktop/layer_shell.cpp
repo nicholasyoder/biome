@@ -284,6 +284,8 @@ static void handle_layer_surface_unmap(wl_listener *listener, void *data) {
         // No reparenting needed here. scanout_fade may be null if
         // scanout_fade_create() failed at map time (a no-op on null).
         scanout_fade_start_fade_out(wrapper->scanout_fade);
+        // Now owned solely by scanout_fading_surfaces; may be freed before `wrapper`.
+        wrapper->scanout_fade = nullptr;
         break;
     case FadeKind::None:
         break;
@@ -313,6 +315,15 @@ static void handle_layer_surface_destroy(wl_listener *listener, void *data) {
 }
 
 void layer_shell_handle_output_destroy(BiomeOutput *output) {
+    // Before the surfaces below: their unmap would otherwise start a fade-out
+    // here, and the fade's scene_buffer lives in this output's layer trees.
+    BiomeScanoutFade *fade, *fade_tmp;
+    wl_list_for_each_safe(fade, fade_tmp, &output->server->scanout_fading_surfaces, link) {
+        if (fade->output == output) {
+            scanout_fade_destroy(fade);
+        }
+    }
+
     BiomeLayerSurface *wrapper, *tmp;
     wl_list_for_each_safe(wrapper, tmp, &output->server->layer_surfaces, link) {
         if (wrapper->output == output) {
@@ -338,15 +349,23 @@ void layer_shell_reconcile_outputs(BiomeServer *server) {
         }
     }
 
+    // A disabled output stops ticking, so its fades would never finish.
+    BiomeScanoutFade *fade, *fade_tmp;
+    wl_list_for_each_safe(fade, fade_tmp, &server->scanout_fading_surfaces, link) {
+        if (fade->output->disabled) {
+            scanout_fade_destroy(fade);
+        }
+    }
+
     BiomeLayerSurface *wrapper;
     wl_list_for_each(wrapper, &server->layer_surfaces, link) {
-        // Scanout fades cache per-output swapchain/buffer state; retried on the next call.
-        if (wrapper->scanout_fade != nullptr) {
-            continue;
-        }
         BiomeOutput *desired = !wrapper->home->disabled ? wrapper->home : fallback;
         if (desired == nullptr || desired == wrapper->output) {
             continue;
+        }
+        // Scanout fades cache per-output swapchain/buffer state; end rather than move.
+        if (wrapper->scanout_fade != nullptr) {
+            scanout_fade_destroy(wrapper->scanout_fade);
         }
         BiomeOutput *previous = wrapper->output;
         wlr_scene_node_reparent(&wrapper->scene_layer_surface->tree->node,

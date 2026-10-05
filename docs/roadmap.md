@@ -46,8 +46,6 @@ Ships with Forest 0.9.0. Everything here is required before tagging.
 
 ### Output management fixes
 
-- **Scanout-fade layer surfaces** (logout dim / startup cover) aren't moved
-  off a disabled output.
 - **`foreign_toplevel` output_enter/leave** is only sent at window creation,
   not updated when windows move between outputs.
 

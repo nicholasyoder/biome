@@ -48,5 +48,5 @@ void layer_shell_handle_output_destroy(BiomeOutput *output);
 
 // Moves layer surfaces bound to a disabled output onto the first enabled one,
 // and back to their original output once it is enabled again. Idempotent.
-// Skips surfaces mid scanout-fade (transient); they move on a later call.
+// Ends any scanout fade on a disabled output or on a surface that has to move.
 void layer_shell_reconcile_outputs(BiomeServer *server);
