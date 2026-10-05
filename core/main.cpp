@@ -31,11 +31,18 @@
 
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <getopt.h>
 #include <unistd.h>
 
 int main(int argc, char *argv[]) {
+#ifdef BIOME_DEV_BUILD
     wlr_log_init(WLR_DEBUG, nullptr);
+#else
+    // BIOME_DEBUG=1 for bug reports.
+    const char *debug_env = getenv("BIOME_DEBUG");
+    wlr_log_init(debug_env && strcmp(debug_env, "1") == 0 ? WLR_DEBUG : WLR_INFO, nullptr);
+#endif
     char *startup_cmd = nullptr;
 
     int c;

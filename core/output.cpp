@@ -168,7 +168,7 @@ void output_manager_init(BiomeServer *server) {
 // redrawn). A high fire count with a low render count would mean something
 // is calling wlr_output_schedule_frame() more than it needs to; a high
 // render count would mean real damage is churning. Logged every ~10s at
-// WLR_DEBUG (already the compositor's default log level).
+// WLR_DEBUG (default only in dev builds; see BIOME_DEBUG).
 namespace {
 uint64_t g_frame_fires_since_log = 0;
 uint64_t g_frame_renders_since_log = 0;

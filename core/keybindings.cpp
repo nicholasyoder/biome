@@ -135,10 +135,13 @@ const std::vector<BiomeKeybinding> &builtin_keybindings() {
             t.push_back(BiomeKeybinding{*parsed, std::move(invoke)});
         };
 
+#ifdef BIOME_DEV_BUILD
+        // Ends the whole session; dev builds only.
         add("ALT+Escape", [](BiomeServer *server, uint32_t) {
             wl_display_terminate(server->display);
             return true;
         });
+#endif
 
         // Ctrl-Alt-Left/Right: switch workspace. Ctrl-Alt-Shift-Left/Right:
         // same, but bring the focused window along too.

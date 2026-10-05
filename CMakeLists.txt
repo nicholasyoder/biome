@@ -9,6 +9,13 @@ project(biome VERSION 0.1.0 LANGUAGES CXX C)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# Off for distro packages (debian/rules): drops the ALT+Escape kill chord and
+# defaults logging to info instead of debug.
+option(BIOME_DEV_BUILD "Developer conveniences (ALT+Escape quit, debug logging)" ON)
+if(BIOME_DEV_BUILD)
+    add_compile_definitions(BIOME_DEV_BUILD)
+endif()
+
 # Custom cmake modules
 list(APPEND CMAKE_MODULE_PATH ${CMAKE_SOURCE_DIR}/cmake)
 include(BiomeProtocols)

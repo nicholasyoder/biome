@@ -1,5 +1,19 @@
 biome (0.1.0) unstable; urgency=medium
 
-  * Initial Debian packaging
+  * First release: a fixed-policy floating Wayland compositor on wlroots 0.18,
+    built as the compositor for the Forest desktop.
+  * Window management: floating placement, maximize/fullscreen, Qt/QSS-themed
+    server-side decorations, Alt-Tab switcher with previews, workspaces
+    (ext-workspace-v1), window open/close fades.
+  * Xwayland support.
+  * Shell protocols: wlr-layer-shell, wlr-foreign-toplevel-management,
+    ext-session-lock-v1, ext-idle-notify-v1, idle-inhibit,
+    wlr-output-power-management, wlr-screencopy, cursor-shape-v1.
+  * Outputs: wlr-output-management for live layout changes, hotplug
+    handling, fractional scaling, layout persisted in
+    ~/.config/Biome/Biome.conf with system drop-ins in /etc/biome/conf.d.
+  * Global shortcuts via an org.freedesktop.impl.portal.GlobalShortcuts
+    backend.
+  * Logs at info level by default; set BIOME_DEBUG=1 for debug logging.
 
- -- Nicholas Yoder <nicholasyoder@proton.me>  Tue, 22 Sep 2026 09:49:22 -0400
+ -- Nicholas Yoder <nicholasyoder@proton.me>  Mon, 05 Oct 2026 12:00:00 -0400

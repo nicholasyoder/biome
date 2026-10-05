@@ -13,6 +13,8 @@ cmake --build build -j$(nproc)
 
 The `biome` executable is produced at `build/core/biome`. (`-j$(nproc)` runs compile jobs in parallel, one per CPU core.) Re-running this after making changes reconfigures only if needed and rebuilds incrementally, so it's safe to use both for the initial build and for rebuilds.
 
+Builds default to `BIOME_DEV_BUILD=ON` (ALT+Escape quits the compositor, debug-level logging). The Debian package builds with it `OFF`; set `BIOME_DEBUG=1` at runtime to get debug logging there.
+
 ### Dependencies
 
 - `wlroots-0.18` (pkg-config)

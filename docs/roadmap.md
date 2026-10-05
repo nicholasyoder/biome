@@ -46,13 +46,6 @@ Ships with Forest 0.9.0. Everything here is required before tagging.
 
 ### Release checklist
 
-- `debian/changelog` entry for 0.1.0 summarizing the release (currently just
-  "Initial Debian packaging"); `CMakeLists.txt` is already `0.1.0`.
-- Remove or gate the `ALT+Escape` built-in (`core/keybindings.cpp`): it
-  terminates the compositor, and with it the whole session, on one chord.
-- Default to `WLR_INFO` in release builds; `main.cpp` hardcodes `WLR_DEBUG`,
-  which Forest's `startforest-wayland` captures to `biome.log` every session.
-  Keep a way to turn debug back on (flag or env var) for bug reports.
 - Fresh-install VM test together with Forest 0.9.0's packages (packaging has
   only been build-checked with `dpkg-buildpackage` + `lintian`).
 - Tag `v0.1.0`, push.
