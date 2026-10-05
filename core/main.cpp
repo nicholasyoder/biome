@@ -93,7 +93,21 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    wlr_renderer_init_wl_display(server.renderer, server.display);
+    if (!wlr_renderer_init_wl_shm(server.renderer, server.display)) {
+        wlr_log(WLR_ERROR, "failed to create wl_shm");
+        return 1;
+    }
+    // Same check wlr_renderer_init_wl_display uses; created here instead so
+    // the scene can get it for per-surface scanout feedback.
+    if (wlr_renderer_get_texture_formats(server.renderer, WLR_BUFFER_CAP_DMABUF) != nullptr &&
+        wlr_renderer_get_drm_fd(server.renderer) >= 0) {
+        server.linux_dmabuf =
+            wlr_linux_dmabuf_v1_create_with_renderer(server.display, 4, server.renderer);
+        if (server.linux_dmabuf == nullptr) {
+            wlr_log(WLR_ERROR, "failed to create linux-dmabuf-v1");
+            return 1;
+        }
+    }
 
     // The bridge between renderer and backend, handling buffer creation.
     server.allocator = wlr_allocator_autocreate(server.backend, server.renderer);

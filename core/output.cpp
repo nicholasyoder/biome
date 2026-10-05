@@ -146,6 +146,9 @@ void output_manager_init(BiomeServer *server) {
     // Handles all rendering and damage tracking; things get added to it at
     // the proper positions and wlr_scene_output_commit() renders a frame.
     server->scene = wlr_scene_create();
+    if (server->linux_dmabuf != nullptr) {
+        wlr_scene_set_linux_dmabuf_v1(server->scene, server->linux_dmabuf);
+    }
     server->scene_layout = wlr_scene_attach_output_layout(server->scene, server->output_layout);
     server->output_layout_change.notify = output_layout_changed;
     wl_signal_add(&server->output_layout->events.change, &server->output_layout_change);

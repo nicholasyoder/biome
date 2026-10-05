@@ -42,6 +42,8 @@ struct BiomeServer {
     wlr_session *session = nullptr;
     wlr_renderer *renderer = nullptr;
     wlr_allocator *allocator = nullptr;
+    // Null when the renderer can't import dmabufs (e.g. pixman).
+    wlr_linux_dmabuf_v1 *linux_dmabuf = nullptr;
     wlr_scene *scene = nullptr;
     wlr_scene_output_layout *scene_layout = nullptr;
 

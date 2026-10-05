@@ -49,15 +49,6 @@ Ships with Forest 0.9.0. Everything here is required before tagging.
 - **`foreign_toplevel` output_enter/leave** is only sent at window creation,
   not updated when windows move between outputs.
 
-### Verify
-
-- **`linux-dmabuf-v1`** — never created anywhere in the tree
-  (`wlr_linux_dmabuf_v1_create_with_renderer` doesn't appear; confirmed
-  tinywl doesn't wire this implicitly either). Without it, GPU clients can't
-  negotiate zero-copy buffers — affects hardware video decode, some GL/Vulkan
-  paths, and zero-copy screencopy. Verify the real-world impact, then wire it
-  either way so it's a deliberate choice, not an accident.
-
 ### Release checklist
 
 - `debian/changelog` entry for 0.1.0 summarizing the release (currently just
