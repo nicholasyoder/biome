@@ -138,7 +138,7 @@ static void xwayland_toplevel_request_configure(wl_listener *listener, void *dat
     wlr_xwayland_surface_configure(toplevel->xwayland_surface,
         event->x, event->y, event->width, event->height);
     if (toplevel->content_tree) {
-        wlr_scene_node_set_position(&toplevel->scene_tree->node,
+        toplevel_set_position(toplevel,
             event->x - decoration_border_width(toplevel, toplevel->maximized),
             event->y - decoration_titlebar_height(toplevel, toplevel->maximized));
         render_toplevel_decoration(toplevel);

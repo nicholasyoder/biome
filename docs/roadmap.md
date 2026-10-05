@@ -44,11 +44,6 @@ session logs or design discussion.
 
 Ships with Forest 0.9.0. Everything here is required before tagging.
 
-### Output management fixes
-
-- **`foreign_toplevel` output_enter/leave** is only sent at window creation,
-  not updated when windows move between outputs.
-
 ### Release checklist
 
 - `debian/changelog` entry for 0.1.0 summarizing the release (currently just

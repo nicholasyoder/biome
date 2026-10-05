@@ -195,7 +195,7 @@ static void process_cursor_move(BiomeServer *server, uint32_t time) {
         toplevel->reposition_pending_y = y;
         return;
     }
-    wlr_scene_node_set_position(&toplevel->scene_tree->node, x, y);
+    toplevel_set_position(toplevel, x, y);
     // The X server has no notion of our border - tell it about the visible
     // content position, not the container's.
     toplevel_sync_position(
@@ -245,7 +245,7 @@ static void process_cursor_resize(BiomeServer *server, uint32_t time) {
         // Xwayland surfaces own their absolute position and have no async
         // commit to defer to (unlike xdg-shell below), so position and size
         // are sent together immediately.
-        wlr_scene_node_set_position(&toplevel->scene_tree->node,
+        toplevel_set_position(toplevel,
             new_left - geo_box.x - decoration_border_width(toplevel, toplevel->maximized),
             new_top - geo_box.y - decoration_titlebar_height(toplevel, toplevel->maximized));
     }

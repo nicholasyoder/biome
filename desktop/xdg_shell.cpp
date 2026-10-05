@@ -118,7 +118,7 @@ static void xdg_toplevel_commit(wl_listener *listener, void *data) {
             int content_bottom = server->grab_geobox.y + server->grab_geobox.height;
             y = content_bottom - geo.height - geo.y - decoration_titlebar_height(toplevel, toplevel->maximized);
         }
-        wlr_scene_node_set_position(&toplevel->scene_tree->node, x, y);
+        toplevel_set_position(toplevel, x, y);
     }
 
     if (toplevel->reposition_pending) {
@@ -132,8 +132,7 @@ static void xdg_toplevel_commit(wl_listener *listener, void *data) {
             static_cast<int32_t>(toplevel->xdg_toplevel->base->current.configure_serial -
                 toplevel->reposition_pending_serial) >= 0;
         if (resolves) {
-            wlr_scene_node_set_position(&toplevel->scene_tree->node,
-                toplevel->reposition_pending_x, toplevel->reposition_pending_y);
+            toplevel_set_position(toplevel, toplevel->reposition_pending_x, toplevel->reposition_pending_y);
             toplevel->reposition_pending = false;
             // The decoration (and its buttons) just moved out from under a
             // cursor that may not have moved since the click that requested
@@ -145,6 +144,7 @@ static void xdg_toplevel_commit(wl_listener *listener, void *data) {
     // The client may have resized itself, or changed its title, outside of
     // an interactive grab - keep the decoration in sync.
     render_toplevel_decoration(toplevel);
+    foreign_toplevel_update_outputs(toplevel);
 }
 
 static void xdg_toplevel_set_title(wl_listener *listener, void *data) {

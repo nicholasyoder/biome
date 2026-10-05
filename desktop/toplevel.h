@@ -259,6 +259,10 @@ void toplevel_set_size(BiomeToplevel *toplevel, int x, int y, int width, int hei
 // xdg-shell toplevels have no equivalent state.
 void toplevel_sync_position(BiomeToplevel *toplevel, int x, int y);
 
+// Moves scene_tree and refreshes foreign-toplevel output_enter/leave. Use
+// instead of setting scene_tree's position directly.
+void toplevel_set_position(BiomeToplevel *toplevel, int x, int y);
+
 // Keyboard focus (and, for Xwayland, the X11 stacking order that goes along
 // with it) only - not pointer focus. Always enters toplevel's own canonical
 // role surface (toplevel_surface(toplevel)), never a caller's hit-tested

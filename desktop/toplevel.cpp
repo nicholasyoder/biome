@@ -92,6 +92,11 @@ void toplevel_sync_position(BiomeToplevel *toplevel, int x, int y) {
     }
 }
 
+void toplevel_set_position(BiomeToplevel *toplevel, int x, int y) {
+    wlr_scene_node_set_position(&toplevel->scene_tree->node, x, y);
+    foreign_toplevel_update_outputs(toplevel);
+}
+
 void set_toplevel_focused(BiomeToplevel *toplevel, bool focused) {
     if (toplevel == nullptr) {
         return;
@@ -319,7 +324,7 @@ void place_new_toplevel(BiomeToplevel *toplevel) {
     }
 
     // A freshly placed toplevel is never already maximized.
-    wlr_scene_node_set_position(&toplevel->scene_tree->node,
+    toplevel_set_position(toplevel,
         vis_x - decoration_border_width(toplevel, false), vis_y - decoration_titlebar_height(toplevel, false));
     toplevel_sync_position(toplevel, vis_x, vis_y);
     toplevel->placed = true;
@@ -381,7 +386,7 @@ static void apply_target_box(BiomeToplevel *toplevel, const wlr_box &target) {
         toplevel->reposition_pending_x = node_x;
         toplevel->reposition_pending_y = node_y;
     } else {
-        wlr_scene_node_set_position(&toplevel->scene_tree->node, node_x, node_y);
+        toplevel_set_position(toplevel, node_x, node_y);
     }
     toplevel_set_size(toplevel, target.x, target.y, target.width, target.height);
     toplevel_sync_position(toplevel, target.x, target.y);
@@ -547,7 +552,7 @@ void toplevels_relocate_for_layout(BiomeServer *server) {
 
         bool changed = rescue_content_box(toplevel, &content, toplevel->maximized);
         if (changed) {
-            wlr_scene_node_set_position(&toplevel->scene_tree->node, content.x - left, content.y - top);
+            toplevel_set_position(toplevel, content.x - left, content.y - top);
             toplevel_sync_position(toplevel, content.x, content.y);
         }
         if (toplevel->maximized) {
@@ -580,6 +585,8 @@ void toplevels_relocate_for_layout(BiomeServer *server) {
         if (changed && toplevel == server->grabbed_toplevel) {
             reset_cursor_mode(server);
         }
+        // Unmoved windows can still gain/lose an output that moved or toggled.
+        foreign_toplevel_update_outputs(toplevel);
     }
 }
 

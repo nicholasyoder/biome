@@ -100,12 +100,7 @@ void foreign_toplevel_create(BiomeToplevel *toplevel) {
 
     foreign_toplevel_update_title_app_id(toplevel);
     foreign_toplevel_sync_state(toplevel);
-
-    wlr_output *output = wlr_output_layout_output_at(
-        server->output_layout, toplevel->scene_tree->node.x, toplevel->scene_tree->node.y);
-    if (output != nullptr) {
-        wlr_foreign_toplevel_handle_v1_output_enter(wrapper->handle, output);
-    }
+    foreign_toplevel_update_outputs(toplevel);
 
     if (server->ext_foreign_toplevel_list != nullptr) {
         wlr_ext_foreign_toplevel_handle_v1_state ext_state = {};
@@ -201,4 +196,27 @@ void foreign_toplevel_sync_state(BiomeToplevel *toplevel) {
     wlr_foreign_toplevel_handle_v1_set_minimized(wrapper->handle, toplevel->minimized);
     wlr_foreign_toplevel_handle_v1_set_activated(wrapper->handle, toplevel->focused);
     wlr_foreign_toplevel_handle_v1_set_fullscreen(wrapper->handle, toplevel->fullscreen);
+}
+
+// wlroots dedupes: enter on an entered output and leave on a non-entered one
+// are no-ops, so no per-toplevel output set is kept here.
+void foreign_toplevel_update_outputs(BiomeToplevel *toplevel) {
+    BiomeForeignToplevel *wrapper = toplevel->foreign_toplevel;
+    if (wrapper == nullptr) {
+        return;
+    }
+    wlr_box frame;
+    toplevel_get_frame_box(toplevel, &frame);
+    BiomeOutput *output;
+    wl_list_for_each(output, &toplevel->server->outputs, link) {
+        // Empty for an output not in the layout (disabled).
+        wlr_box output_box;
+        wlr_output_layout_get_box(toplevel->server->output_layout, output->wlr, &output_box);
+        wlr_box overlap;
+        if (wlr_box_intersection(&overlap, &frame, &output_box)) {
+            wlr_foreign_toplevel_handle_v1_output_enter(wrapper->handle, output->wlr);
+        } else {
+            wlr_foreign_toplevel_handle_v1_output_leave(wrapper->handle, output->wlr);
+        }
+    }
 }

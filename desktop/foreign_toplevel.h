@@ -43,6 +43,10 @@ void foreign_toplevel_update_title_app_id(BiomeToplevel *toplevel);
 // set_toplevel_focused (desktop/toplevel.cpp).
 void foreign_toplevel_sync_state(BiomeToplevel *toplevel);
 
+// Sends output_enter/output_leave for every output the frame box does/doesn't
+// overlap. Geometry-based, so minimized/other-workspace windows keep theirs.
+void foreign_toplevel_update_outputs(BiomeToplevel *toplevel);
+
 // Finds the toplevel whose ext-foreign-toplevel-list-v1 identifier matches
 // (see BiomeServer::ext_foreign_toplevel_list's doc comment in
 // core/server.h) - used by ipc/workspace_bridge.cpp's
