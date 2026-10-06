@@ -40,18 +40,6 @@ session logs or design discussion.
   Forest-specific shortcut needs justification, not just convenience. Full
   reasoning in `docs/history.md`'s "Decoupling goal" section (2026-08-22).
 
-## 0.1.0 — first release
-
-Ships with Forest 0.9.0. Everything here is required before tagging.
-
-### Release checklist
-
-- Fresh-install VM test together with Forest 0.9.0's packages (packaging has
-  only been build-checked with `dpkg-buildpackage` + `lintian`).
-- Tag `v0.1.0`, push.
-- Switch to the `develop`/`master` branch model: create `develop`, and update
-  the branching note in `ForestProject/CLAUDE.md`.
-
 ## 0.2.0 — input, clipboard & spec compliance (Phases 6–7)
 
 - **Pointer lock/confinement** (`pointer-constraints-unstable-v1`) +
@@ -149,7 +137,7 @@ Currently the single biggest user-visible gap versus sway/Hyprland
 - **Screen sharing (portal `ScreenCast`)** — add
   `org.freedesktop.impl.portal.ScreenCast` to biome's portal (currently
   `data/xdg-desktop-portal/portals/biome.portal` only declares
-  `GlobalShortcuts`), implemented via 0.1.0's screencopy + PipeWire. Until
+  `GlobalShortcuts`), implemented via the existing screencopy support + PipeWire. Until
   then Zoom-style screen share has no path under biome (no `-wlr` portal
   backend installed either).
 
