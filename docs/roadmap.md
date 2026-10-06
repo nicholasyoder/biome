@@ -90,12 +90,12 @@ session logs or design discussion.
   buffer at its own size. Send maximized state + size in the initial-commit
   configure (`xdg_toplevel_commit`) instead, which needs the placement
   output picked before map.
-- **Some Xwayland windows get a Biome frame they shouldn't** (e.g.
-  MuseScore's splash screen). `toplevel_decorated()` only checks
-  `_MOTIF_WM_HINTS`; nothing looks at `_NET_WM_WINDOW_TYPE` (splash etc.),
-  and nothing listens for `set_decorations`, so hints changed after creation
-  are missed. Check the splash's actual properties with `xprop` before
-  picking a fix.
+- **Xwayland splash screens get a Biome frame** (e.g. MuseScore's:
+  `_NET_WM_WINDOW_TYPE_SPLASH`, `_KDE_NET_WM_WINDOW_TYPE_OVERRIDE`, no
+  `_MOTIF_WM_HINTS`). `toplevel_decorated()` only checks Motif hints. Leave
+  `SPLASH` windows undecorated (and probably unfocused/centered, like
+  sway). wlroots 0.18 has no `has_window_type()` helper; compare
+  `xsurface->window_type` against `server->ewmh`'s atoms.
 - **Decorations are blurry on scaled outputs** (most visible on the button
   icons). Frames, and the Alt-Tab switcher, are rendered at 1× logical size
   (`decoration/renderer.cpp`, `switcher.cpp`) and upscaled by the scene;
