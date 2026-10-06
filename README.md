@@ -26,12 +26,15 @@ Builds default to `BIOME_DEV_BUILD=ON` (ALT+Escape quits the compositor, debug-l
 A Debian package can be built from `debian/` with:
 
 ```bash
-dpkg-buildpackage -us -uc -b
+sudo apt build-dep .            # once: installs debian/control's Build-Depends
+dpkg-buildpackage -us -uc -b    # or `debuild -us -uc` (devscripts) to also run lintian
 ```
 
-This produces `../biome_<version>_amd64.deb` (plus a `-dbgsym` package) — it does not install anything locally. See `debian/control` for the full build-dependency list.
+This produces `../biome_<version>_amd64.deb` (plus a `-dbgsym` package); it doesn't install anything locally. The version comes from the top entry of `debian/changelog`.
 
-It leaves build byproducts in the tree (`obj-*-linux-gnu/`, `debian/biome/`, etc. — all gitignored). Remove them with:
+It builds the working tree as-is, uncommitted changes included.
+
+It leaves build byproducts in the tree (`obj-*-linux-gnu/`, `debian/biome/`, etc., all gitignored). Remove them with:
 
 ```bash
 dpkg-buildpackage -Tclean
