@@ -78,6 +78,37 @@ session logs or design discussion.
   main-loop stall, a third of the 220 ms wall-clock fade. Find the stall,
   and whether per-pixel fades can be made cheaper in general.
 
+### Bugs
+
+- **Alt-Tab lists windows from every workspace.** `handle_switcher_key()`
+  (`core/keybindings.cpp`) snapshots all of `server->toplevels` with no
+  `workspace == active_workspace` filter; its empty check needs the same
+  filter.
+- **A window that maximizes on map flashes unmaximized first** (seen with
+  pcmanfm-qt). xdg `requested.maximized` is only honored in `toplevel_map()`
+  (`desktop/toplevel.cpp`), after the client has already drawn its first
+  buffer at its own size. Send maximized state + size in the initial-commit
+  configure (`xdg_toplevel_commit`) instead, which needs the placement
+  output picked before map.
+- **Some Xwayland windows get a Biome frame they shouldn't** (e.g.
+  MuseScore's splash screen). `toplevel_decorated()` only checks
+  `_MOTIF_WM_HINTS`; nothing looks at `_NET_WM_WINDOW_TYPE` (splash etc.),
+  and nothing listens for `set_decorations`, so hints changed after creation
+  are missed. Check the splash's actual properties with `xprop` before
+  picking a fix.
+- **Decorations are blurry on scaled outputs** (most visible on the button
+  icons). Frames, and the Alt-Tab switcher, are rendered at 1× logical size
+  (`decoration/renderer.cpp`, `switcher.cpp`) and upscaled by the scene;
+  render at the output's scale via `QImage::setDevicePixelRatio()`, and
+  re-render on output scale change or when a window moves between outputs.
+- **Switcher panel keeps its old width once after a window closes;** it only
+  shrinks on the second Alt-Tab after the close. Suspect a stale cached size
+  hint on the panel's layout item, refreshed by a posted `LayoutRequest`
+  between uses rather than by `relayout_and_shrink_to_fit()`
+  (`decoration/frame_widget.cpp`). Probably fixed by calling
+  `updateGeometry()` on the panel after `setEntries()` changes the icon
+  count.
+
 ### Spec-compliant focus
 
 Each lands only *after* its Forest-side counterpart (Forest roadmap 0.10.0,
