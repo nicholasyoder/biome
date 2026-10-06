@@ -5,9 +5,11 @@
 #include "core/config.h"
 
 #include <QDebug>
+#include <QSettings>
 #include <QString>
 #include <QStringList>
 
+#include <charconv>
 #include <cmath>
 
 namespace {
@@ -52,20 +54,21 @@ std::optional<OutputConfig::Mode> parse_mode(const QString &raw, const QString &
     return OutputConfig::Mode{width, height, refresh_mhz};
 }
 
+const struct {
+    const char *name;
+    wl_output_transform value;
+} kTransforms[] = {
+    {"normal", WL_OUTPUT_TRANSFORM_NORMAL},
+    {"90", WL_OUTPUT_TRANSFORM_90},
+    {"180", WL_OUTPUT_TRANSFORM_180},
+    {"270", WL_OUTPUT_TRANSFORM_270},
+    {"flipped", WL_OUTPUT_TRANSFORM_FLIPPED},
+    {"flipped-90", WL_OUTPUT_TRANSFORM_FLIPPED_90},
+    {"flipped-180", WL_OUTPUT_TRANSFORM_FLIPPED_180},
+    {"flipped-270", WL_OUTPUT_TRANSFORM_FLIPPED_270},
+};
+
 wl_output_transform parse_transform(const QString &raw, const QString &connector) {
-    static const struct {
-        const char *name;
-        wl_output_transform value;
-    } kTransforms[] = {
-        {"normal", WL_OUTPUT_TRANSFORM_NORMAL},
-        {"90", WL_OUTPUT_TRANSFORM_90},
-        {"180", WL_OUTPUT_TRANSFORM_180},
-        {"270", WL_OUTPUT_TRANSFORM_270},
-        {"flipped", WL_OUTPUT_TRANSFORM_FLIPPED},
-        {"flipped-90", WL_OUTPUT_TRANSFORM_FLIPPED_90},
-        {"flipped-180", WL_OUTPUT_TRANSFORM_FLIPPED_180},
-        {"flipped-270", WL_OUTPUT_TRANSFORM_FLIPPED_270},
-    };
     const QString normalized = raw.trimmed().toLower();
     for (const auto &entry : kTransforms) {
         if (normalized == entry.name) {
@@ -86,6 +89,31 @@ double parse_scale(const QString &raw, const QString &connector) {
         return 1.0;
     }
     return scale;
+}
+
+QString format_mode(const OutputConfig::Mode &mode) {
+    QString text = QString("%1x%2").arg(mode.width).arg(mode.height);
+    if (mode.refresh_mhz > 0) {
+        text += QString("@%1.%2").arg(mode.refresh_mhz / 1000).arg(mode.refresh_mhz % 1000, 3, 10, QChar('0'));
+    }
+    return text;
+}
+
+QString format_transform(wl_output_transform transform) {
+    for (const auto &entry : kTransforms) {
+        if (entry.value == transform) {
+            return entry.name;
+        }
+    }
+    return "normal";
+}
+
+// Shortest text that parses back to the same float wlroots holds, so a
+// re-applied layout compares equal (QString::number's 6 digits doesn't).
+QString format_scale(double scale) {
+    char buf[32];
+    auto result = std::to_chars(buf, buf + sizeof(buf), static_cast<float>(scale));
+    return QString::fromLatin1(buf, result.ptr - buf);
 }
 
 } // namespace
@@ -125,4 +153,25 @@ std::unordered_map<std::string, OutputConfig> load_output_configs() {
     }
 
     return result;
+}
+
+void save_output_configs(const std::vector<std::pair<std::string, OutputConfig>> &configs) {
+    QSettings settings("Biome", "Biome");
+    for (const auto &[connector, cfg] : configs) {
+        const QString group = "Outputs/" + QString::fromStdString(connector) + '/';
+        settings.setValue(group + "enabled", cfg.enabled);
+        if (cfg.mode.has_value()) {
+            settings.setValue(group + "mode", format_mode(*cfg.mode));
+        }
+        settings.setValue(group + "scale", format_scale(cfg.scale));
+        if (cfg.position.has_value()) {
+            settings.setValue(group + "x", cfg.position->first);
+            settings.setValue(group + "y", cfg.position->second);
+        }
+        settings.setValue(group + "transform", format_transform(cfg.transform));
+    }
+    settings.sync();
+    if (settings.status() != QSettings::NoError) {
+        qWarning() << "Biome: failed to save output layout to" << settings.fileName();
+    }
 }

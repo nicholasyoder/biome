@@ -4,9 +4,11 @@
 
 #include "core/output.h"
 #include "core/output_arrange.h"
+#include "core/output_config.h"
 #include "core/output_power.h"
 
 #include <algorithm>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -24,6 +26,9 @@ void remember_live_state(BiomeOutput *output) {
     if (wlr_output->current_mode != nullptr) {
         cfg.mode = OutputConfig::Mode{wlr_output->current_mode->width, wlr_output->current_mode->height,
                                       wlr_output->current_mode->refresh};
+    } else if (wlr_output->enabled && wlr_output->width > 0 && wlr_output->height > 0) {
+        // Custom mode (nested backends, or a size the driver doesn't list).
+        cfg.mode = OutputConfig::Mode{wlr_output->width, wlr_output->height, wlr_output->refresh};
     }
     cfg.scale = wlr_output->scale;
     cfg.transform = wlr_output->transform;
@@ -192,6 +197,7 @@ void handle_configuration(BiomeServer *server, wlr_output_configuration_v1 *conf
 
     if (ok && commit) {
         ++server->output_layout_generation;
+        std::vector<std::pair<std::string, OutputConfig>> applied;
         wlr_output_configuration_head_v1 *head;
         wl_list_for_each(head, &config->heads, link) {
             BiomeOutput *output = biome_output_from_wlr(server, head->state.output);
@@ -204,8 +210,13 @@ void handle_configuration(BiomeServer *server, wlr_output_configuration_v1 *conf
                 output_set_enabled(output, false);
             }
             remember_live_state(output);
+            if (output->wlr->name != nullptr) {
+                applied.emplace_back(output->wlr->name, server->output_configs[output->wlr->name]);
+            }
         }
         output_layout_settled(server);
+        // Only protocol applies persist; hotplug repair and startup never write.
+        save_output_configs(applied);
     }
 
     if (states != nullptr) {
