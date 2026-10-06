@@ -42,10 +42,6 @@ session logs or design discussion.
 
 ## 0.2.0 — input, clipboard & spec compliance (Phases 6–7)
 
-- **Persist the last output-management apply** to the user `Biome.conf`
-  `[Outputs]` and restore it at startup. Protocol clients become the way to
-  change layouts; hand edits last until the next apply. Needed by Forest
-  0.10.0's display settings; design in `forest/docs/display-settings-plan.md`.
 - **Pointer lock/confinement** (`pointer-constraints-unstable-v1`) +
   **`relative-pointer-unstable-v1`** — required for FPS-style mouse look in
   any game or 3D app. Ship together; they're used together.

@@ -16,6 +16,8 @@ later sources replace earlier ones per key, never merge values. Drop-ins are
 how a shell package supplies defaults (Forest ships `50-forest.conf`) without
 Biome hardcoding shell names. The `/etc/xdg` QSettings fallback is disabled
 so conf.d is the only system location.
+Biome only ever writes the user file, and only `[Outputs]` (see "Live output
+management"); `QSettings` rewrites it whole, so comments are lost.
 
 ## Session lock (`desktop/session_lock.{h,cpp}`, Phase 3.5)
 
@@ -215,8 +217,13 @@ same approach other wlr-ecosystem clients use for this exact gap.
 ## Live output management (`core/output.cpp`, `core/output_management.cpp`)
 
 `wlr_output_manager_v1` handles `test`/`apply` for `wlr-randr`-style clients.
-`Biome.conf` stays the startup default only; applied changes are never
-persisted, so preset scripts are the source of truth.
+
+- **The last apply persists.** A successful `apply` (any client) writes each
+  configured head's `[Outputs]` entry to the user `Biome.conf`, in the format
+  `load_output_configs()` reads (explicit mode, shortest round-trip float
+  scale, so a re-apply of the restored layout compares equal). `test`,
+  hotplug repair and startup never write; unmentioned connectors keep their
+  entries. Identity-based (make/model/serial) profiles are the shell's job.
 
 - **One geometry path.** `output_sync_geometry()` is the only place that
   positions per-output scene state (layer trees, lock tree/rect) and re-runs

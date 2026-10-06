@@ -12,6 +12,7 @@
 #include <string>
 #include <unordered_map>
 #include <utility>
+#include <vector>
 
 #include <wayland-server-protocol.h> // enum wl_output_transform
 
@@ -35,3 +36,8 @@ struct OutputConfig {
 // Per-connector overrides keyed by wlr connector name. Malformed fields log
 // a warning and keep OutputConfig{}'s defaults. Startup-only.
 std::unordered_map<std::string, OutputConfig> load_output_configs();
+
+// Writes these connectors' entries to the user Biome.conf (never conf.d), in
+// the format load_output_configs() reads back exactly. Unset mode/position
+// leave the existing keys alone.
+void save_output_configs(const std::vector<std::pair<std::string, OutputConfig>> &configs);

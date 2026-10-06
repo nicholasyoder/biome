@@ -402,11 +402,10 @@ lightweight enough (fullscreen, single-purpose) that it's worth considering
 as an earlier pilot for whatever Forest-side Wayland-client plumbing Phase
 4 established.
 
-**Display-settings implementation note (found 2026-08-22 while researching
-Phase 4's Qt/Wayland binding options):** `libkscreen`/KScreen already has a
-working `wlr-output-management-unstable-v1` backend (used for
-KScreen-on-Sway) — reuse it for this plugin instead of hand-binding the
-protocol directly when this phase starts.
+**Display-settings implementation note (2026-08-22, corrected 2026-10-06):**
+this originally said to reuse libkscreen's `wlr-output-management` backend.
+It has none (only KWin's private protocol, XRandR, QScreen and Fake), so
+Forest binds the protocol itself; see `forest/docs/display-settings-plan.md`.
 
 ## Open risks
 
