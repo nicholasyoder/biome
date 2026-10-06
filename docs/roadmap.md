@@ -54,15 +54,6 @@ session logs or design discussion.
   clipboard manager; also used by `wl-clipboard`/`cliphist`.
 - **`wlr-gamma-control-unstable-v1`** — night-light/redshift-style color
   temperature.
-- **Stale fractional-scale info after a live rescale.** `wlr_scene`'s
-  `handle_scene_buffer_outputs_update()` (wlroots `types/scene/surface.c`)
-  only re-sends `wp-fractional-scale-v1` + `wl_surface.preferred_buffer_scale`
-  when a surface's *set* of overlapping outputs changes, not when an
-  already-overlapped output's own `scale` changes (e.g. a live
-  `wlr-randr --scale` apply, found 2026-09-26 debugging a FreeCAD
-  cursor-stutter report). Likely needs biome to force a per-surface update
-  (mirroring wlroots' own `force` param) for every surface on an output
-  whenever its scale changes.
 - **An Xwayland override-redirect popup can render (and steal focus) behind
   a fullscreen window.** `BiomeUnmanaged` surfaces are parented directly to
   `layers.toplevels`, not nested under their owning toplevel, so they don't
