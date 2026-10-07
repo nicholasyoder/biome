@@ -405,7 +405,8 @@ as an earlier pilot for whatever Forest-side Wayland-client plumbing Phase
 **Display-settings implementation note (2026-08-22, corrected 2026-10-06):**
 this originally said to reuse libkscreen's `wlr-output-management` backend.
 It has none (only KWin's private protocol, XRandR, QScreen and Fake), so
-Forest binds the protocol itself; see `forest/docs/display-settings-plan.md`.
+Forest binds the protocol itself; see `forest/docs/development-notes.md`
+(Display settings).
 
 ## Open risks
 
