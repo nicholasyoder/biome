@@ -276,7 +276,7 @@ Forest depends on. Open ones (bugs, spec gaps slated for removal) live in
   supplies its namespaces via a conf.d drop-in (see "Config sources").
 - **Every newly mapped toplevel takes focus**, with no xdg-activation token
   check. Common floating-WM convention (sway does the same); xdg-activation
-  is under "Later" in the roadmap.
+  is planned for 0.2.0 in the roadmap.
 - **ext-workspace: one global group, no `output_enter`.** Workspaces are
   global, not per-output; per-output-filtering clients may show none.
 

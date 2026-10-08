@@ -42,6 +42,13 @@ session logs or design discussion.
 
 ## 0.2.0 — input, clipboard & spec compliance (Phases 6–7)
 
+- **`xdg-activation-v1`** (`wlr_xdg_activation_v1` helper). Forest's
+  settings app needs it to raise its running window when relaunched
+  (Forest `docs/settings-plan.md`, Phase 3); also lets apps reuse existing
+  windows (Firefox, GTK). Decide the policy: when a token is honored
+  (seat/serial validation, token age) and what an unhonored request does
+  (urgent hint, which windowlist can flash). Map-time focus for windows
+  without a token stays unconditional for now.
 - **Pointer lock/confinement** (`pointer-constraints-unstable-v1`) +
   **`relative-pointer-unstable-v1`** — required for FPS-style mouse look in
   any game or 3D app. Ship together; they're used together.
@@ -188,8 +195,6 @@ Currently the single biggest user-visible gap versus sway/Hyprland
   requests brokered through `xdg-desktop-portal` for Flatpak apps. Doesn't
   block Flatpak apps without it, just means no sandbox-aware policy the way
   GNOME/KDE compositors have.
-- **Minor opportunistic protocols** — `xdg-activation-v1` (focus-steal
-  prevention; also relevant to the `windowlist` plugin's "flash instead of
-  steal focus" UX), `single-pixel-buffer-v1`, `content-type-v1`,
+- **Minor opportunistic protocols** — `single-pixel-buffer-v1`, `content-type-v1`,
   `alpha-modifier-v1`. Toolkits probe for these and fall back gracefully if
   absent — pick up opportunistically rather than as a dedicated push.
