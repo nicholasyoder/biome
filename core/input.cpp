@@ -4,13 +4,11 @@
 
 #include "core/cursor.h"
 #include "core/keybindings.h"
-#include "desktop/decoration_bridge.h"
 #include "desktop/idle.h"
-#include "desktop/toplevel.h"
+#include "desktop/switcher.h"
 
 #include <xkbcommon/xkbcommon.h>
 
-#include <algorithm>
 
 static void server_new_input(wl_listener *listener, void *data);
 static void seat_request_cursor(wl_listener *listener, void *data);
@@ -46,23 +44,8 @@ static void keyboard_handle_modifiers(wl_listener *listener, void *data) {
     wlr_seat_keyboard_notify_modifiers(keyboard->server->seat,
         &keyboard->wlr->modifiers);
 
-    // Alt released while the switcher was up (started by a Tab press in
-    // handle_keybinding) - dismiss it.
-    BiomeServer *server = keyboard->server;
-    if (server->switcher_active && !(wlr_keyboard_get_modifiers(keyboard->wlr) & WLR_MODIFIER_ALT)) {
-        // In switch-on-release mode the focus change was only ever
-        // previewed - commit it now, the same target handle_keybinding's
-        // Tab case would have focused immediately in live mode.
-        if (kSwitcherSwitchOnRelease && !server->switcher_order.empty()) {
-            BiomeToplevel *target = server->switcher_order[static_cast<size_t>(server->switcher_preview_index)];
-            if (target->minimized) {
-                set_toplevel_minimized(target, false);
-            }
-            focus_toplevel(target);
-        }
-        server->switcher_active = false;
-        server->switcher_order.clear();
-        update_switcher_overlay(server);
+    if (!(wlr_keyboard_get_modifiers(keyboard->wlr) & WLR_MODIFIER_ALT)) {
+        switcher_commit(keyboard->server);
     }
 }
 
@@ -223,26 +206,4 @@ static void seat_start_drag(wl_listener *listener, void *data) {
     if (drag->icon != nullptr) {
         drag_icon_create(server, drag->icon);
     }
-}
-
-void remove_toplevel_from_switcher(BiomeServer *server, BiomeToplevel *toplevel) {
-    auto it = std::find(server->switcher_order.begin(), server->switcher_order.end(), toplevel);
-    if (it == server->switcher_order.end()) {
-        return;
-    }
-    auto erased_index = it - server->switcher_order.begin();
-    server->switcher_order.erase(it);
-
-    if (server->switcher_order.empty()) {
-        // Nothing left to cycle through or commit to on Alt-release.
-        server->switcher_active = false;
-        server->switcher_preview_index = 0;
-    } else {
-        if (erased_index < server->switcher_preview_index) {
-            server->switcher_preview_index--;
-        }
-        int count = static_cast<int>(server->switcher_order.size());
-        server->switcher_preview_index = ((server->switcher_preview_index % count) + count) % count;
-    }
-    update_switcher_overlay(server);
 }

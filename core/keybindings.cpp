@@ -2,7 +2,7 @@
 
 #include "core/keybindings.h"
 
-#include "desktop/decoration_bridge.h"
+#include "desktop/switcher.h"
 #include "desktop/toplevel.h"
 #include "desktop/workspace.h"
 
@@ -66,15 +66,9 @@ std::vector<PortalBinding> &portal_bindings() {
     return bindings;
 }
 
-// Alt-Tab/Alt-Shift-Tab: cycle through windows in MRU order, no live
-// preview (matches xfwm4's cycle_preview=false default). Deliberately not
-// one of builtin_keybindings()'s table entries: it's stateful (a live MRU
-// switcher/preview spanning an entire Alt-hold, not a one-shot action -
-// see BiomeServer::switcher_active/switcher_preview_index), and xkb remaps
-// the *keysym itself* to ISO_Left_Tab when Shift is held, which doesn't fit
-// the table's exact (modmask, keysym) match without a special-cased
-// equivalence - not worth forcing into the generic shape for the one
-// binding that's already the most complex piece of this file.
+// Alt-Tab/Alt-Shift-Tab. Not a builtin_keybindings() entry: it spans a whole
+// Alt-hold, and xkb turns Shift+Tab into ISO_Left_Tab, which the table's exact
+// (modmask, keysym) match can't express.
 bool handle_switcher_key(BiomeServer *server, xkb_keysym_t sym, uint32_t modifiers) {
     if (!(modifiers & WLR_MODIFIER_ALT)) {
         return false;
@@ -82,38 +76,7 @@ bool handle_switcher_key(BiomeServer *server, xkb_keysym_t sym, uint32_t modifie
     if (sym != XKB_KEY_Tab && sym != XKB_KEY_ISO_Left_Tab) {
         return false;
     }
-    if (wl_list_empty(&server->toplevels)) {
-        return true;
-    }
-    bool reverse = (modifiers & WLR_MODIFIER_SHIFT) || sym == XKB_KEY_ISO_Left_Tab;
-
-    // The switcher always shows a static snapshot of MRU order taken at the
-    // start of this Alt-hold, in both modes - server->toplevels itself
-    // isn't re-read again until the hold ends, so the on-screen list
-    // doesn't reshuffle underfoot as you cycle. Only switcher_preview_index
-    // moves, wrapping over the snapshot.
-    if (!server->switcher_active) {
-        server->switcher_order.clear();
-        BiomeToplevel *pos;
-        wl_list_for_each(pos, &server->toplevels, link) {
-            server->switcher_order.push_back(pos);
-        }
-        server->switcher_preview_index = 0;
-    }
-    int count = static_cast<int>(server->switcher_order.size());
-    server->switcher_preview_index =
-        (server->switcher_preview_index + (reverse ? -1 : 1) + count) % count;
-
-    if constexpr (!kSwitcherSwitchOnRelease) {
-        BiomeToplevel *target =
-            server->switcher_order[static_cast<size_t>(server->switcher_preview_index)];
-        if (target->minimized) {
-            set_toplevel_minimized(target, false);
-        }
-        focus_toplevel(target);
-    }
-    server->switcher_active = true;
-    update_switcher_overlay(server);
+    switcher_cycle(server, (modifiers & WLR_MODIFIER_SHIFT) || sym == XKB_KEY_ISO_Left_Tab);
     return true;
 }
 
@@ -349,7 +312,7 @@ bool handle_modifier_tap(BiomeServer *server, xkb_keysym_t sym, uint32_t modifie
 }
 
 bool handle_switcher_key_release(BiomeServer *server, xkb_keysym_t sym) {
-    return server->switcher_active && (sym == XKB_KEY_Tab || sym == XKB_KEY_ISO_Left_Tab);
+    return server->switcher.active && (sym == XKB_KEY_Tab || sym == XKB_KEY_ISO_Left_Tab);
 }
 
 void add_portal_keybinding(const QString &owner, ParsedTrigger trigger,

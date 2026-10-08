@@ -3,6 +3,7 @@
 #include "desktop/workspace.h"
 
 #include "desktop/ext_workspace.h"
+#include "desktop/switcher.h"
 
 void update_toplevel_visibility(BiomeToplevel *toplevel) {
     // No session_locked check needed here - see BiomeServer::layers' doc
@@ -48,6 +49,7 @@ void switch_workspace(BiomeServer *server, int index) {
         return;
     }
     server->active_workspace = index;
+    switcher_cancel(server);
 
     BiomeToplevel *pos;
     wl_list_for_each(pos, &server->toplevels, link) {
@@ -68,6 +70,9 @@ void move_toplevel_to_workspace(BiomeToplevel *toplevel, int index) {
     }
     toplevel->workspace = index;
     update_toplevel_visibility(toplevel);
+    if (index != server->active_workspace) {
+        switcher_remove_toplevel(server, toplevel);
+    }
     if (server->seat->keyboard_state.focused_surface == toplevel_surface(toplevel) &&
             index != server->active_workspace) {
         wlr_seat_pointer_clear_focus(server->seat);

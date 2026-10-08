@@ -2,7 +2,7 @@
 //
 // Renders the Alt-Tab switcher's live highlight box: a QSS-styled outline
 // resized to the previewed window's on-screen frame, shown in place without
-// raising or focusing it (see decoration_bridge.cpp's update_switcher_overlay).
+// raising or focusing it (see desktop/switcher.cpp).
 
 #pragma once
 

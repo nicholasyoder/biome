@@ -12,9 +12,10 @@
 #include "decoration/layout.h" // biome_decoration::Region
 #include "desktop/toplevel.h"
 
-// Creates the switcher overlay scene node. Called once from main() during
-// server setup, before any toplevel exists.
-void decoration_bridge_init(BiomeServer *server);
+// Takes ownership of frame's pixels and wraps them in a new wlr_buffer
+// (refcount 1 - the caller must drop it once done, e.g. right after handing
+// it to wlr_scene_buffer_set_buffer). Returns nullptr for an empty frame.
+wlr_buffer *create_decoration_buffer(biome_decoration::RenderedFrame &&frame);
 
 // Content-size-independent decoration metrics, read live off the toplevel's
 // own QSS-styled widget tree (BiomeToplevel::decoration_frame) instead of a
@@ -114,9 +115,3 @@ void handle_decoration_press(BiomeToplevel *toplevel, biome_decoration::Region r
 // commits its action only when the release lands back on that same
 // toplevel/region - otherwise the press is silently cancelled.
 void handle_decoration_release(BiomeServer *server);
-
-// Shows/refreshes/hides the Alt-Tab switcher overlay to match
-// server->switcher_active and the current server->toplevels order. Called
-// after every Tab press and on Alt release. Only adds a visual layer on top
-// of the existing MRU logic - doesn't change which window Tab selects.
-void update_switcher_overlay(BiomeServer *server);
