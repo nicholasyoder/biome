@@ -37,7 +37,7 @@ void hide_overlay(BiomeServer *server) {
 }
 
 // Outlines the selected window's frame without raising or focusing it. Hidden
-// if the selection has nothing on screen (e.g. it's minimized).
+// if the selection is minimized.
 void update_highlight(BiomeServer *server, BiomeToplevel *selected) {
     wlr_scene_buffer *highlight = server->switcher.highlight;
     bool visible = selected->placed && selected->scene_tree->node.enabled;
@@ -125,7 +125,9 @@ void switcher_cycle(BiomeServer *server, bool reverse) {
         switcher.order.clear();
         BiomeToplevel *pos;
         wl_list_for_each(pos, &server->toplevels, link) {
-            switcher.order.push_back(pos);
+            if (pos->workspace == server->active_workspace) {
+                switcher.order.push_back(pos);
+            }
         }
         if (switcher.order.empty()) {
             return;
@@ -149,6 +151,12 @@ void switcher_commit(BiomeServer *server) {
     }
     focus_toplevel(target);
     close_switcher(server);
+}
+
+void switcher_cancel(BiomeServer *server) {
+    if (server->switcher.active) {
+        close_switcher(server);
+    }
 }
 
 void switcher_remove_toplevel(BiomeServer *server, BiomeToplevel *toplevel) {

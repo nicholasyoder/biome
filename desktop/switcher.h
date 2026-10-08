@@ -11,11 +11,16 @@
 // Creates the hidden panel/highlight scene nodes. Called once at startup.
 void switcher_init(BiomeServer *server);
 
-// Alt+Tab press: opens the switcher, or moves the selection if already open.
+// Alt+Tab press: opens the switcher on the active workspace's windows, or
+// moves the selection if already open.
 void switcher_cycle(BiomeServer *server, bool reverse);
 
 // Alt release: focuses (un-minimizing if needed) the selection and closes.
 void switcher_commit(BiomeServer *server);
+
+// Closes the switcher without focusing anything (e.g. workspace switched
+// mid-hold).
+void switcher_cancel(BiomeServer *server);
 
 // Drops toplevel from an open switcher, closing it if nothing is left. Must
 // run before a toplevel is freed.

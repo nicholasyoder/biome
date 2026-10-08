@@ -78,10 +78,6 @@ session logs or design discussion.
 
 ### Bugs
 
-- **Alt-Tab lists windows from every workspace.** `handle_switcher_key()`
-  (`core/keybindings.cpp`) snapshots all of `server->toplevels` with no
-  `workspace == active_workspace` filter; its empty check needs the same
-  filter.
 - **A window that maximizes on map flashes unmaximized first** (seen with
   pcmanfm-qt). xdg `requested.maximized` is only honored in `toplevel_map()`
   (`desktop/toplevel.cpp`), after the client has already drawn its first
@@ -96,7 +92,7 @@ session logs or design discussion.
   `xsurface->window_type` against `server->ewmh`'s atoms.
 - **Decorations are blurry on scaled outputs** (most visible on the button
   icons). Frames, and the Alt-Tab switcher, are rendered at 1× logical size
-  (`decoration/renderer.cpp`, `switcher.cpp`) and upscaled by the scene;
+  (`decoration/renderer.cpp`, `decoration/switcher.cpp`) and upscaled by the scene;
   render at the output's scale via `QImage::setDevicePixelRatio()`, and
   re-render on output scale change or when a window moves between outputs.
 - **Switcher panel keeps its old width once after a window closes;** it only
