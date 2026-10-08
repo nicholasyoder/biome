@@ -3,9 +3,9 @@
 #include "desktop/xwayland_shell.h"
 
 #include "core/cursor.h"
-#include "core/input.h"
 #include "desktop/decoration_bridge.h"
 #include "desktop/foreign_toplevel.h"
+#include "desktop/switcher.h"
 #include "desktop/toplevel.h"
 #include "desktop/workspace.h"
 
@@ -97,7 +97,7 @@ static void destroy_xwayland_toplevel(BiomeToplevel *toplevel) {
 
     destroy_toplevel_decoration(toplevel);
     clear_decoration_tracking(server, toplevel);
-    remove_toplevel_from_switcher(server, toplevel);
+    switcher_remove_toplevel(server, toplevel);
     if (server->last_left_click_toplevel == toplevel) {
         server->last_left_click_toplevel = nullptr;
     }

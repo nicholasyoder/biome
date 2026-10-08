@@ -21,12 +21,15 @@
 
 struct BiomeToplevel;
 
-// Whether Alt-Tab commits the focus change on every Tab press (matching
-// Phase 2/3's original behavior) or only previews the selection and commits
-// once on Alt release. Hardcoded until Biome has a real config file to read
-// this from - see BiomeServer::switcher_order/switcher_preview_index below
-// for the state that mode requires.
-inline constexpr bool kSwitcherSwitchOnRelease = true;
+// Alt-Tab switcher state (desktop/switcher.cpp). order is the MRU snapshot
+// frozen at the first Tab of an Alt-hold; index is the selected entry.
+struct BiomeSwitcher {
+    bool active = false;
+    std::vector<BiomeToplevel *> order;
+    int index = 0;
+    wlr_scene_buffer *panel = nullptr;
+    wlr_scene_buffer *highlight = nullptr;
+};
 
 enum class BiomeCursorMode {
     Passthrough,
@@ -241,27 +244,7 @@ struct BiomeServer {
     // recompute a fresh one.
     void (*window_workspaces_changed)(BiomeServer *server) = nullptr;
 
-    // Graphical Alt-Tab switcher overlay. switcher_active tracks whether
-    // Alt is currently held with the switcher shown (set on the first
-    // Tab press, cleared on Alt release - see keyboard_handle_modifiers);
-    // switcher_buffer is created once at startup and just hidden/shown.
-    bool switcher_active = false;
-    wlr_scene_buffer *switcher_buffer = nullptr;
-
-    // Live highlight box outlining the currently-previewed window's
-    // on-screen frame while cycling (see update_switcher_overlay) - a
-    // separate scene node from switcher_buffer so the panel can always be
-    // raised above it regardless of whether the highlighted window overlaps
-    // the panel's centered position.
-    wlr_scene_buffer *switcher_highlight_buffer = nullptr;
-
-    // Only used when kSwitcherSwitchOnRelease is true: switcher_order is a
-    // snapshot of toplevels' MRU order taken on the first Tab press of a
-    // hold (server->toplevels itself isn't touched again until Alt release,
-    // since nothing commits mid-cycle), and switcher_preview_index is the
-    // currently-highlighted offset into it, advanced by later Tab presses.
-    std::vector<BiomeToplevel *> switcher_order;
-    int switcher_preview_index = 0;
+    BiomeSwitcher switcher;
 
     // Bare-modifier ("tap") hotkey candidate tracking - see
     // core/keybindings.h's handle_modifier_tap() for the mechanism.
@@ -292,7 +275,7 @@ struct BiomeServer {
 
     // ext-session-lock-v1 (desktop/session_lock.cpp). lock_tree is created
     // once at startup and just enabled/raised on lock, disabled on unlock -
-    // same create-once-toggle-visibility pattern as switcher_buffer below.
+    // same create-once-toggle-visibility pattern as switcher.panel above.
     // See that file's header comment for the security invariant this relies
     // on: lock_tree must stay the topmost sibling of scene->tree for as long
     // as session_locked is true.

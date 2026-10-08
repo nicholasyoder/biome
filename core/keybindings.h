@@ -13,7 +13,7 @@
 // separate mechanism).
 //
 // The Alt-Tab/Alt-Shift-Tab switcher is deliberately NOT one of these
-// table entries - see handle_key_press()'s own comment for why.
+// table entries - see handle_switcher_key() in keybindings.cpp.
 
 #pragma once
 

@@ -3,9 +3,9 @@
 #include "desktop/xdg_shell.h"
 
 #include "core/cursor.h"
-#include "core/input.h"
 #include "desktop/decoration_bridge.h"
 #include "desktop/foreign_toplevel.h"
+#include "desktop/switcher.h"
 #include "desktop/toplevel.h"
 #include "desktop/workspace.h"
 
@@ -184,7 +184,7 @@ static void xdg_toplevel_destroy(wl_listener *listener, void *data) {
 
     destroy_toplevel_decoration(toplevel);
     clear_decoration_tracking(toplevel->server, toplevel);
-    remove_toplevel_from_switcher(toplevel->server, toplevel);
+    switcher_remove_toplevel(toplevel->server, toplevel);
     free(toplevel);
 }
 
