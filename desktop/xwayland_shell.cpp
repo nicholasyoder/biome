@@ -13,6 +13,9 @@
 
 static void server_new_xwayland_surface(wl_listener *listener, void *data);
 static void server_xwayland_ready(wl_listener *listener, void *data);
+static BiomeToplevel *create_xwayland_toplevel(BiomeServer *server, wlr_xwayland_surface *xsurface);
+static BiomeUnmanaged *create_unmanaged(BiomeServer *server, wlr_xwayland_surface *xsurface);
+static void unmanaged_associate(wl_listener *listener, void *data);
 
 void xwayland_init(BiomeServer *server, wlr_compositor *compositor) {
     server->xwayland = wlr_xwayland_create(server->display, compositor, true);
@@ -74,10 +77,8 @@ static void xwayland_toplevel_set_title(wl_listener *listener, void *data) {
     foreign_toplevel_update_title_app_id(toplevel);
 }
 
-static void xwayland_toplevel_destroy(wl_listener *listener, void *data) {
-    (void)data;
-    BiomeToplevel *toplevel = wl_container_of(listener, toplevel, destroy);
-
+static void destroy_xwayland_toplevel(BiomeToplevel *toplevel) {
+    BiomeServer *server = toplevel->server;
     wl_list_remove(&toplevel->associate.link);
     wl_list_remove(&toplevel->dissociate.link);
     wl_list_remove(&toplevel->set_title.link);
@@ -88,15 +89,55 @@ static void xwayland_toplevel_destroy(wl_listener *listener, void *data) {
     wl_list_remove(&toplevel->request_fullscreen.link);
     wl_list_remove(&toplevel->request_minimize.link);
     wl_list_remove(&toplevel->request_configure.link);
+    wl_list_remove(&toplevel->set_override_redirect.link);
 
     // scene_tree was created up front in server_new_xwayland_surface and
     // outlives any single associate/dissociate cycle, so it's destroyed here.
     wlr_scene_node_destroy(&toplevel->scene_tree->node);
 
     destroy_toplevel_decoration(toplevel);
-    clear_decoration_tracking(toplevel->server, toplevel);
-    remove_toplevel_from_switcher(toplevel->server, toplevel);
+    clear_decoration_tracking(server, toplevel);
+    remove_toplevel_from_switcher(server, toplevel);
+    if (server->last_left_click_toplevel == toplevel) {
+        server->last_left_click_toplevel = nullptr;
+    }
     free(toplevel);
+}
+
+static void xwayland_toplevel_destroy(wl_listener *listener, void *data) {
+    (void)data;
+    BiomeToplevel *toplevel = wl_container_of(listener, toplevel, destroy);
+    destroy_xwayland_toplevel(toplevel);
+}
+
+// X11 clients may set override-redirect on an existing window (Qt reuses
+// native windows); rebuild it as unmanaged, replaying the stage it reached.
+static void xwayland_toplevel_set_override_redirect(wl_listener *listener, void *data) {
+    (void)data;
+    BiomeToplevel *toplevel = wl_container_of(listener, toplevel, set_override_redirect);
+    BiomeServer *server = toplevel->server;
+    wlr_xwayland_surface *xsurface = toplevel->xwayland_surface;
+    if (!xsurface->override_redirect) {
+        return;
+    }
+    bool associated = xsurface->surface != nullptr;
+    bool mapped = associated && xsurface->surface->mapped;
+
+    if (mapped) {
+        toplevel_unmap(&toplevel->unmap, nullptr);
+    }
+    if (associated) {
+        xwayland_toplevel_dissociate(&toplevel->dissociate, nullptr);
+    }
+    destroy_xwayland_toplevel(toplevel);
+
+    BiomeUnmanaged *surface = create_unmanaged(server, xsurface);
+    if (associated) {
+        unmanaged_associate(&surface->associate, nullptr);
+    }
+    if (mapped) {
+        surface->map.notify(&surface->map, nullptr);
+    }
 }
 
 static void xwayland_toplevel_request_resize(wl_listener *listener, void *data) {
@@ -199,14 +240,50 @@ static void unmanaged_dissociate(wl_listener *listener, void *data) {
     surface->scene_tree = nullptr;
 }
 
-static void unmanaged_destroy(wl_listener *listener, void *data) {
-    (void)data;
-    BiomeUnmanaged *surface = wl_container_of(listener, surface, destroy);
+static void destroy_unmanaged(BiomeUnmanaged *surface) {
     wl_list_remove(&surface->associate.link);
     wl_list_remove(&surface->dissociate.link);
     wl_list_remove(&surface->destroy.link);
     wl_list_remove(&surface->request_configure.link);
+    wl_list_remove(&surface->set_override_redirect.link);
     free(surface);
+}
+
+static void unmanaged_destroy(wl_listener *listener, void *data) {
+    (void)data;
+    BiomeUnmanaged *surface = wl_container_of(listener, surface, destroy);
+    destroy_unmanaged(surface);
+}
+
+// Mirror of xwayland_toplevel_set_override_redirect.
+static void unmanaged_set_override_redirect(wl_listener *listener, void *data) {
+    (void)data;
+    BiomeUnmanaged *surface = wl_container_of(listener, surface, set_override_redirect);
+    BiomeServer *server = surface->server;
+    wlr_xwayland_surface *xsurface = surface->xwayland_surface;
+    if (xsurface->override_redirect) {
+        return;
+    }
+    bool associated = xsurface->surface != nullptr;
+    bool mapped = associated && xsurface->surface->mapped;
+
+    if (mapped) {
+        surface->unmap.notify(&surface->unmap, nullptr);
+    }
+    if (associated) {
+        // The wl_surface lives on, so its scene tree won't go away by itself.
+        wlr_scene_node_destroy(&surface->scene_tree->node);
+        unmanaged_dissociate(&surface->dissociate, nullptr);
+    }
+    destroy_unmanaged(surface);
+
+    BiomeToplevel *toplevel = create_xwayland_toplevel(server, xsurface);
+    if (associated) {
+        xwayland_toplevel_associate(&toplevel->associate, nullptr);
+    }
+    if (mapped) {
+        toplevel_map(&toplevel->map, nullptr);
+    }
 }
 
 static void unmanaged_request_configure(wl_listener *listener, void *data) {
@@ -219,26 +296,25 @@ static void unmanaged_request_configure(wl_listener *listener, void *data) {
     }
 }
 
-static void server_new_xwayland_surface(wl_listener *listener, void *data) {
-    BiomeServer *server = wl_container_of(listener, server, new_xwayland_surface);
-    auto *xsurface = static_cast<wlr_xwayland_surface *>(data);
+static BiomeUnmanaged *create_unmanaged(BiomeServer *server, wlr_xwayland_surface *xsurface) {
+    auto *surface = static_cast<BiomeUnmanaged *>(calloc(1, sizeof(BiomeUnmanaged)));
+    surface->server = server;
+    surface->xwayland_surface = xsurface;
 
-    if (xsurface->override_redirect) {
-        auto *surface = static_cast<BiomeUnmanaged *>(calloc(1, sizeof(BiomeUnmanaged)));
-        surface->server = server;
-        surface->xwayland_surface = xsurface;
+    surface->associate.notify = unmanaged_associate;
+    wl_signal_add(&xsurface->events.associate, &surface->associate);
+    surface->dissociate.notify = unmanaged_dissociate;
+    wl_signal_add(&xsurface->events.dissociate, &surface->dissociate);
+    surface->destroy.notify = unmanaged_destroy;
+    wl_signal_add(&xsurface->events.destroy, &surface->destroy);
+    surface->request_configure.notify = unmanaged_request_configure;
+    wl_signal_add(&xsurface->events.request_configure, &surface->request_configure);
+    surface->set_override_redirect.notify = unmanaged_set_override_redirect;
+    wl_signal_add(&xsurface->events.set_override_redirect, &surface->set_override_redirect);
+    return surface;
+}
 
-        surface->associate.notify = unmanaged_associate;
-        wl_signal_add(&xsurface->events.associate, &surface->associate);
-        surface->dissociate.notify = unmanaged_dissociate;
-        wl_signal_add(&xsurface->events.dissociate, &surface->dissociate);
-        surface->destroy.notify = unmanaged_destroy;
-        wl_signal_add(&xsurface->events.destroy, &surface->destroy);
-        surface->request_configure.notify = unmanaged_request_configure;
-        wl_signal_add(&xsurface->events.request_configure, &surface->request_configure);
-        return;
-    }
-
+static BiomeToplevel *create_xwayland_toplevel(BiomeServer *server, wlr_xwayland_surface *xsurface) {
     auto *toplevel = static_cast<BiomeToplevel *>(calloc(1, sizeof(BiomeToplevel)));
     toplevel->server = server;
     toplevel->type = BiomeToplevelType::Xwayland;
@@ -271,6 +347,19 @@ static void server_new_xwayland_surface(wl_listener *listener, void *data) {
     wl_signal_add(&xsurface->events.request_minimize, &toplevel->request_minimize);
     toplevel->request_configure.notify = xwayland_toplevel_request_configure;
     wl_signal_add(&xsurface->events.request_configure, &toplevel->request_configure);
+    toplevel->set_override_redirect.notify = xwayland_toplevel_set_override_redirect;
+    wl_signal_add(&xsurface->events.set_override_redirect, &toplevel->set_override_redirect);
+    return toplevel;
+}
+
+static void server_new_xwayland_surface(wl_listener *listener, void *data) {
+    BiomeServer *server = wl_container_of(listener, server, new_xwayland_surface);
+    auto *xsurface = static_cast<wlr_xwayland_surface *>(data);
+    if (xsurface->override_redirect) {
+        create_unmanaged(server, xsurface);
+    } else {
+        create_xwayland_toplevel(server, xsurface);
+    }
 }
 
 // Give Xwayland a cursor image as soon as it's up - without this, X11

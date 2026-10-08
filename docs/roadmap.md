@@ -78,16 +78,6 @@ session logs or design discussion.
 
 ### Bugs
 
-- **Biome crashes (taking down the whole session) when LMMS's main window
-  opens.** Seen with the LMMS AppImage (`~/Misc/Apps/lmms-1.3.0-alpha...AppImage`):
-  its splash screen displays fine, then biome crashes as the main window
-  tries to map. No backtrace captured yet (crash killed the session before
-  one could be grabbed); next repro should run biome under `gdb` or with
-  coredumps enabled (`systemd-coredump`/`ulimit -c unlimited`) to get a stack
-  trace. LMMS is Qt-based and not Wayland-native, so it maps through
-  Xwayland — likely the same surface/toplevel-transition territory as the
-  splash-screen and maximize-on-map bugs below, but unconfirmed without a
-  trace.
 - **Alt-Tab lists windows from every workspace.** `handle_switcher_key()`
   (`core/keybindings.cpp`) snapshots all of `server->toplevels` with no
   `workspace == active_workspace` filter; its empty check needs the same

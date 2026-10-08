@@ -187,6 +187,7 @@ struct BiomeToplevel {
     wl_listener associate = {};
     wl_listener dissociate = {};
     wl_listener request_configure = {};
+    wl_listener set_override_redirect = {};
 };
 
 // An override-redirect Xwayland surface (menus, tooltips, dnd icons, ...).
@@ -203,6 +204,7 @@ struct BiomeUnmanaged {
     wl_listener map = {};
     wl_listener unmap = {};
     wl_listener request_configure = {};
+    wl_listener set_override_redirect = {};
 };
 
 struct BiomePopup {
