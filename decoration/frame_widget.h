@@ -31,41 +31,18 @@ namespace biome_decoration {
 QIcon fallback_icon();
 
 // Forces every widget in root's subtree (root included) to reapply its QSS
-// rules, including qproperty-* values - needed since Biome never
-// QWidget::show()s these widgets (everything renders offscreen) and Qt
-// normally only auto-polishes a widget on its first show.
+// rules, including qproperty-* values - Qt doesn't re-polish on its own
+// when a dynamic property used in a QSS selector changes.
 void repolish_tree(QWidget *root);
 
-// Forces root's QLayout (and every descendant's) to recompute geometry
-// immediately, in two passes: bottom-up invalidate, so an ancestor's own
-// activate() never sizes itself against a descendant widget's stale cached
-// minimumSizeHint()/sizeHint() (invalidate() alone is enough to freshen
-// that cache - it does no geometry math, so it's safe to do before the
-// ancestor even knows its own final size); then top-down activate, so
-// every descendant reflows against its real, final geometry after root's
-// own activate() potentially resized it - QLayout::activate() no-ops once
-// its "activated" flag is set, so without this second pass a resized
-// child's own contents would stay positioned for its old size.
-// A QLayout normally reflows via a posted QEvent::LayoutRequest, delivered
-// whenever Qt's event dispatcher next runs - core/qt_glib_bridge.cpp makes
-// that genuinely live (fd-driven off Biome's own wl_display loop, not a
-// poll), but decoration rendering still runs synchronously inside a
-// wlroots callback and needs correct geometry for that same call, not
-// "whenever Qt next dispatches" - hence forcing this explicitly rather
-// than trusting the event to arrive in time. Shared by
-// DecorationFrame::layoutFor() and switcher.cpp's SwitcherPanel, which both
-// resize() an offscreen top-level widget and need its subtree to reflect
-// that immediately.
-void force_activate_layouts(QWidget *root);
+// Shows root inside a shared, never-mapped WA_DontShowOnScreen host
+// (QGraphicsProxyWidget's approach): Qt's layouts only react to
+// LayoutRequest/resize events on visible widgets.
+void show_offscreen(QWidget *root);
 
-// force_activate_layouts(root) (to freshen minimumSizeHint() against
-// current content), then resize root down to that hint (QLayout::activate()
-// on a top-level widget only ever grows it, never shrinks), then
-// force_activate_layouts(root) again so every descendant's geometry
-// reflects that final, possibly-shrunk size. The common "measure, then
-// commit" pattern behind DecorationFrame::layoutFor()/setMaximizedState()/
-// setIcon() and switcher.cpp's render_switcher().
-void relayout_and_shrink_to_fit(QWidget *root);
+// Applies pending layout changes now: renders and hit-tests run synchronously
+// inside wlroots callbacks and can't wait for Qt's event loop to get to them.
+void flush_layouts();
 
 // One left/right/bottom border strip - a plain styled widget rather than a
 // single CSS border spanning the whole frame, so each edge can be styled and

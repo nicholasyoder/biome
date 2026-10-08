@@ -2,7 +2,7 @@
 
 #include "switcher_highlight.h"
 
-#include "frame_widget.h" // repolish_tree, force_activate_layouts
+#include "frame_widget.h" // show_offscreen
 
 #include <QFrame>
 #include <QVBoxLayout>
@@ -27,6 +27,7 @@ public:
         frame = new QFrame(this);
         frame->setObjectName("biomeSwitcherHighlight");
         layout->addWidget(frame);
+        show_offscreen(this);
     }
 
     QFrame *frame = nullptr;
@@ -49,9 +50,7 @@ RenderedFrame render_switcher_highlight(int width, int height) {
         // widgets constructed after load_decoration_theme() runs.
     }
 
-    repolish_tree(g_root);
-    g_root->resize(width, height);
-    force_activate_layouts(g_root);
+    g_root->resize(width, height); // visible, so this relays out synchronously
 
     QImage image(width, height, QImage::Format_ARGB32_Premultiplied);
     image.fill(Qt::transparent);
