@@ -95,13 +95,6 @@ session logs or design discussion.
   (`decoration/renderer.cpp`, `decoration/switcher.cpp`) and upscaled by the scene;
   render at the output's scale via `QImage::setDevicePixelRatio()`, and
   re-render on output scale change or when a window moves between outputs.
-- **Switcher panel keeps its old width once after a window closes;** it only
-  shrinks on the second Alt-Tab after the close. Suspect a stale cached size
-  hint on the panel's layout item, refreshed by a posted `LayoutRequest`
-  between uses rather than by `relayout_and_shrink_to_fit()`
-  (`decoration/frame_widget.cpp`). Probably fixed by calling
-  `updateGeometry()` on the panel after `setEntries()` changes the icon
-  count.
 
 ### Spec-compliant focus
 

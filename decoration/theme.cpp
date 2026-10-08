@@ -37,7 +37,6 @@ void load_decoration_theme() {
 
 DecorationFrame *create_decoration_frame() {
     auto *frame = new DecorationFrame();
-    repolish_tree(frame);
     // Gives the widget tree a valid initial layout before any real content
     // size is known - without this, borderWidth()/titlebarHeight() would
     // read content_spacer_'s pre-layout (0, 0) position if queried before

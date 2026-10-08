@@ -2,7 +2,7 @@
 
 #include "switcher.h"
 
-#include "frame_widget.h" // repolish_tree, relayout_and_shrink_to_fit, fallback_icon
+#include "frame_widget.h" // repolish_tree, show_offscreen, flush_layouts, fallback_icon
 
 #include <QFontMetrics>
 #include <QFrame>
@@ -35,9 +35,7 @@ public:
     // Adds/removes icon buttons to match entries.size(), sets each one's
     // "selected" dynamic property and icon, and sets the title label to the
     // selected entry's full, not-yet-elided text. Callers must
-    // relayout_and_shrink_to_fit() the panel afterwards, then call
-    // elideTitle(), so the label's real laid-out width is known before
-    // eliding against it.
+    // flush_layouts() before elideTitle(), so the label's real width is known.
     void setEntries(const std::vector<SwitcherEntry> &entries, int selected_index);
 
     // Elides the title label to fit its actual laid-out width, avoiding a
@@ -132,7 +130,7 @@ void SwitcherPanel::elideTitle() {
 // child - a styled widget rendered as the root of a QWidget::render() call
 // instead paints a flat rect and relies on masking the *native* window's
 // shape to get the rounded look on a real on-screen window, which never
-// happens here since nothing in Biome's decoration pipeline is ever shown.
+// happens here since nothing in Biome's decoration pipeline is ever mapped.
 // Same reasoning as frame_widget.h's DecorationFrame staying transparent and
 // leaving its own corners to child widgets (biomeTitlebar/biomeBorderBottom).
 class SwitcherRoot : public QWidget {
@@ -145,6 +143,8 @@ public:
         layout->setContentsMargins(0, 0, 0, 0);
         panel = new SwitcherPanel(this);
         layout->addWidget(panel);
+        layout->setSizeConstraint(QLayout::SetFixedSize);
+        show_offscreen(this);
     }
 
     SwitcherPanel *panel = nullptr;
@@ -162,20 +162,13 @@ RenderedFrame render_switcher(const std::vector<SwitcherEntry> &entries, int sel
 
     if (g_root == nullptr) {
         g_root = new SwitcherRoot();
-        // No per-widget setStyleSheet() needed - decoration/theme.cpp's
-        // load_decoration_theme() already applied the theme application-wide
-        // via qApp->setStyleSheet(), which cascades to widgets constructed
-        // afterwards same as one set directly on them. The repolish_tree()
-        // call just below (needed unconditionally on every render anyway,
-        // for newly-added rows) covers this first-construction case too.
+        // No per-widget setStyleSheet() needed - load_decoration_theme()
+        // applied the theme application-wide.
     }
 
     g_root->panel->setEntries(entries, selected_index);
-    repolish_tree(g_root); // newly-added rows above need their QSS applied too
-    // g_root is reused across calls, so minimumSizeHint() below must not
-    // read a stale hint left by the previous render's entry count - see
-    // relayout_and_shrink_to_fit()'s own doc comment (frame_widget.h).
-    relayout_and_shrink_to_fit(g_root);
+    repolish_tree(g_root); // for the icons' "selected" property
+    flush_layouts();
     g_root->panel->elideTitle();
 
     int width = g_root->width();

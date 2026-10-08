@@ -23,63 +23,43 @@ void repolish_tree(QWidget *root) {
     }
 }
 
+void show_offscreen(QWidget *root) {
+    // One shared 1x1 host means one tiny backing store - a shown top-level
+    // per tree would allocate (and repaint) a window-sized one for nothing.
+    static QWidget *host = [] {
+        auto *widget = new QWidget();
+        widget->setAttribute(Qt::WA_DontShowOnScreen);
+        widget->resize(1, 1);
+        widget->show();
+        return widget;
+    }();
+    root->setParent(host);
+    root->move(1, 1); // outside the host, so never painted into its backing store
+    root->show();
+}
+
 namespace {
-
-// Bottom-up: invalidates every descendant's layout before root's own
-// activate(), so that activate() - which reads each child widget's
-// minimumSizeHint()/sizeHint() to decide root's size - sees values freshly
-// computed against that child's *current* content rather than a stale
-// cache left over from before this render (Qt only refreshes that cache
-// across a widget boundary via a posted QEvent::LayoutRequest, which this
-// synchronous call can't rely on arriving - see force_activate_layouts()'s
-// own doc comment). invalidate() alone (not activate()) is enough here -
-// it just clears the cached-dirty flag behind minimumSizeHint()/sizeHint(),
-// with no geometry math - since any geometry this pass might compute would
-// only be discarded by the top-down activate below anyway.
-void invalidate_bottom_up(QWidget *root) {
-    for (QObject *child : root->children()) {
-        if (auto *child_widget = qobject_cast<QWidget *>(child)) {
-            invalidate_bottom_up(child_widget);
+struct LayoutRequestCounter : QObject {
+    int count = 0;
+    bool eventFilter(QObject *, QEvent *event) override {
+        if (event->type() == QEvent::LayoutRequest) {
+            count++;
         }
+        return false;
     }
-    if (QLayout *layout = root->layout()) {
-        layout->invalidate();
-    }
-}
-
-// Top-down: re-activates every descendant's layout after root's own. A
-// child widget's layout->activate() no-ops once its internal "activated"
-// flag is set - so a child already activated during the bottom-up pass
-// above (against whatever geometry it had *before* root's own activate()
-// potentially resized it) never gets to reflow its own contents against
-// its real, final geometry without this second, top-down pass forcing it
-// to run again.
-void activate_top_down(QWidget *root) {
-    if (QLayout *layout = root->layout()) {
-        layout->invalidate();
-        layout->activate();
-    }
-    for (QObject *child : root->children()) {
-        if (auto *child_widget = qobject_cast<QWidget *>(child)) {
-            activate_top_down(child_widget);
-        }
-    }
-}
-
+};
 } // namespace
 
-void force_activate_layouts(QWidget *root) {
-    invalidate_bottom_up(root);
-    activate_top_down(root);
-}
-
-void relayout_and_shrink_to_fit(QWidget *root) {
-    force_activate_layouts(root);
-    // QLayout::activate() on a top-level widget only ever grows it, never
-    // shrinks - resize to the true minimum explicitly before the final
-    // re-activate positions every child against it.
-    root->resize(root->minimumSizeHint());
-    force_activate_layouts(root);
+void flush_layouts() {
+    // Each pass only delivers already-posted events, and a child's relayout
+    // posts its parent's request - repeat until the tree settles, as the event loop would.
+    LayoutRequestCounter counter;
+    QCoreApplication::instance()->installEventFilter(&counter);
+    do {
+        counter.count = 0;
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::LayoutRequest);
+    } while (counter.count > 0);
+    QCoreApplication::instance()->removeEventFilter(&counter);
 }
 
 QIcon fallback_icon() {
@@ -170,6 +150,10 @@ DecorationFrame::DecorationFrame(QWidget *parent) : QFrame(parent) {
     main_layout->addWidget(titlebar_);
     main_layout->addLayout(middle_row);
     main_layout->addWidget(border_bottom_);
+    // Frame tracks its contents' size hint, shrinking as well as growing.
+    main_layout->setSizeConstraint(QLayout::SetFixedSize);
+
+    show_offscreen(this);
 }
 
 void DecorationFrame::layoutFor(int content_width, int content_height) {
@@ -181,15 +165,7 @@ void DecorationFrame::layoutFor(int content_width, int content_height) {
     }
 
     content_spacer_->setFixedSize(content_width, content_height);
-    // setFixedSize() normally invalidates the layout via a posted
-    // QEvent::LayoutRequest, delivered whenever the Qt event loop next runs -
-    // this code can't assume that happens promptly (or between this call and
-    // the next), so force it synchronously instead. See force_activate_layouts()'s
-    // own doc comment (frame_widget.h) for why that's still true even though
-    // ipc/global_shortcuts_portal.cpp now pumps Qt's event loop periodically
-    // for D-Bus - otherwise minimumSizeHint() below could read a stale size
-    // left by this shared widget's previous render.
-    relayout_and_shrink_to_fit(this);
+    flush_layouts();
 }
 
 Region DecorationFrame::hitTest(
@@ -296,19 +272,9 @@ void DecorationFrame::setMaximizedState(bool maximized) {
         return;
     }
     setProperty("biomeMaximized", maximized);
-    repolish_tree(this); // same rationale as setFocusedState() above
-    // Unlike setFocusedState()'s color-only rules, [biomeMaximized=...] rules
-    // can change border strips' min-/max-width/height - real geometry, not
-    // just paint. repolish_tree() updates each border's minimum/maximumSize,
-    // but the layout that actually resizes them to match only reflows via a
-    // posted QEvent::LayoutRequest, which this code can't rely on arriving
-    // promptly (see layoutFor()'s own comment on why). A plain
-    // force_activate_layouts() alone isn't enough either: activate() on a
-    // top-level widget only ever grows it, so shrinking a border would just
-    // hand the freed space to the titlebar instead of shrinking the frame -
-    // relayout_and_shrink_to_fit() forces that shrink before the final
-    // re-activate.
-    relayout_and_shrink_to_fit(this);
+    // Unlike setFocusedState(), these rules can change border sizes, not just paint.
+    repolish_tree(this);
+    flush_layouts();
 }
 
 void DecorationFrame::setTitle(const QString &title) {
@@ -329,13 +295,8 @@ void DecorationFrame::setIcon(const IconImage &icon) {
         icon_button_->setIcon(fallback_icon());
     }
     if (icon_button_->isHidden()) {
-        // First-ever setIcon() call: the constructor leaves icon_button_
-        // hidden, so showing it now is a box-model change, not just paint -
-        // same relayout_and_shrink_to_fit() as setMaximizedState()'s border
-        // toggling. Never hidden again afterwards (a real or fallback icon
-        // is always set above), so this only runs once.
-        icon_button_->setVisible(true);
-        relayout_and_shrink_to_fit(this);
+        icon_button_->setVisible(true); // only on the first call; never hidden again
+        flush_layouts();
     }
 }
 
