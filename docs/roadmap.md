@@ -50,6 +50,13 @@ session logs or design discussion.
   (urgent hint, which windowlist can flash). Map-time focus for windows
   without a token stays unconditional for now. Draft policy:
   [`docs/xdg-activation-plan.md`](xdg-activation-plan.md).
+- **External decoration themes.** Decorations and the switcher only use the
+  compiled-in `biome-dark.qss`. Add `[Theme] dir=`/`name=` config: load a
+  layered theme (`theme.conf` `parent_themes` + per-layer `biome.css`, the
+  same format as Forest's) with the built-in theme as fallback, reload live
+  on config change, and document the selectors as a stable contract. Forest
+  ships the themes (Forest roadmap 0.10.0). Plan:
+  [`docs/theming-plan.md`](theming-plan.md).
 - **Pointer lock/confinement** (`pointer-constraints-unstable-v1`) +
   **`relative-pointer-unstable-v1`** — required for FPS-style mouse look in
   any game or 3D app. Ship together; they're used together.
