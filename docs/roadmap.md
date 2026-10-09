@@ -48,7 +48,8 @@ session logs or design discussion.
   windows (Firefox, GTK). Decide the policy: when a token is honored
   (seat/serial validation, token age) and what an unhonored request does
   (urgent hint, which windowlist can flash). Map-time focus for windows
-  without a token stays unconditional for now.
+  without a token stays unconditional for now. Draft policy:
+  [`docs/xdg-activation-plan.md`](xdg-activation-plan.md).
 - **Pointer lock/confinement** (`pointer-constraints-unstable-v1`) +
   **`relative-pointer-unstable-v1`** — required for FPS-style mouse look in
   any game or 3D app. Ship together; they're used together.
