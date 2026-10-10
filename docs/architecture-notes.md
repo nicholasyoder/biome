@@ -352,4 +352,5 @@ Launchers must mint the token in the click handler, before hiding the menu
 (the issue-time focus check needs the menu surface still focused). A tray
 host passes one via SNI `ProvideXdgActivationToken` before `Activate`.
 Relaunching an app from a terminal (no `XDG_ACTIVATION_TOKEN`) only marks it
-urgent — intended.
+urgent — intended, but only if the client sends a token wlroots accepted
+(e.g. seat-less); see the roadmap's rejected-token item.

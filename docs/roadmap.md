@@ -165,6 +165,13 @@ Currently the single biggest user-visible gap versus sway/Hyprland
   windowlist. Wait for a standard (wlr-protocols MR !129, or
   `ext-foreign-toplevel-state` leaving draft) rather than add a
   Biome-specific channel.
+- **Urgent on rejected activation tokens.** Toolkits raising an unfocused
+  window without a launch token (Qt: `requestActivate()` fallback) mint one
+  from that window's surface. wlroots rejects it at commit, then drops
+  `activate` for the unknown token before `request_activate` fires, so the
+  window isn't even marked urgent (terminal relaunch of a single-instance
+  app). Needs a wlroots change or a Biome-side xdg-activation. Forest works
+  around it with a seat-less token.
 - **Minor opportunistic protocols** — `single-pixel-buffer-v1`, `content-type-v1`,
   `alpha-modifier-v1`. Toolkits probe for these and fall back gracefully if
   absent — pick up opportunistically rather than as a dedicated push.
