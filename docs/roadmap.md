@@ -55,10 +55,6 @@ session logs or design discussion.
 - **Trackpad gestures** (`pointer-gestures-unstable-v1`) — pinch/swipe/hold;
   sway and Hyprland both support it. Without it, GTK/Qt apps that key off
   trackpad swipes just see raw pointer motion.
-- **Data control** (`wlr-data-control-unstable-v1`, available in wlroots
-  0.18; `ext-data-control-v1` needs a newer wlroots) — lets a clipboard
-  manager read/set the selection without focus. Needed for Forest 0.11.0's
-  clipboard manager; also used by `wl-clipboard`/`cliphist`.
 - **`wlr-gamma-control-unstable-v1`** — night-light/redshift-style color
   temperature.
 - **An Xwayland override-redirect popup can render (and steal focus) behind
