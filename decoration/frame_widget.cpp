@@ -11,6 +11,8 @@
 #include <QPixmap>
 #include <QSizePolicy>
 #include <QStyle>
+#include <QStyleOptionToolButton>
+#include <QStylePainter>
 
 namespace biome_decoration {
 
@@ -74,8 +76,26 @@ namespace {
 constexpr int kResizeCornerSize = 8;
 } // namespace
 
+double IconButton::render_scale = 1.0;
+
+void IconButton::paintEvent(QPaintEvent *) {
+    QStylePainter painter(this);
+    QStyleOptionToolButton opt;
+    initStyleOption(&opt);
+    QIcon icon = opt.icon;
+    opt.icon = QIcon(); // the style draws everything but the icon
+    painter.drawComplexControl(QStyle::CC_ToolButton, opt);
+
+    // Centred in the margin-less rect like QStyleSheetStyle's own label;
+    // exact as long as the theme's padding/border are symmetric.
+    QRect area = style()->subControlRect(QStyle::CC_ToolButton, &opt, QStyle::SC_ToolButton, this);
+    QPixmap pixmap = icon.pixmap(opt.iconSize, render_scale);
+    QSize size = pixmap.deviceIndependentSize().toSize();
+    painter.drawPixmap(QStyle::alignedRect(layoutDirection(), Qt::AlignCenter, size, area), pixmap);
+}
+
 DecorationButton::DecorationButton(Region region, QWidget *parent)
-        : QToolButton(parent), region_(region) {
+        : IconButton(parent), region_(region) {
     switch (region_) {
     case Region::ButtonMinimize: setObjectName("biomeButtonMinimize"); break;
     case Region::ButtonMaximize: setObjectName("biomeButtonMaximize"); break;
@@ -110,7 +130,7 @@ DecorationFrame::DecorationFrame(QWidget *parent) : QFrame(parent) {
     // not worth matched-width spacers to fix.
     title_label_->setAlignment(Qt::AlignCenter);
 
-    icon_button_ = new QToolButton(titlebar_);
+    icon_button_ = new IconButton(titlebar_);
     icon_button_->setObjectName("biomeTitleIcon");
     icon_button_->setFocusPolicy(Qt::NoFocus);
     icon_button_->setAttribute(Qt::WA_StyledBackground, true);

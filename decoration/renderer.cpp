@@ -6,15 +6,43 @@
 
 #include <QImage>
 #include <QString>
+#include <QWidget>
+
+#include <cmath>
 
 namespace biome_decoration {
 
+RenderedFrame render_widget(QWidget *widget, double scale) {
+    RenderedFrame frame;
+    int logical_width = widget->width();
+    int logical_height = widget->height();
+    int width = static_cast<int>(std::lround(logical_width * scale));
+    int height = static_cast<int>(std::lround(logical_height * scale));
+    if (width <= 0 || height <= 0) {
+        return frame;
+    }
+
+    QImage image(width, height, QImage::Format_ARGB32_Premultiplied);
+    image.setDevicePixelRatio(scale);
+    image.fill(Qt::transparent);
+    IconButton::render_scale = scale;
+    widget->render(&image);
+    IconButton::render_scale = 1.0;
+
+    frame.width = width;
+    frame.height = height;
+    frame.logical_width = logical_width;
+    frame.logical_height = logical_height;
+    frame.stride = image.bytesPerLine();
+    frame.pixels.assign(image.constBits(), image.constBits() + static_cast<size_t>(image.sizeInBytes()));
+    return frame;
+}
+
 RenderedFrame render_decoration(DecorationFrame *widget, int content_width, int content_height,
         bool focused, bool urgent, bool maximized, const char *title, const IconImage &icon,
-        Region hovered_region, Region pressed_region) {
-    RenderedFrame frame;
+        Region hovered_region, Region pressed_region, double scale) {
     if (widget == nullptr || content_width <= 0 || content_height <= 0) {
-        return frame;
+        return {};
     }
 
     widget->setMaximizedState(maximized);
@@ -26,17 +54,7 @@ RenderedFrame render_decoration(DecorationFrame *widget, int content_width, int 
     widget->setHoveredRegion(hovered_region);
     widget->setPressedRegion(pressed_region);
 
-    int width = widget->width();
-    int height = widget->height();
-    QImage image(width, height, QImage::Format_ARGB32_Premultiplied);
-    image.fill(Qt::transparent);
-    widget->render(&image);
-
-    frame.width = width;
-    frame.height = height;
-    frame.stride = image.bytesPerLine();
-    frame.pixels.assign(image.constBits(), image.constBits() + static_cast<size_t>(image.sizeInBytes()));
-    return frame;
+    return render_widget(widget, scale);
 }
 
 } // namespace biome_decoration

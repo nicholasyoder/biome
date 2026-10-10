@@ -12,10 +12,9 @@
 #include "decoration/layout.h" // biome_decoration::Region
 #include "desktop/toplevel.h"
 
-// Takes ownership of frame's pixels and wraps them in a new wlr_buffer
-// (refcount 1 - the caller must drop it once done, e.g. right after handing
-// it to wlr_scene_buffer_set_buffer). Returns nullptr for an empty frame.
-wlr_buffer *create_decoration_buffer(biome_decoration::RenderedFrame &&frame);
+// Hands frame's pixels to scene_buffer, displayed at the frame's logical
+// size. Returns false (scene_buffer left untouched) for an empty frame.
+bool set_decoration_buffer(wlr_scene_buffer *scene_buffer, biome_decoration::RenderedFrame &&frame);
 
 // Content-size-independent decoration metrics, read live off the toplevel's
 // own QSS-styled widget tree (BiomeToplevel::decoration_frame) instead of a
@@ -43,10 +42,8 @@ int decoration_border_bottom_height(const BiomeToplevel *toplevel, bool maximize
 void create_toplevel_decoration(BiomeToplevel *toplevel);
 
 // Tears down what create_toplevel_decoration() built - called from both
-// toplevel destroy handlers, before free(). decoration_buffer is a scene
-// node, destroyed recursively along with scene_tree itself and needs no
-// separate handling here; decoration_frame is a plain heap-allocated Qt
-// widget with no scene-graph tie, so it does.
+// toplevel destroy handlers, before scene_tree (and with it
+// decoration_buffer, whose signal it unhooks) is destroyed.
 void destroy_toplevel_decoration(BiomeToplevel *toplevel);
 
 // Re-renders the full decoration frame and uploads it. Called whenever a

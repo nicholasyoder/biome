@@ -175,12 +175,12 @@ static void xdg_toplevel_destroy(wl_listener *listener, void *data) {
         wl_list_remove(&toplevel->kde_decoration_mode.link);
     }
 
+    destroy_toplevel_decoration(toplevel); // before scene_tree: unhooks a decoration_buffer signal
     // scene_tree isn't tied to the xdg_surface's own lifecycle, so it has to
     // be destroyed explicitly - recursively destroys content_tree and the
     // decoration buffer too.
     wlr_scene_node_destroy(&toplevel->scene_tree->node);
 
-    destroy_toplevel_decoration(toplevel);
     clear_decoration_tracking(toplevel->server, toplevel);
     switcher_remove_toplevel(toplevel->server, toplevel);
     free(toplevel);

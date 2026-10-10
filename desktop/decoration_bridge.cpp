@@ -82,24 +82,59 @@ static const wlr_buffer_impl kDecorationBufferImpl = {
     decoration_buffer_end_data_ptr_access,
 };
 
-wlr_buffer *create_decoration_buffer(biome_decoration::RenderedFrame &&frame) {
+bool set_decoration_buffer(wlr_scene_buffer *scene_buffer, biome_decoration::RenderedFrame &&frame) {
     if (frame.width <= 0 || frame.height <= 0) {
-        return nullptr;
+        return false;
     }
     auto *buffer = new BiomeDecorationBuffer();
     buffer->stride = frame.stride;
     buffer->pixels = std::move(frame.pixels);
     wlr_buffer_init(&buffer->base, &kDecorationBufferImpl, frame.width, frame.height);
-    return &buffer->base;
+    // Dest size first, so the buffer is never briefly laid out at its pixel size.
+    wlr_scene_buffer_set_dest_size(scene_buffer, frame.logical_width, frame.logical_height);
+    wlr_scene_buffer_set_buffer(scene_buffer, &buffer->base);
+    wlr_buffer_drop(&buffer->base);
+    return true;
+}
+
+static void decoration_rescale_idle(void *data) {
+    auto *toplevel = static_cast<BiomeToplevel *>(data);
+    toplevel->decoration_rescale_idle = nullptr;
+    render_toplevel_decoration(toplevel);
+}
+
+// Follows the buffer's primary output (largest overlap), the same one wlroots
+// takes a client surface's preferred scale from. Deferred to idle: this fires
+// from inside wlr_scene_buffer_set_buffer() and node moves.
+static void handle_decoration_outputs_update(wl_listener *listener, void *data) {
+    (void)data;
+    BiomeToplevel *toplevel = wl_container_of(listener, toplevel, decoration_outputs_update);
+    wlr_scene_output *primary = toplevel->decoration_buffer->primary_output;
+    if (primary == nullptr || primary->output->scale == toplevel->decoration_scale) {
+        return;
+    }
+    toplevel->decoration_scale = primary->output->scale;
+    if (toplevel->decoration_rescale_idle == nullptr) {
+        toplevel->decoration_rescale_idle = wl_event_loop_add_idle(
+            wl_display_get_event_loop(toplevel->server->display), decoration_rescale_idle, toplevel);
+    }
 }
 
 void create_toplevel_decoration(BiomeToplevel *toplevel) {
     toplevel->decoration_frame = biome_decoration::create_decoration_frame();
     toplevel->decoration_buffer = wlr_scene_buffer_create(toplevel->scene_tree, nullptr);
     wlr_scene_node_set_position(&toplevel->decoration_buffer->node, 0, 0);
+    toplevel->decoration_scale = 1.0f;
+    toplevel->decoration_outputs_update.notify = handle_decoration_outputs_update;
+    wl_signal_add(&toplevel->decoration_buffer->events.outputs_update, &toplevel->decoration_outputs_update);
 }
 
 void destroy_toplevel_decoration(BiomeToplevel *toplevel) {
+    wl_list_remove(&toplevel->decoration_outputs_update.link);
+    if (toplevel->decoration_rescale_idle != nullptr) {
+        wl_event_source_remove(toplevel->decoration_rescale_idle);
+        toplevel->decoration_rescale_idle = nullptr;
+    }
     delete toplevel->decoration_frame;
     toplevel->decoration_frame = nullptr;
 }
@@ -149,6 +184,14 @@ void render_toplevel_decoration(BiomeToplevel *toplevel) {
         ? toplevel->xdg_toplevel->title
         : toplevel->xwayland_surface->title;
 
+    if (!toplevel->decoration_rendered_once) {
+        // No buffer yet, so no outputs_update to take the scale from.
+        wlr_box frame_box;
+        toplevel_get_frame_box(toplevel, &frame_box);
+        wlr_output *output = output_with_largest_overlap(toplevel->server, frame_box);
+        toplevel->decoration_scale = output != nullptr ? output->scale : 1.0f;
+    }
+
     // Called on every surface commit, including plain content-only repaints
     // (e.g. scrolling) - skip the render below if nothing changed since last
     // time. See last_decoration_title's declaration for the pointer-identity
@@ -162,20 +205,18 @@ void render_toplevel_decoration(BiomeToplevel *toplevel) {
             toplevel->last_decoration_hovered == toplevel->hovered_region &&
             toplevel->last_decoration_pressed == toplevel->pressed_region &&
             toplevel->last_decoration_icon_data == toplevel->icon.pixels.data() &&
-            toplevel->last_decoration_title == title) {
+            toplevel->last_decoration_title == title &&
+            toplevel->last_decoration_scale == toplevel->decoration_scale) {
         return;
     }
 
     biome_decoration::RenderedFrame frame = biome_decoration::render_decoration(
         toplevel->decoration_frame, width, height,
         toplevel->focused, toplevel->urgent, render_maximized, title, toplevel->icon,
-        toplevel->hovered_region, toplevel->pressed_region);
-    wlr_buffer *buffer = create_decoration_buffer(std::move(frame));
-    if (buffer == nullptr) {
+        toplevel->hovered_region, toplevel->pressed_region, toplevel->decoration_scale);
+    if (!set_decoration_buffer(toplevel->decoration_buffer, std::move(frame))) {
         return;
     }
-    wlr_scene_buffer_set_buffer(toplevel->decoration_buffer, buffer);
-    wlr_buffer_drop(buffer);
 
     toplevel->decoration_rendered_once = true;
     toplevel->last_decoration_width = width;
@@ -187,6 +228,7 @@ void render_toplevel_decoration(BiomeToplevel *toplevel) {
     toplevel->last_decoration_pressed = toplevel->pressed_region;
     toplevel->last_decoration_icon_data = toplevel->icon.pixels.data();
     toplevel->last_decoration_title = title;
+    toplevel->last_decoration_scale = toplevel->decoration_scale;
 
     // Re-syncs content_tree to this render's border/titlebar metrics rather
     // than trusting the snapshot taken at creation, in case the theme sizes
