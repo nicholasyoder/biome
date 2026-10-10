@@ -78,12 +78,6 @@ session logs or design discussion.
 
 ### Bugs
 
-- **A window that maximizes on map flashes unmaximized first** (seen with
-  pcmanfm-qt). xdg `requested.maximized` is only honored in `toplevel_map()`
-  (`desktop/toplevel.cpp`), after the client has already drawn its first
-  buffer at its own size. Send maximized state + size in the initial-commit
-  configure (`xdg_toplevel_commit`) instead, which needs the placement
-  output picked before map.
 - **Xwayland splash screens get a Biome frame** (e.g. MuseScore's:
   `_NET_WM_WINDOW_TYPE_SPLASH`, `_KDE_NET_WM_WINDOW_TYPE_OVERRIDE`, no
   `_MOTIF_WM_HINTS`). `toplevel_decorated()` only checks Motif hints. Leave
