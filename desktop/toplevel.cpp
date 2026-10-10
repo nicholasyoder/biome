@@ -6,6 +6,7 @@
 #include "core/output.h"
 #include "desktop/app_icon.h"
 #include "desktop/decoration_bridge.h"
+#include "desktop/ext_workspace.h"
 #include "desktop/foreign_toplevel.h"
 #include "desktop/workspace.h"
 
@@ -102,8 +103,33 @@ void set_toplevel_focused(BiomeToplevel *toplevel, bool focused) {
         return;
     }
     toplevel->focused = focused;
+    if (focused) {
+        set_toplevel_urgent(toplevel, false);
+    }
     render_toplevel_decoration(toplevel);
     foreign_toplevel_sync_state(toplevel);
+}
+
+void activate_toplevel(BiomeToplevel *toplevel) {
+    BiomeServer *server = toplevel->server;
+    if (server->session_locked) {
+        return;
+    }
+    // focus_toplevel() alone leaves a minimized or other-workspace window hidden.
+    if (toplevel->workspace != server->active_workspace) {
+        switch_workspace(server, toplevel->workspace);
+    }
+    set_toplevel_minimized(toplevel, false);
+    focus_toplevel(toplevel);
+}
+
+void set_toplevel_urgent(BiomeToplevel *toplevel, bool urgent) {
+    if (toplevel->urgent == urgent || (urgent && toplevel->focused)) {
+        return;
+    }
+    toplevel->urgent = urgent;
+    render_toplevel_decoration(toplevel);
+    ext_workspace_sync_state(toplevel->server);
 }
 
 // The toplevel surface is, or whose xdg_popup chain is rooted on; null for
@@ -658,6 +684,9 @@ void toplevel_map(wl_listener *listener, void *data) {
 
     render_toplevel_decoration(toplevel);
     wl_list_insert(&toplevel->server->toplevels, &toplevel->link);
+    if (toplevel->urgent) { // X11 urgency hint set before map
+        ext_workspace_sync_state(toplevel->server);
+    }
     foreign_toplevel_create(toplevel);
     focus_toplevel(toplevel);
 }
@@ -682,6 +711,10 @@ void toplevel_unmap(wl_listener *listener, void *data) {
     // fresh (correct) snapshot.
     wl_list_remove(&toplevel->link);
     foreign_toplevel_destroy(toplevel);
+    if (toplevel->urgent) {
+        toplevel->urgent = false;
+        ext_workspace_sync_state(server);
+    }
 
     if (was_focused) {
         wlr_seat_pointer_clear_focus(server->seat);

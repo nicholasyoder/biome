@@ -21,6 +21,7 @@
 #include "desktop/layer_shell.h"
 #include "desktop/session_lock.h"
 #include "desktop/switcher.h"
+#include "desktop/xdg_activation.h"
 #include "desktop/xdg_shell.h"
 #include "desktop/xwayland_shell.h"
 #include "ipc/cursor_theme_watcher.h"
@@ -156,6 +157,7 @@ int main(int argc, char *argv[]) {
     layer_shell_init(&server);
     foreign_toplevel_init(&server);
     ext_workspace_init(&server);
+    xdg_activation_init(&server);
     switcher_init(&server);
     xdg_shell_init(&server);
     cursor_init(&server);

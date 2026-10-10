@@ -80,6 +80,10 @@ struct BiomeToplevel {
     // the only way to restore a minimized window is the Alt-Tab switcher.
     bool minimized = false;
 
+    // Demands attention (unhonored activation, X11 urgency hint). Never set
+    // while focused; focusing clears it. See set_toplevel_urgent.
+    bool urgent = false;
+
     // scene_tree is the container: its position is the window's on-screen
     // position (what move/resize/focus-raise all act on). content_tree is
     // the surface tree, a child of scene_tree offset by
@@ -124,6 +128,7 @@ struct BiomeToplevel {
     int last_decoration_width = -1;
     int last_decoration_height = -1;
     bool last_decoration_focused = false;
+    bool last_decoration_urgent = false;
     bool last_decoration_maximized = false;
     const char *last_decoration_title = nullptr;
     const uint8_t *last_decoration_icon_data = nullptr;
@@ -188,6 +193,8 @@ struct BiomeToplevel {
     wl_listener dissociate = {};
     wl_listener request_configure = {};
     wl_listener set_override_redirect = {};
+    wl_listener request_activate = {}; // _NET_ACTIVE_WINDOW
+    wl_listener set_hints = {};
 };
 
 // An override-redirect Xwayland surface (menus, tooltips, dnd icons, ...).
@@ -273,6 +280,14 @@ void toplevel_set_position(BiomeToplevel *toplevel, int x, int y);
 // popups on click.
 void focus_toplevel(BiomeToplevel *toplevel);
 void set_toplevel_focused(BiomeToplevel *toplevel, bool focused);
+
+// Brings toplevel forward on the user's behalf (taskbar click, honored
+// xdg-activation): switches to its workspace, unminimizes, focuses + raises.
+void activate_toplevel(BiomeToplevel *toplevel);
+
+// Updates the decoration, switcher entry and ext-workspace urgent state.
+// Ignored (urgent = true) for the focused toplevel.
+void set_toplevel_urgent(BiomeToplevel *toplevel, bool urgent);
 
 // If a toplevel currently holds keyboard focus (per the seat's real
 // wlr_surface, not any cached bookkeeping), unfocuses it - the same

@@ -33,9 +33,7 @@
 // Creates the ext_workspace_manager_v1 global.
 void ext_workspace_init(BiomeServer *server);
 
-// Re-sends `state` for every workspace handle on every bound client
-// (cheaper to just resend all of them than to diff old/new active index),
-// followed by `done`. Called from switch_workspace() (desktop/workspace.cpp)
-// whenever BiomeServer::active_workspace changes, including changes that
-// originated from this protocol's own activate/commit handling.
-void ext_workspace_sync_active(BiomeServer *server);
+// Re-sends `state` (active, urgent) for every workspace handle on every
+// bound client, followed by `done`. Call whenever active_workspace changes or
+// an urgent toplevel appears, disappears or changes workspace.
+void ext_workspace_sync_state(BiomeServer *server);

@@ -95,6 +95,7 @@ void SwitcherPanel::setEntries(const std::vector<SwitcherEntry> &entries, int se
     for (size_t i = 0; i < entries.size(); i++) {
         QToolButton *icon = icons_[i];
         icon->setProperty("selected", static_cast<int>(i) == selected_index);
+        icon->setProperty("urgent", entries[i].urgent);
 
         const IconImage &icon_image = entries[i].icon;
         bool has_icon = icon_image.size > 0 && !icon_image.pixels.empty();
@@ -167,7 +168,7 @@ RenderedFrame render_switcher(const std::vector<SwitcherEntry> &entries, int sel
     }
 
     g_root->panel->setEntries(entries, selected_index);
-    repolish_tree(g_root); // for the icons' "selected" property
+    repolish_tree(g_root); // for the icons' "selected"/"urgent" properties
     flush_layouts();
     g_root->panel->elideTitle();
 

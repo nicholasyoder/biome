@@ -310,3 +310,36 @@ the global.
   already-off output fail at once. Fixed upstream in 0.19 (31f9d6bb); not
   worked around, since sending `failed` ourselves risks a later `ready`.
 - Captures while locked show the lock screen: it copies what's presented.
+
+## xdg-activation (`desktop/xdg_activation.cpp`)
+
+Only path for a client to raise an already-open window (single-instance
+relaunch, link/notification/tray click). New windows don't need it: map-time
+focus is unconditional.
+
+A token is honored iff all of:
+
+- wlroots accepted it (serial sent to the requester; source surface focused
+  *at issue*) **and** it has a seat + serial — seat-less tokens skip
+  wlroots' checks entirely;
+- the requester got the most recent button/key press when it was issued, and
+  no press has gone to a different client since (`press_recipient_changes`).
+  Input-based, not focus-based: a menu closing after the click moves focus
+  without invalidating the token. Presses on Biome's decoration count as the
+  window's client; compositor-consumed keys and clicks on nothing count as
+  "different";
+- the session isn't locked; the target is a mapped xdg toplevel.
+
+Honored → `activate_toplevel()` (same as a taskbar click; no fullscreen
+exception). Otherwise → `set_toplevel_urgent()`: `urgent` QSS property on
+`#biomeFrame` and switcher icons, plus `ext-workspace-v1` `urgent` on the
+window's workspace; cleared on focus. Token lifetime is wlroots' 30 s.
+
+Xwayland has no tokens: `_NET_ACTIVE_WINDOW` sets urgent, `WM_HINTS`
+urgency sets/clears it; neither focuses.
+
+Launchers must mint the token in the click handler, before hiding the menu
+(the issue-time focus check needs the menu surface still focused). A tray
+host passes one via SNI `ProvideXdgActivationToken` before `Activate`.
+Relaunching an app from a terminal (no `XDG_ACTIVATION_TOKEN`) only marks it
+urgent — intended.

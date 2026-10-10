@@ -38,13 +38,14 @@ struct IconImage {
 // shared one, so its state always reflects this window and nothing else's
 // render/hit-test call can leave it stale.
 //
+// urgent drives #biomeFrame[urgent=...].
 // hovered_region/pressed_region select which button (if any) gets a live
 // QSS :hover/:pressed state - Region::None for neither. maximized drives the
 // #biomeFrame[biomeMaximized=...] QSS state, letting a theme style a
 // maximized window differently. icon is the window's resolved icon - an
 // empty one hides the titlebar icon slot.
 RenderedFrame render_decoration(DecorationFrame *widget, int content_width, int content_height,
-    bool focused, bool maximized, const char *title, const IconImage &icon,
+    bool focused, bool urgent, bool maximized, const char *title, const IconImage &icon,
     Region hovered_region, Region pressed_region);
 
 } // namespace biome_decoration

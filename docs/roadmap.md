@@ -42,14 +42,6 @@ session logs or design discussion.
 
 ## 0.2.0 — input, clipboard & spec compliance (Phases 6–7)
 
-- **`xdg-activation-v1`** (`wlr_xdg_activation_v1` helper). Forest's
-  settings app needs it to raise its running window when relaunched
-  (Forest `docs/settings-plan.md`, Phase 3); also lets apps reuse existing
-  windows (Firefox, GTK). Decide the policy: when a token is honored
-  (seat/serial validation, token age) and what an unhonored request does
-  (urgent hint, which windowlist can flash). Map-time focus for windows
-  without a token stays unconditional for now. Draft policy:
-  [`docs/xdg-activation-plan.md`](xdg-activation-plan.md).
 - **External decoration themes.** Decorations and the switcher only use the
   compiled-in `biome-dark.qss`. Add `[Theme] dir=`/`name=` config: load a
   layered theme (`theme.conf` `parent_themes` + per-layer `biome.css`, the
@@ -182,6 +174,12 @@ Currently the single biggest user-visible gap versus sway/Hyprland
   requests brokered through `xdg-desktop-portal` for Flatpak apps. Doesn't
   block Flatpak apps without it, just means no sandbox-aware policy the way
   GNOME/KDE compositors have.
+- **Per-window urgency in the taskbar.** Biome marks windows urgent
+  (decoration, switcher, `ext-workspace-v1` workspace state), but
+  `wlr-foreign-toplevel-management` v3 has no urgent state to tell Forest's
+  windowlist. Wait for a standard (wlr-protocols MR !129, or
+  `ext-foreign-toplevel-state` leaving draft) rather than add a
+  Biome-specific channel.
 - **Minor opportunistic protocols** — `single-pixel-buffer-v1`, `content-type-v1`,
   `alpha-modifier-v1`. Toolkits probe for these and fall back gracefully if
   absent — pick up opportunistically rather than as a dedicated push.

@@ -5,6 +5,7 @@
 #include "desktop/decoration_bridge.h"
 #include "desktop/idle.h"
 #include "desktop/toplevel.h"
+#include "desktop/xdg_activation.h"
 #include "desktop/xdg_shell.h"
 
 #include <linux/input-event-codes.h>
@@ -381,6 +382,9 @@ void server_cursor_button(wl_listener *listener, void *data) {
         BiomeToplevel *decoration_toplevel = decoration_toplevel_at(
             server, server->cursor->x, server->cursor->y, &region);
         if (decoration_toplevel != nullptr) {
+            // Counts as a press to that window's client for xdg-activation.
+            wlr_surface *decorated = toplevel_surface(decoration_toplevel);
+            xdg_activation_note_press(server, decorated != nullptr ? wl_resource_get_client(decorated->resource) : nullptr);
             focus_toplevel(decoration_toplevel);
             if (event->button == BTN_LEFT) {
                 set_decoration_pressed(server, decoration_toplevel, region);
@@ -406,6 +410,7 @@ void server_cursor_button(wl_listener *listener, void *data) {
         wlr_surface *surface = nullptr;
         BiomeToplevel *toplevel = desktop_toplevel_at(server,
             server->cursor->x, server->cursor->y, &surface, &sx, &sy);
+        xdg_activation_note_press(server, surface != nullptr ? wl_resource_get_client(surface->resource) : nullptr);
         if (toplevel == nullptr && surface != nullptr) {
             // A click on a surface with no BiomeToplevel of its own -
             // a layer-shell surface (e.g. the panel), an xdg_popup (e.g. one

@@ -94,6 +94,7 @@ DecorationBorder::DecorationBorder(const QString &object_name, QWidget *parent) 
 DecorationFrame::DecorationFrame(QWidget *parent) : QFrame(parent) {
     setObjectName("biomeFrame");
     setProperty("focused", true);
+    setProperty("urgent", false);
     setProperty("biomeMaximized", false);
 
     titlebar_ = new QWidget(this);
@@ -259,6 +260,14 @@ void DecorationFrame::setFocusedState(bool focused) {
     // Descendant selectors keyed off #biomeFrame[focused="..."] need their
     // own repolish - Qt's per-widget stylesheet cache isn't invalidated just
     // because an ancestor's dynamic property changed.
+    repolish_tree(this);
+}
+
+void DecorationFrame::setUrgentState(bool urgent) {
+    if (property("urgent").toBool() == urgent) {
+        return;
+    }
+    setProperty("urgent", urgent);
     repolish_tree(this);
 }
 

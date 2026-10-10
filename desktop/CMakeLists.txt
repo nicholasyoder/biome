@@ -31,6 +31,8 @@ add_library(biome_desktop STATIC
     foreign_toplevel.cpp
     ext_workspace.h
     ext_workspace.cpp
+    xdg_activation.h
+    xdg_activation.cpp
     $<TARGET_OBJECTS:biome_ext_workspace_protocol>
 )
 

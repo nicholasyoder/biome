@@ -63,6 +63,17 @@ struct BiomeExtWorkspaceClient {
     int live_resources = 0;
 };
 
+uint32_t workspace_state(BiomeServer *server, int index) {
+    uint32_t state = index == server->active_workspace ? EXT_WORKSPACE_HANDLE_V1_STATE_ACTIVE : 0;
+    BiomeToplevel *pos;
+    wl_list_for_each(pos, &server->toplevels, link) {
+        if (pos->urgent && pos->workspace == index) {
+            return state | EXT_WORKSPACE_HANDLE_V1_STATE_URGENT;
+        }
+    }
+    return state;
+}
+
 // Called from each of a client's own resource destroy callbacks
 // (manager/group/workspace handle). Only the last one to fire actually
 // frees `client` and unlinks it from ext_workspace->clients - see
@@ -215,8 +226,7 @@ void manager_bind(wl_client *wl_client_ptr, void *data, uint32_t version, uint32
 
         const std::string name = std::to_string(index + 1);
         ext_workspace_handle_v1_send_name(handle_resource, name.c_str());
-        uint32_t state = index == server->active_workspace ? EXT_WORKSPACE_HANDLE_V1_STATE_ACTIVE : 0;
-        ext_workspace_handle_v1_send_state(handle_resource, state);
+        ext_workspace_handle_v1_send_state(handle_resource, workspace_state(server, index));
         ext_workspace_handle_v1_send_capabilities(
             handle_resource, EXT_WORKSPACE_HANDLE_V1_WORKSPACE_CAPABILITIES_ACTIVATE);
     }
@@ -237,7 +247,7 @@ void ext_workspace_init(BiomeServer *server) {
     server->ext_workspace = ext_workspace;
 }
 
-void ext_workspace_sync_active(BiomeServer *server) {
+void ext_workspace_sync_state(BiomeServer *server) {
     if (server->ext_workspace == nullptr) {
         return;
     }
@@ -253,8 +263,7 @@ void ext_workspace_sync_active(BiomeServer *server) {
             if (resource == nullptr) {
                 continue;
             }
-            uint32_t state = index == server->active_workspace ? EXT_WORKSPACE_HANDLE_V1_STATE_ACTIVE : 0;
-            ext_workspace_handle_v1_send_state(resource, state);
+            ext_workspace_handle_v1_send_state(resource, workspace_state(server, index));
         }
         ext_workspace_manager_v1_send_done(c->manager_resource);
     }
