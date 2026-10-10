@@ -311,6 +311,16 @@ the global.
   worked around, since sending `failed` ourselves risks a later `ready`.
 - Captures while locked show the lock screen: it copies what's presented.
 
+## Data control (`core/main.cpp`)
+
+wlroots implements `wlr-data-control-unstable-v1` entirely; Biome only creates
+the global. Sets go straight to `wlr_seat_set_selection`/
+`wlr_seat_set_primary_selection`, bypassing `core/input.cpp`'s request handlers.
+
+- Unrestricted, like screencopy: any client can read/set both selections,
+  including while locked. `security-context-v1` is the eventual fix.
+- Xwayland picks up data-control sets through the normal seat selection path.
+
 ## xdg-activation (`desktop/xdg_activation.cpp`)
 
 Only path for a client to raise an already-open window (single-instance

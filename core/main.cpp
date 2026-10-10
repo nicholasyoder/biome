@@ -133,6 +133,9 @@ int main(int argc, char *argv[]) {
     wlr_subcompositor_create(server.display);
     wlr_data_device_manager_create(server.display);
     wlr_primary_selection_v1_device_manager_create(server.display);
+    // Unfocused clipboard access for clipboard managers; see
+    // architecture-notes.md "Data control".
+    wlr_data_control_manager_v1_create(server.display);
 
     // fractional_scale_manager + viewporter: without these, clients only see
     // the legacy integer wl_output.scale (wlroots advertises ceil() of the
