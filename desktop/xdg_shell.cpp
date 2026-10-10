@@ -47,10 +47,6 @@ static void xdg_toplevel_commit(wl_listener *listener, void *data) {
     BiomeToplevel *toplevel = wl_container_of(listener, toplevel, commit);
 
     if (toplevel->xdg_toplevel->base->initial_commit) {
-        // The compositor must reply to an initial commit with a configure
-        // so the client can map the surface. 0,0 lets the client pick its
-        // own size.
-        wlr_xdg_toplevel_set_size(toplevel->xdg_toplevel, 0, 0);
         if (toplevel->decoration != nullptr) {
             // By now the client has already sent set_mode/unset_mode (both
             // required to happen before its first surface.commit), so
@@ -88,12 +84,10 @@ static void xdg_toplevel_commit(wl_listener *listener, void *data) {
             wlr_log(WLR_DEBUG, "xdg-decoration: app_id=%s created no decoration object -> client-side",
                 toplevel->xdg_toplevel->app_id ? toplevel->xdg_toplevel->app_id : "(null)");
         }
-        // content_tree was positioned assuming Biome's own frame back in
-        // server_new_xdg_toplevel, before the decoration object (if any)
-        // even existed - now that the mode is settled, correct it.
-        wlr_scene_node_set_position(&toplevel->content_tree->node,
-            decoration_border_width(toplevel, toplevel->maximized),
-            decoration_titlebar_height(toplevel, toplevel->maximized));
+        // The required reply to the initial commit. After the decoration
+        // mode is settled: the maximized size and content_tree offset
+        // depend on it.
+        toplevel_configure_premap(toplevel);
         return;
     }
 
@@ -132,7 +126,11 @@ static void xdg_toplevel_commit(wl_listener *listener, void *data) {
             static_cast<int32_t>(toplevel->xdg_toplevel->base->current.configure_serial -
                 toplevel->reposition_pending_serial) >= 0;
         if (resolves) {
-            toplevel_set_position(toplevel, toplevel->reposition_pending_x, toplevel->reposition_pending_y);
+            if (toplevel->reposition_center) {
+                toplevel_center_on_output(toplevel);
+            } else {
+                toplevel_set_position(toplevel, toplevel->reposition_pending_x, toplevel->reposition_pending_y);
+            }
             toplevel->reposition_pending = false;
             // The decoration (and its buttons) just moved out from under a
             // cursor that may not have moved since the click that requested
@@ -196,19 +194,24 @@ static void xdg_toplevel_request_resize(wl_listener *listener, void *data) {
     begin_interactive(toplevel, BiomeCursorMode::Resize, event->edges, true);
 }
 
+// Pre-map requests go through toplevel_configure_premap instead; one sent
+// before the initial commit is picked up by that commit.
+static bool handle_premap_state_request(BiomeToplevel *toplevel) {
+    if (toplevel->placed) {
+        return false;
+    }
+    if (toplevel->xdg_toplevel->base->initialized) {
+        toplevel_configure_premap(toplevel);
+    }
+    return true;
+}
+
 // Maximize and unmaximize both go through this one signal, distinguished by
-// requested.maximized. Ignored before place_new_toplevel() has run (a client
-// may call set_maximized() before its first commit, to restore previous
-// window state) - base->initialized is true by then but position/geometry
-// aren't, so maximize_target_box() would find no output to overlap and fall
-// back to output_target_box()'s full-combined-layout-extents behavior,
-// spanning every monitor. toplevel_map() re-reads requested.maximized itself
-// once placement has happened, so this is safe to just skip - not a request
-// to lose.
+// requested.maximized.
 static void xdg_toplevel_request_maximize(wl_listener *listener, void *data) {
     (void)data;
     BiomeToplevel *toplevel = wl_container_of(listener, toplevel, request_maximize);
-    if (!toplevel->placed) {
+    if (handle_premap_state_request(toplevel)) {
         return;
     }
     bool requested = toplevel->xdg_toplevel->requested.maximized;
@@ -221,14 +224,13 @@ static void xdg_toplevel_request_maximize(wl_listener *listener, void *data) {
     }
 }
 
-// Same shape as xdg_toplevel_request_maximize just above, including the
-// !placed guard (fullscreen_target_box() has the same no-output-to-overlap
-// failure mode pre-placement) - a configure reply is required even when the
-// request no-ops because it asks for the state the toplevel is already in.
+// Same shape as xdg_toplevel_request_maximize just above - a configure reply
+// is required even when the request no-ops because it asks for the state
+// the toplevel is already in.
 static void xdg_toplevel_request_fullscreen(wl_listener *listener, void *data) {
     (void)data;
     BiomeToplevel *toplevel = wl_container_of(listener, toplevel, request_fullscreen);
-    if (!toplevel->placed) {
+    if (handle_premap_state_request(toplevel)) {
         return;
     }
     bool requested = toplevel->xdg_toplevel->requested.fullscreen;

@@ -75,6 +75,15 @@ struct BiomeToplevel {
     bool reposition_pending = false;
     int reposition_pending_x = 0, reposition_pending_y = 0;
     uint32_t reposition_pending_serial = 0;
+    // Center the client's new size on its output instead of using
+    // reposition_pending_x/y (restoring to an unknown size).
+    bool reposition_center = false;
+
+    // xdg only: maximized/fullscreen configure sent before map (see
+    // toplevel_configure_premap); premap_target is its content box.
+    bool premap_pending = false;
+    wlr_box premap_target = {};
+    uint32_t premap_serial = 0;
 
     // Set by set_toplevel_minimized. No taskbar exists under Biome yet, so
     // the only way to restore a minimized window is the Alt-Tab switcher.
@@ -350,6 +359,15 @@ void set_toplevel_maximized(BiomeToplevel *toplevel, bool maximized);
 // layer for the same reason (see BiomeServer::layers.fullscreen).
 // Independent of maximized state - see fullscreen_restore_box's declaration.
 void set_toplevel_fullscreen(BiomeToplevel *toplevel, bool fullscreen);
+
+// xdg only, between the initial commit and map: replies to the client's
+// requested maximized/fullscreen state with a configure already sized for
+// the output the toplevel will be placed on, so its first buffer is drawn
+// at that size. Sends a plain 0x0 configure if neither is requested.
+void toplevel_configure_premap(BiomeToplevel *toplevel);
+
+// Centers the toplevel's current size on the output it overlaps the most.
+void toplevel_center_on_output(BiomeToplevel *toplevel);
 
 // Minimize just hides the toplevel and moves focus elsewhere if it was
 // focused - there's no taskbar under Biome yet for the usual "click to

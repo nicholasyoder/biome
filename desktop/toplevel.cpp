@@ -298,17 +298,78 @@ static void clamp_content_into_box(BiomeToplevel *toplevel, const wlr_box &targe
     *vis_y = std::clamp(*vis_y, min_y, std::max(min_y, target.y + target.height - height - border_bottom));
 }
 
+static BiomeToplevel *toplevel_parent(BiomeToplevel *toplevel) {
+    return toplevel->type == BiomeToplevelType::Xdg
+        ? toplevel_from_xdg(toplevel->xdg_toplevel->parent)
+        : toplevel_from_xwayland(toplevel->xwayland_surface->parent);
+}
+
+static wlr_output *cursor_output(BiomeServer *server) {
+    return wlr_output_layout_output_at(server->output_layout, server->cursor->x, server->cursor->y);
+}
+
+// The output the toplevel's visible content currently overlaps the most.
+static wlr_output *toplevel_content_output(BiomeToplevel *toplevel) {
+    double vis_x = toplevel->scene_tree->node.x + decoration_border_width(toplevel, toplevel->maximized);
+    double vis_y = toplevel->scene_tree->node.y + decoration_titlebar_height(toplevel, toplevel->maximized);
+    wlr_box geo;
+    toplevel_get_geometry(toplevel, &geo);
+    wlr_box window_box = {static_cast<int>(vis_x), static_cast<int>(vis_y), geo.width, geo.height};
+    return output_with_largest_overlap(toplevel->server, window_box);
+}
+
+// Where a not-yet-placed toplevel will land: its parent's output, else the cursor's.
+static wlr_output *initial_placement_output(BiomeToplevel *toplevel) {
+    BiomeToplevel *parent = toplevel_parent(toplevel);
+    wlr_output *output = parent != nullptr && parent->placed ? toplevel_content_output(parent) : nullptr;
+    return output != nullptr ? output : cursor_output(toplevel->server);
+}
+
+// Sets the toplevel's position after a pre-map configure (see
+// toplevel_configure_premap) if the client's first buffer acked it and the
+// target is still on an output. Otherwise drops the pre-map state so
+// toplevel_map's map-time path redoes it. Returns whether it placed.
+static bool place_premap_toplevel(BiomeToplevel *toplevel) {
+    if (!toplevel->premap_pending) {
+        return false;
+    }
+    toplevel->premap_pending = false;
+    wlr_box target = toplevel->premap_target;
+    bool acked = static_cast<int32_t>(toplevel->xdg_toplevel->base->current.configure_serial -
+        toplevel->premap_serial) >= 0;
+    if (!acked || output_with_largest_overlap(toplevel->server, target) == nullptr) {
+        toplevel->maximized = false;
+        if (toplevel->fullscreen) {
+            toplevel->fullscreen = false;
+            wlr_scene_node_reparent(&toplevel->scene_tree->node, toplevel->server->layers.toplevels);
+        }
+        wlr_scene_node_set_position(&toplevel->content_tree->node,
+            decoration_border_width(toplevel, false), decoration_titlebar_height(toplevel, false));
+        return false;
+    }
+    BiomeToplevel *parent = toplevel_parent(toplevel);
+    toplevel->workspace = parent != nullptr ? parent->workspace : toplevel->server->active_workspace;
+    toplevel_set_position(toplevel,
+        target.x - decoration_border_width(toplevel, toplevel->maximized),
+        target.y - decoration_titlebar_height(toplevel, toplevel->maximized));
+    toplevel->placed = true;
+    update_toplevel_visibility(toplevel);
+    return true;
+}
+
 void place_new_toplevel(BiomeToplevel *toplevel) {
     BiomeServer *server = toplevel->server;
+
+    if (toplevel->type == BiomeToplevelType::Xdg && place_premap_toplevel(toplevel)) {
+        return;
+    }
 
     wlr_box geo;
     toplevel_get_geometry(toplevel, &geo);
     int width = geo.width > 0 ? geo.width : 0;
     int height = geo.height > 0 ? geo.height : 0;
 
-    BiomeToplevel *parent = toplevel->type == BiomeToplevelType::Xdg
-        ? toplevel_from_xdg(toplevel->xdg_toplevel->parent)
-        : toplevel_from_xwayland(toplevel->xwayland_surface->parent);
+    BiomeToplevel *parent = toplevel_parent(toplevel);
 
     // (vis_x, vis_y): desired top-left of the visible content, ignoring our
     // border - the scene node position (border subtracted) is derived from
@@ -332,9 +393,7 @@ void place_new_toplevel(BiomeToplevel *toplevel) {
         // multi-monitor rig with differently-sized outputs, the combined
         // box's center frequently falls near the seam between two outputs
         // rather than the middle of either one.
-        wlr_output *wlr_output = wlr_output_layout_output_at(
-            server->output_layout, server->cursor->x, server->cursor->y);
-        wlr_box target = output_target_box(server, wlr_output);
+        wlr_box target = output_target_box(server, cursor_output(server));
         if (wlr_box_empty(&target)) {
             return;
         }
@@ -357,20 +416,10 @@ void place_new_toplevel(BiomeToplevel *toplevel) {
     update_toplevel_visibility(toplevel);
 }
 
-// The output the toplevel currently overlaps the most - falls back to the
-// full output layout extents if it overlaps no output. Called before
-// toplevel->maximized flips to true, so it still reflects the window's
-// current on-screen frame.
-static wlr_box maximize_target_box(BiomeToplevel *toplevel) {
-    BiomeServer *server = toplevel->server;
-    double vis_x = toplevel->scene_tree->node.x + decoration_border_width(toplevel, toplevel->maximized);
-    double vis_y = toplevel->scene_tree->node.y + decoration_titlebar_height(toplevel, toplevel->maximized);
-    wlr_box geo;
-    toplevel_get_geometry(toplevel, &geo);
-    wlr_box window_box = {static_cast<int>(vis_x), static_cast<int>(vis_y), geo.width, geo.height};
-
-    wlr_output *output = output_with_largest_overlap(server, window_box);
-    wlr_box box = output_target_box(server, output);
+// Maximized content box on `output` - the full output layout extents if
+// it's nullptr.
+static wlr_box maximize_box_on(BiomeToplevel *toplevel, wlr_output *output) {
+    wlr_box box = output_target_box(toplevel->server, output);
     if (wlr_box_empty(&box)) {
         return box;
     }
@@ -383,10 +432,9 @@ static wlr_box maximize_target_box(BiomeToplevel *toplevel) {
     // titlebar back to get the outer frame position). Left uninset, the
     // frame would end up larger than the box it's meant to fill.
     //
-    // Unlike vis_x/vis_y above, this hardcodes the *maximized* metrics
-    // (true, not toplevel->maximized) - a theme can size a maximized
-    // window's border differently, and it's that state's metrics the inset
-    // needs to reserve room for.
+    // Hardcodes the *maximized* metrics (true, not toplevel->maximized) - a
+    // theme can size a maximized window's border differently, and it's that
+    // state's metrics the inset needs to reserve room for.
     int left = decoration_border_width(toplevel, true);
     int top = decoration_titlebar_height(toplevel, true);
     int right = decoration_border_right_width(toplevel, true);
@@ -400,15 +448,24 @@ static wlr_box maximize_target_box(BiomeToplevel *toplevel) {
     return content;
 }
 
+// Called before toplevel->maximized flips to true, so it still reflects the
+// window's current on-screen frame.
+static wlr_box maximize_target_box(BiomeToplevel *toplevel) {
+    return maximize_box_on(toplevel, toplevel_content_output(toplevel));
+}
+
 // Moves/resizes to `target` (visible content box) under the toplevel's
 // current maximized/fullscreen metrics. For xdg the node position waits for
 // the configure ack - see reposition_pending's declaration; the caller must
-// store the serial from its wlr_xdg_toplevel_set_* call.
+// store the serial from its wlr_xdg_toplevel_set_* call. An empty target
+// (xdg only: restore box unknown, see toplevel_configure_premap) lets the
+// client pick its size and centers it once acked.
 static void apply_target_box(BiomeToplevel *toplevel, const wlr_box &target) {
     int node_x = target.x - decoration_border_width(toplevel, toplevel->maximized);
     int node_y = target.y - decoration_titlebar_height(toplevel, toplevel->maximized);
     if (toplevel->type == BiomeToplevelType::Xdg) {
         toplevel->reposition_pending = true;
+        toplevel->reposition_center = wlr_box_empty(&target);
         toplevel->reposition_pending_x = node_x;
         toplevel->reposition_pending_y = node_y;
     } else {
@@ -460,26 +517,19 @@ void set_toplevel_maximized(BiomeToplevel *toplevel, bool maximized) {
     foreign_toplevel_sync_state(toplevel);
 }
 
-// The output the toplevel currently overlaps the most - same lookup
-// maximize_target_box does, just without subtracting usable_area (or the
-// border/titlebar inset, since a fullscreen frame has neither - see
-// toplevel_decorated): a fullscreen window fills the output's full box,
-// panels and all.
-static wlr_box fullscreen_target_box(BiomeToplevel *toplevel) {
-    BiomeServer *server = toplevel->server;
-    double vis_x = toplevel->scene_tree->node.x + decoration_border_width(toplevel, toplevel->maximized);
-    double vis_y = toplevel->scene_tree->node.y + decoration_titlebar_height(toplevel, toplevel->maximized);
-    wlr_box geo;
-    toplevel_get_geometry(toplevel, &geo);
-    wlr_box window_box = {static_cast<int>(vis_x), static_cast<int>(vis_y), geo.width, geo.height};
-
-    wlr_output *output = output_with_largest_overlap(server, window_box);
+// Unlike maximize_box_on, the output's full box with no inset (a fullscreen
+// frame has no border/titlebar - see toplevel_decorated), panels and all.
+// Empty if `output` is nullptr.
+static wlr_box fullscreen_box_on(BiomeServer *server, wlr_output *output) {
     wlr_box box = {};
-    if (output == nullptr) {
-        return box;
+    if (output != nullptr) {
+        wlr_output_layout_get_box(server->output_layout, output, &box);
     }
-    wlr_output_layout_get_box(server->output_layout, output, &box);
     return box;
+}
+
+static wlr_box fullscreen_target_box(BiomeToplevel *toplevel) {
+    return fullscreen_box_on(toplevel->server, toplevel_content_output(toplevel));
 }
 
 void set_toplevel_fullscreen(BiomeToplevel *toplevel, bool fullscreen) {
@@ -518,6 +568,10 @@ void set_toplevel_fullscreen(BiomeToplevel *toplevel, bool fullscreen) {
         target = toplevel->fullscreen_restore_box;
         toplevel->fullscreen = false;
         wlr_scene_node_reparent(&toplevel->scene_tree->node, toplevel->server->layers.toplevels);
+        // Fullscreened before map: no pre-fullscreen box was ever captured.
+        if (wlr_box_empty(&target) && toplevel->maximized) {
+            target = maximize_target_box(toplevel);
+        }
     }
 
     apply_target_box(toplevel, target);
@@ -530,6 +584,61 @@ void set_toplevel_fullscreen(BiomeToplevel *toplevel, bool fullscreen) {
     }
     render_toplevel_decoration(toplevel);
     foreign_toplevel_sync_state(toplevel);
+}
+
+void toplevel_configure_premap(BiomeToplevel *toplevel) {
+    BiomeServer *server = toplevel->server;
+    wlr_xdg_toplevel *xdg = toplevel->xdg_toplevel;
+    wlr_output *output = initial_placement_output(toplevel);
+
+    toplevel->fullscreen = false;
+    toplevel->maximized = false;
+    wlr_box target = {};
+    if (xdg->requested.fullscreen) {
+        wlr_output *fs_output = xdg->requested.fullscreen_output;
+        if (fs_output == nullptr || wlr_output_layout_get(server->output_layout, fs_output) == nullptr) {
+            fs_output = output;
+        }
+        target = fullscreen_box_on(server, fs_output);
+        toplevel->fullscreen = !wlr_box_empty(&target);
+    }
+    if (xdg->requested.maximized) {
+        wlr_box box = maximize_box_on(toplevel, output);
+        toplevel->maximized = !wlr_box_empty(&box);
+        if (!toplevel->fullscreen) {
+            target = box;
+        }
+    }
+    // Never had a floating size; unmaximize lets the client pick one.
+    toplevel->restore_box = {};
+    toplevel->fullscreen_restore_box = {};
+
+    wlr_scene_node_reparent(&toplevel->scene_tree->node,
+        toplevel->fullscreen ? server->layers.fullscreen : server->layers.toplevels);
+    wlr_scene_node_set_position(&toplevel->content_tree->node,
+        decoration_border_width(toplevel, toplevel->maximized),
+        decoration_titlebar_height(toplevel, toplevel->maximized));
+
+    wlr_xdg_toplevel_set_maximized(xdg, toplevel->maximized);
+    wlr_xdg_toplevel_set_fullscreen(xdg, toplevel->fullscreen);
+    toplevel->premap_serial = wlr_xdg_toplevel_set_size(xdg, target.width, target.height);
+    toplevel->premap_target = target;
+    toplevel->premap_pending = !wlr_box_empty(&target);
+}
+
+void toplevel_center_on_output(BiomeToplevel *toplevel) {
+    wlr_box geo;
+    toplevel_get_geometry(toplevel, &geo);
+    wlr_box target = output_target_box(toplevel->server, toplevel_content_output(toplevel));
+    if (wlr_box_empty(&target)) {
+        return;
+    }
+    int vis_x = target.x + (target.width - geo.width) / 2;
+    int vis_y = target.y + (target.height - geo.height) / 2;
+    clamp_content_into_box(toplevel, target, geo.width, geo.height, &vis_x, &vis_y);
+    toplevel_set_position(toplevel,
+        vis_x - decoration_border_width(toplevel, toplevel->maximized),
+        vis_y - decoration_titlebar_height(toplevel, toplevel->maximized));
 }
 
 // The enabled output nearest (cx, cy), or nullptr if none is enabled.
@@ -665,15 +774,9 @@ void toplevel_map(wl_listener *listener, void *data) {
 
     place_new_toplevel(toplevel);
 
-    // A client can request maximized/fullscreen before its first commit
-    // (e.g. a toolkit restoring saved window state) - xdg_toplevel_request_
-    // maximize/request_fullscreen ignore that (base->initialized is still
-    // false then, see their comments), so requested.maximized/fullscreen is
-    // still sitting there unactioned. wlr_xdg_toplevel_requested's own doc
-    // comment says the compositor is expected to check it here, on map -
-    // only now, after place_new_toplevel, does the toplevel have a real
-    // position/output for set_toplevel_fullscreen/set_toplevel_maximized to
-    // compute a target box against.
+    // Normally a no-op: toplevel_configure_premap already applied these. Only
+    // acts if the client mapped without acking that configure, or its
+    // output went away (see place_premap_toplevel).
     if (toplevel->type == BiomeToplevelType::Xdg) {
         if (toplevel->xdg_toplevel->requested.fullscreen) {
             set_toplevel_fullscreen(toplevel, true);
