@@ -56,12 +56,27 @@ public:
     DecorationBorder(const QString &object_name, QWidget *parent = nullptr);
 };
 
+// QToolButton that rasterizes its icon at the current render's scale. Qt
+// would use the widget's own device pixel ratio, which the offscreen
+// platform pins at 1, and the result would be stretched on scaled outputs.
+class IconButton : public QToolButton {
+    Q_OBJECT
+
+public:
+    using QToolButton::QToolButton;
+
+    static double render_scale; // set by render_widget() around each render
+
+protected:
+    void paintEvent(QPaintEvent *event) override;
+};
+
 // Paints its QSS background/border/radius/hover/pressed state and its icon
-// (minimize/maximize/close glyph) entirely via the base QToolButton -  the
+// (minimize/maximize/close glyph) entirely via the base IconButton -  the
 // icon itself comes from QSS qproperty-icon (biome-dark.qss selects per
 // button, and a dimmer variant when unfocused), so there's no C++
 // glyph-drawing to keep in sync with the theme.
-class DecorationButton : public QToolButton {
+class DecorationButton : public IconButton {
     Q_OBJECT
 
 public:
@@ -135,9 +150,9 @@ private:
     QWidget *titlebar_ = nullptr;
     QLabel *title_label_ = nullptr;
     // A window's own icon - not a DecorationButton (that's for the static
-    // min/max/close glyphs), just a plain QToolButton so qproperty-iconSize
+    // min/max/close glyphs), just a plain IconButton so qproperty-iconSize
     // still applies to it.
-    QToolButton *icon_button_ = nullptr;
+    IconButton *icon_button_ = nullptr;
     DecorationButton *button_minimize_ = nullptr;
     DecorationButton *button_maximize_ = nullptr;
     DecorationButton *button_close_ = nullptr;

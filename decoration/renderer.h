@@ -7,6 +7,8 @@
 #include <cstdint>
 #include <vector>
 
+class QWidget;
+
 namespace biome_decoration {
 
 class DecorationFrame;
@@ -17,11 +19,17 @@ class DecorationFrame;
 // software wlr_buffer. Empty (width/height == 0) if content_width/height
 // were non-positive.
 struct RenderedFrame {
-    int width = 0;
+    int width = 0;  // pixels: logical size * scale
     int height = 0;
+    int logical_width = 0; // the scene buffer's dest size
+    int logical_height = 0;
     int stride = 0; // bytes per row
     std::vector<uint8_t> pixels;
 };
+
+// Renders widget at its current (logical) size into a buffer of scale times
+// as many pixels. Shared by every decoration/ renderer.
+RenderedFrame render_widget(QWidget *widget, double scale);
 
 // A resolved window icon - square ARGB32-premultiplied pixel data at
 // whatever fixed size desktop/app_icon.h rasterizes to. size == 0 (pixels
@@ -43,9 +51,9 @@ struct IconImage {
 // QSS :hover/:pressed state - Region::None for neither. maximized drives the
 // #biomeFrame[biomeMaximized=...] QSS state, letting a theme style a
 // maximized window differently. icon is the window's resolved icon - an
-// empty one hides the titlebar icon slot.
+// empty one hides the titlebar icon slot. scale is the target output's.
 RenderedFrame render_decoration(DecorationFrame *widget, int content_width, int content_height,
     bool focused, bool urgent, bool maximized, const char *title, const IconImage &icon,
-    Region hovered_region, Region pressed_region);
+    Region hovered_region, Region pressed_region, double scale);
 
 } // namespace biome_decoration

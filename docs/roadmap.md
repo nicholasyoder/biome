@@ -84,11 +84,6 @@ session logs or design discussion.
   `SPLASH` windows undecorated (and probably unfocused/centered, like
   sway). wlroots 0.18 has no `has_window_type()` helper; compare
   `xsurface->window_type` against `server->ewmh`'s atoms.
-- **Decorations are blurry on scaled outputs** (most visible on the button
-  icons). Frames, and the Alt-Tab switcher, are rendered at 1× logical size
-  (`decoration/renderer.cpp`, `decoration/switcher.cpp`) and upscaled by the scene;
-  render at the output's scale via `QImage::setDevicePixelRatio()`, and
-  re-render on output scale change or when a window moves between outputs.
 
 ### Spec-compliant focus
 

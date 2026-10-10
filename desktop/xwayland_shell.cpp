@@ -93,11 +93,11 @@ static void destroy_xwayland_toplevel(BiomeToplevel *toplevel) {
     wl_list_remove(&toplevel->request_activate.link);
     wl_list_remove(&toplevel->set_hints.link);
 
+    destroy_toplevel_decoration(toplevel); // before scene_tree: unhooks a decoration_buffer signal
     // scene_tree was created up front in server_new_xwayland_surface and
     // outlives any single associate/dissociate cycle, so it's destroyed here.
     wlr_scene_node_destroy(&toplevel->scene_tree->node);
 
-    destroy_toplevel_decoration(toplevel);
     clear_decoration_tracking(server, toplevel);
     switcher_remove_toplevel(server, toplevel);
     if (server->last_left_click_toplevel == toplevel) {

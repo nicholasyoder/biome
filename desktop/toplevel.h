@@ -143,6 +143,13 @@ struct BiomeToplevel {
     const uint8_t *last_decoration_icon_data = nullptr;
     biome_decoration::Region last_decoration_hovered = biome_decoration::Region::None;
     biome_decoration::Region last_decoration_pressed = biome_decoration::Region::None;
+    float last_decoration_scale = 0.0f;
+
+    // Output scale the decoration renders at, tracked via decoration_buffer's
+    // outputs_update (desktop/decoration_bridge.cpp).
+    float decoration_scale = 1.0f;
+    wl_listener decoration_outputs_update = {};
+    wl_event_source *decoration_rescale_idle = nullptr;
 
     // wlr-foreign-toplevel-management-unstable-v1 (desktop/foreign_toplevel.h) -
     // created in toplevel_map, destroyed in toplevel_unmap. Null between
@@ -339,6 +346,10 @@ void grant_keyboard_focus_to_non_toplevel(BiomeServer *server, wlr_surface *surf
 // disappear entirely. Pass nullptr for wlr_output to get the whole
 // output-layout's combined extents instead of a single output's.
 wlr_box output_target_box(BiomeServer *server, wlr_output *wlr_output);
+
+// The output overlapping box (layout coordinates) the most, or nullptr if
+// none - wlroots' own rule for a scene buffer's primary output.
+wlr_output *output_with_largest_overlap(BiomeServer *server, const wlr_box &box);
 
 // Places a newly-mapped floating toplevel. A transient window (one with a
 // parent, e.g. a dialog) centers on its parent, matching xfwm4's default

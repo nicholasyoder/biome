@@ -260,11 +260,10 @@ wlr_box output_target_box(BiomeServer *server, wlr_output *wlr_output) {
     return wlr_box{box.x + usable.x, box.y + usable.y, usable.width, usable.height};
 }
 
-// The output whose usable area overlaps window_box the most, or nullptr if
-// it overlaps no output. Used for maximize/fullscreen target selection - a
-// single-point test on the window's corner picks the wrong monitor whenever
-// the window straddles a seam with most of its area on the far side.
-static wlr_output *output_with_largest_overlap(BiomeServer *server, const wlr_box &window_box) {
+// Used for maximize/fullscreen target selection - a single-point test on the
+// window's corner picks the wrong monitor whenever the window straddles a
+// seam with most of its area on the far side.
+wlr_output *output_with_largest_overlap(BiomeServer *server, const wlr_box &window_box) {
     wlr_output *best = nullptr;
     int best_area = 0;
     BiomeOutput *candidate;

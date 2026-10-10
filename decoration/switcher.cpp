@@ -2,7 +2,7 @@
 
 #include "switcher.h"
 
-#include "frame_widget.h" // repolish_tree, show_offscreen, flush_layouts, fallback_icon
+#include "frame_widget.h" // IconButton, repolish_tree, show_offscreen, flush_layouts, fallback_icon
 
 #include <QFontMetrics>
 #include <QFrame>
@@ -13,7 +13,6 @@
 #include <QPixmap>
 #include <QSizePolicy>
 #include <QString>
-#include <QToolButton>
 #include <QVBoxLayout>
 
 namespace biome_decoration {
@@ -46,7 +45,7 @@ private:
     QVBoxLayout *layout_ = nullptr;
     QHBoxLayout *icons_layout_ = nullptr;
     QLabel *title_label_ = nullptr;
-    std::vector<QToolButton *> icons_;
+    std::vector<IconButton *> icons_;
     std::string full_title_;
 };
 
@@ -71,7 +70,7 @@ SwitcherPanel::SwitcherPanel(QWidget *parent) : QFrame(parent) {
 
 void SwitcherPanel::setEntries(const std::vector<SwitcherEntry> &entries, int selected_index) {
     while (icons_.size() < entries.size()) {
-        auto *icon = new QToolButton(this);
+        auto *icon = new IconButton(this);
         icon->setObjectName("biomeSwitcherIcon");
         icon->setFocusPolicy(Qt::NoFocus);
         icon->setAttribute(Qt::WA_StyledBackground, true);
@@ -79,7 +78,7 @@ void SwitcherPanel::setEntries(const std::vector<SwitcherEntry> &entries, int se
         icons_.push_back(icon);
     }
     while (icons_.size() > entries.size()) {
-        QToolButton *icon = icons_.back();
+        IconButton *icon = icons_.back();
         icons_.pop_back();
         icons_layout_->removeWidget(icon);
         // Synchronous delete, not deleteLater() - even with core/
@@ -93,7 +92,7 @@ void SwitcherPanel::setEntries(const std::vector<SwitcherEntry> &entries, int se
     }
 
     for (size_t i = 0; i < entries.size(); i++) {
-        QToolButton *icon = icons_[i];
+        IconButton *icon = icons_[i];
         icon->setProperty("selected", static_cast<int>(i) == selected_index);
         icon->setProperty("urgent", entries[i].urgent);
 
@@ -155,10 +154,9 @@ SwitcherRoot *g_root = nullptr;
 
 } // namespace
 
-RenderedFrame render_switcher(const std::vector<SwitcherEntry> &entries, int selected_index) {
-    RenderedFrame frame;
+RenderedFrame render_switcher(const std::vector<SwitcherEntry> &entries, int selected_index, double scale) {
     if (entries.empty()) {
-        return frame;
+        return {};
     }
 
     if (g_root == nullptr) {
@@ -172,17 +170,7 @@ RenderedFrame render_switcher(const std::vector<SwitcherEntry> &entries, int sel
     flush_layouts();
     g_root->panel->elideTitle();
 
-    int width = g_root->width();
-    int height = g_root->height();
-    QImage image(width, height, QImage::Format_ARGB32_Premultiplied);
-    image.fill(Qt::transparent);
-    g_root->render(&image);
-
-    frame.width = width;
-    frame.height = height;
-    frame.stride = image.bytesPerLine();
-    frame.pixels.assign(image.constBits(), image.constBits() + static_cast<size_t>(image.sizeInBytes()));
-    return frame;
+    return render_widget(g_root, scale);
 }
 
 } // namespace biome_decoration

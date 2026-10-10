@@ -15,6 +15,6 @@ namespace biome_decoration {
 // build/resize/QWidget::render() pattern as render_switcher()/
 // render_decoration(). Callers position the result at the target window's
 // on-screen box themselves.
-RenderedFrame render_switcher_highlight(int width, int height);
+RenderedFrame render_switcher_highlight(int width, int height, double scale);
 
 } // namespace biome_decoration

@@ -37,10 +37,9 @@ SwitcherHighlightRoot *g_root = nullptr;
 
 } // namespace
 
-RenderedFrame render_switcher_highlight(int width, int height) {
-    RenderedFrame frame;
+RenderedFrame render_switcher_highlight(int width, int height, double scale) {
     if (width <= 0 || height <= 0) {
-        return frame;
+        return {};
     }
 
     if (g_root == nullptr) {
@@ -51,16 +50,7 @@ RenderedFrame render_switcher_highlight(int width, int height) {
     }
 
     g_root->resize(width, height); // visible, so this relays out synchronously
-
-    QImage image(width, height, QImage::Format_ARGB32_Premultiplied);
-    image.fill(Qt::transparent);
-    g_root->render(&image);
-
-    frame.width = width;
-    frame.height = height;
-    frame.stride = image.bytesPerLine();
-    frame.pixels.assign(image.constBits(), image.constBits() + static_cast<size_t>(image.sizeInBytes()));
-    return frame;
+    return render_widget(g_root, scale);
 }
 
 } // namespace biome_decoration

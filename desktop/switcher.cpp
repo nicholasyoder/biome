@@ -48,14 +48,13 @@ void update_highlight(BiomeServer *server, BiomeToplevel *selected) {
 
     wlr_box box;
     toplevel_get_frame_box(selected, &box);
-    wlr_buffer *buffer = create_decoration_buffer(
-        biome_decoration::render_switcher_highlight(box.width, box.height));
-    if (buffer == nullptr) {
+    wlr_output *output = output_with_largest_overlap(server, box);
+    float scale = output != nullptr ? output->scale : 1.0f;
+    if (!set_decoration_buffer(highlight,
+            biome_decoration::render_switcher_highlight(box.width, box.height, scale))) {
         wlr_scene_node_set_enabled(&highlight->node, false);
         return;
     }
-    wlr_scene_buffer_set_buffer(highlight, buffer);
-    wlr_buffer_drop(buffer);
     wlr_scene_node_set_position(&highlight->node, box.x, box.y);
     wlr_scene_node_set_enabled(&highlight->node, true);
     wlr_scene_node_raise_to_top(&highlight->node);
@@ -72,16 +71,6 @@ void update_overlay(BiomeServer *server) {
     for (BiomeToplevel *pos : switcher.order) {
         entries.push_back(switcher_entry_for(pos));
     }
-    biome_decoration::RenderedFrame frame = biome_decoration::render_switcher(entries, switcher.index);
-    int width = frame.width;
-    int height = frame.height;
-    wlr_buffer *buffer = create_decoration_buffer(std::move(frame));
-    if (buffer == nullptr) {
-        hide_overlay(server);
-        return;
-    }
-    wlr_scene_buffer_set_buffer(switcher.panel, buffer);
-    wlr_buffer_drop(buffer);
 
     // Center on the output under the cursor; the layout box's center often
     // lands on a seam between outputs.
@@ -89,6 +78,15 @@ void update_overlay(BiomeServer *server) {
         server->output_layout, server->cursor->x, server->cursor->y);
     wlr_box target = output_target_box(server, wlr_output);
     if (wlr_box_empty(&target)) {
+        hide_overlay(server);
+        return;
+    }
+
+    biome_decoration::RenderedFrame frame = biome_decoration::render_switcher(
+        entries, switcher.index, wlr_output != nullptr ? wlr_output->scale : 1.0f);
+    int width = frame.logical_width;
+    int height = frame.logical_height;
+    if (!set_decoration_buffer(switcher.panel, std::move(frame))) {
         hide_overlay(server);
         return;
     }

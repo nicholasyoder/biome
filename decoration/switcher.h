@@ -25,6 +25,6 @@ struct SwitcherEntry {
 // for the window frame, not a hand-painted overlay. A horizontal row of one
 // icon per entry, with the selected_index entry's icon highlighted and its
 // full title shown in a single label below the row.
-RenderedFrame render_switcher(const std::vector<SwitcherEntry> &entries, int selected_index);
+RenderedFrame render_switcher(const std::vector<SwitcherEntry> &entries, int selected_index, double scale);
 
 } // namespace biome_decoration

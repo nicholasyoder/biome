@@ -16,10 +16,9 @@
 
 namespace {
 
-// A standard hicolor/breeze/etc. bucket size, comfortably covering both the
-// titlebar's and the switcher row's QSS-declared slot sizes - decoration/
-// widgets scale this cached bitmap down as needed.
-constexpr int kIconRasterSize = 32;
+// Covers the largest QSS icon slot (the switcher's 48px) at 2x output
+// scale; decoration/ widgets scale this cached bitmap down as needed.
+constexpr int kIconRasterSize = 96;
 
 // Per the XDG base directory spec: XDG_DATA_DIRS falls back to this exact
 // list when unset. $HOME/.local/share/applications is always searched
