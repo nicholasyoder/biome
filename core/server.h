@@ -300,6 +300,15 @@ struct BiomeServer {
     bool session_locked = false;
     wlr_scene_tree *lock_tree = nullptr;
 
+    // xdg-activation-v1 (desktop/xdg_activation.cpp). press_recipient_changes
+    // bumps whenever a press goes to a different client than the previous one;
+    // a token goes stale once it moves. last_press_recipient is compare-only.
+    wlr_xdg_activation_v1 *xdg_activation = nullptr;
+    wl_listener xdg_activation_new_token = {};
+    wl_listener xdg_activation_request_activate = {};
+    uint64_t press_recipient_changes = 0;
+    wl_client *last_press_recipient = nullptr;
+
     // ext-idle-notify-v1 + idle-inhibit-unstable-v1 (desktop/idle.cpp).
     wlr_idle_notifier_v1 *idle_notifier = nullptr;
     wlr_idle_inhibit_manager_v1 *idle_inhibit_manager = nullptr;

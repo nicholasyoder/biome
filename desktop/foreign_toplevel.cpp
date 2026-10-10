@@ -3,7 +3,6 @@
 #include "desktop/foreign_toplevel.h"
 
 #include "desktop/toplevel.h"
-#include "desktop/workspace.h"
 
 #include <cstring>
 
@@ -42,20 +41,10 @@ static void handle_request_minimize(wl_listener *listener, void *data) {
     set_toplevel_minimized(wrapper->toplevel, event->minimized);
 }
 
-// focus_toplevel() alone leaves a minimized or other-workspace window hidden.
 static void handle_request_activate(wl_listener *listener, void *data) {
     (void)data;
     BiomeForeignToplevel *wrapper = wl_container_of(listener, wrapper, request_activate);
-    BiomeToplevel *toplevel = wrapper->toplevel;
-    BiomeServer *server = toplevel->server;
-    if (server->session_locked) {
-        return;
-    }
-    if (toplevel->workspace != server->active_workspace) {
-        switch_workspace(server, toplevel->workspace);
-    }
-    set_toplevel_minimized(toplevel, false);
-    focus_toplevel(toplevel);
+    activate_toplevel(wrapper->toplevel);
 }
 
 static void handle_request_fullscreen(wl_listener *listener, void *data) {

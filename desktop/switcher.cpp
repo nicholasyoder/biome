@@ -28,7 +28,7 @@ biome_decoration::SwitcherEntry switcher_entry_for(BiomeToplevel *pos) {
     } else {
         label = "(untitled)";
     }
-    return {label, pos->icon};
+    return {label, pos->icon, pos->urgent};
 }
 
 void hide_overlay(BiomeServer *server) {

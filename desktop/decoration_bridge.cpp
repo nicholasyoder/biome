@@ -157,6 +157,7 @@ void render_toplevel_decoration(BiomeToplevel *toplevel) {
             toplevel->last_decoration_width == width &&
             toplevel->last_decoration_height == height &&
             toplevel->last_decoration_focused == toplevel->focused &&
+            toplevel->last_decoration_urgent == toplevel->urgent &&
             toplevel->last_decoration_maximized == render_maximized &&
             toplevel->last_decoration_hovered == toplevel->hovered_region &&
             toplevel->last_decoration_pressed == toplevel->pressed_region &&
@@ -167,7 +168,7 @@ void render_toplevel_decoration(BiomeToplevel *toplevel) {
 
     biome_decoration::RenderedFrame frame = biome_decoration::render_decoration(
         toplevel->decoration_frame, width, height,
-        toplevel->focused, render_maximized, title, toplevel->icon,
+        toplevel->focused, toplevel->urgent, render_maximized, title, toplevel->icon,
         toplevel->hovered_region, toplevel->pressed_region);
     wlr_buffer *buffer = create_decoration_buffer(std::move(frame));
     if (buffer == nullptr) {
@@ -180,6 +181,7 @@ void render_toplevel_decoration(BiomeToplevel *toplevel) {
     toplevel->last_decoration_width = width;
     toplevel->last_decoration_height = height;
     toplevel->last_decoration_focused = toplevel->focused;
+    toplevel->last_decoration_urgent = toplevel->urgent;
     toplevel->last_decoration_maximized = render_maximized;
     toplevel->last_decoration_hovered = toplevel->hovered_region;
     toplevel->last_decoration_pressed = toplevel->pressed_region;

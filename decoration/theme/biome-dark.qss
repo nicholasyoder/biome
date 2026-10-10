@@ -28,6 +28,15 @@ biome_decoration--DecorationBorder {
     background: rgb(30, 30, 30);
 }
 
+/* Urgent (demands attention): amber-tinted titlebar and borders. */
+biome_decoration--DecorationFrame#biomeFrame[urgent="true"] QWidget#biomeTitlebar,
+biome_decoration--DecorationFrame#biomeFrame[urgent="true"] biome_decoration--DecorationBorder {
+    background: rgb(92, 64, 22);
+}
+biome_decoration--DecorationFrame#biomeFrame[urgent="true"] QLabel#biomeTitle {
+    color: rgb(235, 235, 235);
+}
+
 QWidget#biomeBorderLeft {
     min-width: 3px;
     border-left: 1px solid rgb(10,10,10);
@@ -161,6 +170,10 @@ QToolButton#biomeSwitcherIcon {
 QToolButton#biomeSwitcherIcon[selected="true"] {
     background: rgb(60, 60, 60);
     border: 1px solid rgb(90, 90, 90);
+}
+
+QToolButton#biomeSwitcherIcon[urgent="true"] {
+    border: 1px solid rgb(200, 140, 40);
 }
 
 QLabel#biomeSwitcherTitleLabel {

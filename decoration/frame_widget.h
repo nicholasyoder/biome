@@ -110,6 +110,8 @@ public:
     Region hitTest(int local_x, int local_y, int content_width, int content_height, bool maximized);
 
     void setFocusedState(bool focused);
+    // Drives #biomeFrame[urgent=...]; the look is entirely the theme's.
+    void setUrgentState(bool urgent);
     // Drives the #biomeFrame[biomeMaximized=...] QSS state - lets a theme
     // style a maximized window differently (e.g. no corner radius) via QSS
     // alone. Also read back by borderWidth()/titlebarHeight()/

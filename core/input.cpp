@@ -6,6 +6,7 @@
 #include "core/keybindings.h"
 #include "desktop/idle.h"
 #include "desktop/switcher.h"
+#include "desktop/xdg_activation.h"
 
 #include <xkbcommon/xkbcommon.h>
 
@@ -92,6 +93,12 @@ static void keyboard_handle_key(wl_listener *listener, void *data) {
                 handled = true;
             }
         }
+    }
+
+    if (pressed) {
+        wlr_surface *focused = seat->keyboard_state.focused_surface;
+        xdg_activation_note_press(server,
+            !handled && focused != nullptr ? wl_resource_get_client(focused->resource) : nullptr);
     }
 
     if (!handled) {

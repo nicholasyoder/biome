@@ -59,7 +59,7 @@ void switch_workspace(BiomeServer *server, int index) {
     // its focus so stale events don't reach it, re-resolved on next motion.
     wlr_seat_pointer_clear_focus(server->seat);
     focus_topmost_on_active_workspace(server);
-    ext_workspace_sync_active(server);
+    ext_workspace_sync_state(server);
 }
 
 void move_toplevel_to_workspace(BiomeToplevel *toplevel, int index) {
@@ -70,6 +70,9 @@ void move_toplevel_to_workspace(BiomeToplevel *toplevel, int index) {
     }
     toplevel->workspace = index;
     update_toplevel_visibility(toplevel);
+    if (toplevel->urgent) {
+        ext_workspace_sync_state(server);
+    }
     if (index != server->active_workspace) {
         switcher_remove_toplevel(server, toplevel);
     }

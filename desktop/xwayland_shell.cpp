@@ -90,6 +90,8 @@ static void destroy_xwayland_toplevel(BiomeToplevel *toplevel) {
     wl_list_remove(&toplevel->request_minimize.link);
     wl_list_remove(&toplevel->request_configure.link);
     wl_list_remove(&toplevel->set_override_redirect.link);
+    wl_list_remove(&toplevel->request_activate.link);
+    wl_list_remove(&toplevel->set_hints.link);
 
     // scene_tree was created up front in server_new_xwayland_surface and
     // outlives any single associate/dissociate cycle, so it's destroyed here.
@@ -167,6 +169,22 @@ static void xwayland_toplevel_request_minimize(wl_listener *listener, void *data
     auto *event = static_cast<wlr_xwayland_minimize_event *>(data);
     BiomeToplevel *toplevel = wl_container_of(listener, toplevel, request_minimize);
     set_toplevel_minimized(toplevel, event->minimize);
+}
+
+// X11 has no activation tokens, so neither of these ever takes focus.
+static void xwayland_toplevel_request_activate(wl_listener *listener, void *data) {
+    (void)data;
+    BiomeToplevel *toplevel = wl_container_of(listener, toplevel, request_activate);
+    if (toplevel->xwayland_surface->surface != nullptr && toplevel->xwayland_surface->surface->mapped) {
+        set_toplevel_urgent(toplevel, true);
+    }
+}
+
+static void xwayland_toplevel_set_hints(wl_listener *listener, void *data) {
+    (void)data;
+    BiomeToplevel *toplevel = wl_container_of(listener, toplevel, set_hints);
+    xcb_icccm_wm_hints_t *hints = toplevel->xwayland_surface->hints;
+    set_toplevel_urgent(toplevel, hints != nullptr && (hints->flags & XCB_ICCCM_WM_HINT_X_URGENCY) != 0);
 }
 
 // X11 clients can ask to move/resize themselves outside of an interactive
@@ -349,6 +367,10 @@ static BiomeToplevel *create_xwayland_toplevel(BiomeServer *server, wlr_xwayland
     wl_signal_add(&xsurface->events.request_configure, &toplevel->request_configure);
     toplevel->set_override_redirect.notify = xwayland_toplevel_set_override_redirect;
     wl_signal_add(&xsurface->events.set_override_redirect, &toplevel->set_override_redirect);
+    toplevel->request_activate.notify = xwayland_toplevel_request_activate;
+    wl_signal_add(&xsurface->events.request_activate, &toplevel->request_activate);
+    toplevel->set_hints.notify = xwayland_toplevel_set_hints;
+    wl_signal_add(&xsurface->events.set_hints, &toplevel->set_hints);
     return toplevel;
 }
 
