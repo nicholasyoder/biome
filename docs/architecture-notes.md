@@ -166,6 +166,13 @@ pattern: any *new* code path that grants keyboard focus to something other
 than a normal toplevel should go through this chokepoint, not call
 `wlr_seat_keyboard_notify_enter()` directly.
 
+Layer-shell `keyboard_interactivity` is enforced at the same two
+chokepoints: while a mapped top/overlay `exclusive` surface exists
+(`layer_shell_exclusive_focus()`), both refuse focus to any other client,
+and `focus_topmost_on_active_workspace()` (every focus-restore path) hands
+focus back to it. Only that surface takes focus on map; `on_demand` takes it
+on click, `none` never.
+
 ## `GlobalShortcuts` portal architecture (Workstream C)
 
 `org.freedesktop.portal.GlobalShortcuts` is a *frontend* interface that the

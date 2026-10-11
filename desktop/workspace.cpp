@@ -3,6 +3,7 @@
 #include "desktop/workspace.h"
 
 #include "desktop/ext_workspace.h"
+#include "desktop/layer_shell.h"
 #include "desktop/switcher.h"
 
 void update_toplevel_visibility(BiomeToplevel *toplevel) {
@@ -23,6 +24,12 @@ void update_toplevel_visibility(BiomeToplevel *toplevel) {
 }
 
 void focus_topmost_on_active_workspace(BiomeServer *server) {
+    if (wlr_surface *exclusive = layer_shell_exclusive_focus(server)) {
+        if (server->seat->keyboard_state.focused_surface != exclusive) {
+            grant_keyboard_focus_to_non_toplevel(server, exclusive);
+        }
+        return;
+    }
     BiomeToplevel *pos;
     wl_list_for_each(pos, &server->toplevels, link) {
         if (pos->workspace == server->active_workspace && !pos->minimized) {
