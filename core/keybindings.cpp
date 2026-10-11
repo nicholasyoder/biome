@@ -2,6 +2,7 @@
 
 #include "core/keybindings.h"
 
+#include "desktop/layer_shell.h"
 #include "desktop/switcher.h"
 #include "desktop/toplevel.h"
 #include "desktop/workspace.h"
@@ -74,6 +75,10 @@ bool handle_switcher_key(BiomeServer *server, xkb_keysym_t sym, uint32_t modifie
         return false;
     }
     if (sym != XKB_KEY_Tab && sym != XKB_KEY_ISO_Left_Tab) {
+        return false;
+    }
+    // Nothing to switch to while an exclusive layer surface holds focus.
+    if (layer_shell_exclusive_focus(server) != nullptr) {
         return false;
     }
     switcher_cycle(server, (modifiers & WLR_MODIFIER_SHIFT) || sym == XKB_KEY_ISO_Left_Tab);

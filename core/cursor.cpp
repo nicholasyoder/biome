@@ -435,8 +435,12 @@ void server_cursor_button(wl_listener *listener, void *data) {
             bool unwanted_popup_focus = xdg_surface != nullptr &&
                 xdg_surface->role == WLR_XDG_SURFACE_ROLE_POPUP &&
                 xdg_surface->popup != nullptr && !popup_wants_keyboard_focus(xdg_surface->popup);
+            // Spec: a NONE layer surface (e.g. wallpaper) never takes focus, even on click.
+            wlr_layer_surface_v1 *layer_surface = wlr_layer_surface_v1_try_from_wlr_surface(root_surface);
+            bool unwanted_layer_focus = layer_surface != nullptr &&
+                layer_surface->current.keyboard_interactive == ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_NONE;
 
-            if ((!unmanaged_xwayland || server->session_locked) && !unwanted_popup_focus) {
+            if ((!unmanaged_xwayland || server->session_locked) && !unwanted_popup_focus && !unwanted_layer_focus) {
                 // An ordinary click on the panel reliably lands here
                 // (toplevel==nullptr, surface==the panel's) - see
                 // grant_keyboard_focus_to_non_toplevel()'s doc comment

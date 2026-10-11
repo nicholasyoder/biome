@@ -150,6 +150,52 @@ static constexpr uint32_t kLayoutRelevantState =
     WLR_LAYER_SURFACE_V1_STATE_EXCLUSIVE_ZONE | WLR_LAYER_SURFACE_V1_STATE_MARGIN |
     WLR_LAYER_SURFACE_V1_STATE_LAYER;
 
+wlr_surface *layer_shell_exclusive_focus(BiomeServer *server) {
+    if (server->session_locked) {
+        return nullptr;
+    }
+    wlr_layer_surface_v1 *best = nullptr;
+    BiomeLayerSurface *wrapper;
+    wl_list_for_each(wrapper, &server->layer_surfaces, link) { // newest first
+        wlr_layer_surface_v1 *candidate = wrapper->layer_surface;
+        if (!candidate->surface->mapped
+                || candidate->current.keyboard_interactive != ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_EXCLUSIVE
+                || candidate->current.layer < ZWLR_LAYER_SHELL_V1_LAYER_TOP) {
+            continue;
+        }
+        if (best == nullptr || candidate->current.layer > best->current.layer) {
+            best = candidate;
+        }
+    }
+    return best != nullptr ? best->surface : nullptr;
+}
+
+bool layer_shell_claim_exclusive_focus(BiomeServer *server) {
+    wlr_surface *exclusive = layer_shell_exclusive_focus(server);
+    if (exclusive == nullptr) {
+        return false;
+    }
+    wlr_surface *focused = server->seat->keyboard_state.focused_surface;
+    if (focused == nullptr
+            || wl_resource_get_client(focused->resource) != wl_resource_get_client(exclusive->resource)) {
+        grant_keyboard_focus_to_non_toplevel(server, exclusive);
+    }
+    return true;
+}
+
+// Post-map interactivity/layer change: take focus if now exclusive, drop it if now NONE.
+static void refresh_layer_surface_focus(BiomeLayerSurface *wrapper) {
+    BiomeServer *server = wrapper->server;
+    if (layer_shell_claim_exclusive_focus(server)) {
+        return;
+    }
+    if (server->seat->keyboard_state.focused_surface == wrapper->layer_surface->surface
+            && wrapper->layer_surface->current.keyboard_interactive
+            == ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_NONE) {
+        focus_topmost_on_active_workspace(server);
+    }
+}
+
 static void handle_layer_surface_commit(wl_listener *listener, void *data) {
     (void)data;
     BiomeLayerSurface *wrapper = wl_container_of(listener, wrapper, commit);
@@ -165,6 +211,11 @@ static void handle_layer_surface_commit(wl_listener *listener, void *data) {
     if (wrapper->fading_in) {
         float fraction = elapsed_fraction(wrapper->fade_start, kFadeDurationMs);
         set_tree_opacity(wrapper->scene_layer_surface->tree, fraction);
+    }
+
+    if (layer_surface->surface->mapped && (layer_surface->current.committed
+            & (WLR_LAYER_SURFACE_V1_STATE_KEYBOARD_INTERACTIVITY | WLR_LAYER_SURFACE_V1_STATE_LAYER))) {
+        refresh_layer_surface_focus(wrapper);
     }
 
     // wlr_layer_surface_v1_configure() always sends a fresh configure with a
@@ -228,17 +279,9 @@ static void handle_layer_surface_map(wl_listener *listener, void *data) {
         break;
     }
 
-    // While locked, the lock surface holds keyboard focus (desktop/
-    // session_lock.cpp) and nothing else may take it - matches the same
-    // guard desktop/xwayland_shell.cpp's unmanaged surface map handler
-    // applies to its own keyboard-focus grab, for the same reason (this is
-    // a seat-focus concern, not something the layer stack's structural
-    // z-order containment touches).
-    if (!wrapper->server->session_locked
-        && layer_surface->current.keyboard_interactive
-        != ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_NONE) {
-        grant_keyboard_focus_to_non_toplevel(wrapper->server, layer_surface->surface);
-    }
+    // Per spec only a top/overlay `exclusive` surface takes focus on map;
+    // `on_demand` waits for a click (core/cursor.cpp).
+    layer_shell_claim_exclusive_focus(wrapper->server);
 }
 
 static void handle_layer_surface_unmap(wl_listener *listener, void *data) {

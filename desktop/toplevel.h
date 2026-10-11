@@ -315,7 +315,7 @@ void clear_focused_toplevel(BiomeServer *server);
 
 // The single chokepoint for handing keyboard focus to any surface that
 // *isn't* a BiomeToplevel: a keyboard-interactive layer-shell surface (the
-// panel), an xdg_popup (any of Forest's panel/panel-library popup/popupmenu
+// panel; refused while another client's `exclusive` layer surface is up), an xdg_popup (any of Forest's panel/panel-library popup/popupmenu
 // widgets - context menus, the main menu, tooltips), an Xwayland
 // override-redirect surface, or a plain click on one of those. Calls
 // clear_focused_toplevel() first (skipped when surface is a popup of the

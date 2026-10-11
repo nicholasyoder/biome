@@ -86,22 +86,11 @@ session logs or design discussion.
 Each lands only *after* its Forest-side counterpart (Forest roadmap 0.10.0,
 "Compositor portability"), or Forest input breaks.
 
-- **Layer-surface keyboard focus ignores `keyboard_interactivity`.** Clicking
-  any non-toplevel surface grants focus (`core/cursor.cpp`), even a layer
-  surface that asked for `NONE`; and map grants focus to anything not `NONE`
-  (`desktop/layer_shell.cpp`), so an `on_demand` surface (Forest's panel)
-  steals focus every time it maps, e.g. on each panel rebuild after a screen
-  change. Spec: `NONE` never gets focus, `on_demand` only on click, only
-  `exclusive` on map.
 - **Non-grabbing layer-shell popups get keyboard focus.**
   `popup_wants_keyboard_focus()` (`desktop/xdg_shell.cpp`, also used by
   `core/cursor.cpp`) focuses any popup chain rooted on a layer surface, a
   Forest-shaped exception for `panel-library/popup.h`'s non-grabbing popups.
   Per spec only grabbing popups get focus; drop the layer-shell branch.
-- **`exclusive` keyboard interactivity isn't enforced.** Clicking elsewhere
-  steals focus from an exclusive top/overlay surface, and a post-map change
-  to `keyboard_interactivity` is ignored. Needed once Forest's logout dialog
-  moves to `exclusive`.
 
 ### Other protocol deviations
 

@@ -8,6 +8,7 @@
 #include "desktop/decoration_bridge.h"
 #include "desktop/ext_workspace.h"
 #include "desktop/foreign_toplevel.h"
+#include "desktop/layer_shell.h"
 #include "desktop/workspace.h"
 
 #include <algorithm>
@@ -166,7 +167,17 @@ void clear_focused_toplevel(BiomeServer *server) {
     set_toplevel_focused(prev, false);
 }
 
+// A top/overlay `exclusive` layer surface keeps focus from every other client.
+static bool exclusive_layer_blocks(BiomeServer *server, wlr_surface *surface) {
+    wlr_surface *exclusive = layer_shell_exclusive_focus(server);
+    return exclusive != nullptr && surface != nullptr
+        && wl_resource_get_client(exclusive->resource) != wl_resource_get_client(surface->resource);
+}
+
 void grant_keyboard_focus_to_non_toplevel(BiomeServer *server, wlr_surface *surface) {
+    if (exclusive_layer_blocks(server, surface)) {
+        return;
+    }
     // A window's own menu keeps it activated, as in Mutter/KWin.
     BiomeToplevel *owner = toplevel_owning_surface(surface);
     if (owner == nullptr ||
@@ -205,7 +216,7 @@ void focus_toplevel(BiomeToplevel *toplevel) {
     wlr_surface *surface = toplevel_surface(toplevel);
     wlr_seat *seat = server->seat;
     wlr_surface *prev_surface = seat->keyboard_state.focused_surface;
-    if (prev_surface == surface) {
+    if (prev_surface == surface || exclusive_layer_blocks(server, surface)) {
         return;
     }
     // Returning from the toplevel's own popup: it's still activated, and a

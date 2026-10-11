@@ -18,6 +18,14 @@
 // Creates the wlr_layer_shell_v1 global and wires its new_surface listener.
 void layer_shell_init(BiomeServer *server);
 
+// The mapped top/overlay `exclusive` surface that must hold keyboard focus
+// (overlay first, then newest), or nullptr. Always nullptr while locked.
+wlr_surface *layer_shell_exclusive_focus(BiomeServer *server);
+
+// Gives layer_shell_exclusive_focus() keyboard focus unless its client
+// already holds it. Returns false when there's no such surface.
+bool layer_shell_claim_exclusive_focus(BiomeServer *server);
+
 // Re-arranges every mapped layer surface on this output: exclusive-zone
 // surfaces first (overlay -> background), then the rest against what's left,
 // calling wlr_scene_layer_surface_v1_configure() for each and leaving the
