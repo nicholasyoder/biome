@@ -18,6 +18,9 @@ void output_power_wake_all(BiomeServer *server);
 // Call from output_destroy before freeing the output.
 void output_power_handle_output_destroy(BiomeOutput *output);
 
-// True if this connector was destroyed while powered off moments ago (an HPD
-// bounce), so it should come back off. Consumes the record.
+// True if this connector was destroyed while powered off with no wake since
+// (an HPD bounce), so it should come back off. Consumes the record.
 bool output_power_reconnected_off(BiomeServer *server, const char *name);
+
+// A wake (input, set_mode(on), output-management apply): reconnects come up lit.
+void output_power_forget_unplugged(BiomeServer *server);
