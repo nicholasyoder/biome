@@ -312,6 +312,9 @@ static void xdg_popup_destroy(wl_listener *listener, void *data) {
     (void)data;
     BiomePopup *popup = wl_container_of(listener, popup, destroy);
 
+    if (popup->server->activated_unmapped_popup == popup->xdg_popup->base->surface) {
+        popup->server->activated_unmapped_popup = nullptr;
+    }
     wl_list_remove(&popup->map.link);
     wl_list_remove(&popup->unmap.link);
     wl_list_remove(&popup->commit.link);
@@ -398,20 +401,9 @@ static void xdg_popup_reposition(wl_listener *listener, void *data) {
     constrain_popup_to_output(popup->server, popup->xdg_popup);
 }
 
-// Whether a newly-mapped popup should be handed real keyboard focus.
-//
-// Grab state alone can't decide this: Chromium's popups and Forest's panel
-// popups (panel/panel-library/popup.h) are both non-grabbing xdg_popups,
-// but Chromium's must NOT get focus (it reads the resulting leave on its
-// own toplevel as deactivation and closes the popup) while Forest's must
-// (they never grab in the first place, since hotkey-opened popups have no
-// input serial to grab with).
-//
-// The real distinguishing signal is structural: Chromium's popups are
-// toplevel-owned, Forest's are layer-shell-owned (attached to the panel's
-// own zwlr_layer_surface_v1, which already declared real keyboard
-// interactivity for itself). So: grant focus unconditionally to a
-// layer-shell-owned popup chain, and fall back to the grab check otherwise.
+// Whether a clicked popup may take keyboard focus. Layer-shell popups inherit
+// their parent's keyboard_interactivity, so clicks may focus them; a
+// toplevel's non-grabbing popup must not (Chromium closes it on the leave).
 bool popup_wants_keyboard_focus(wlr_xdg_popup *xdg_popup) {
     wlr_xdg_popup *root_popup = find_root_popup(xdg_popup);
     if (root_popup->parent != nullptr &&
@@ -432,7 +424,11 @@ static void xdg_popup_map(wl_listener *listener, void *data) {
     if (server->session_locked) {
         return;
     }
-    if (!popup_wants_keyboard_focus(popup->xdg_popup)) {
+    // Only grabbing or xdg-activated popups take focus on map.
+    wlr_surface *surface = popup->xdg_popup->base->surface;
+    const bool activated = server->activated_unmapped_popup == surface;
+    server->activated_unmapped_popup = nullptr;
+    if (popup->xdg_popup->seat == nullptr && !activated) {
         return;
     }
 
@@ -440,7 +436,7 @@ static void xdg_popup_map(wl_listener *listener, void *data) {
     // wlr_xdg_popup.c), so the grab-aware wlr_seat_keyboard_notify_enter()
     // would be silently swallowed here - grant_keyboard_focus_to_non_
     // toplevel()'s plain wlr_seat_keyboard_enter() bypasses that.
-    grant_keyboard_focus_to_non_toplevel(server, popup->xdg_popup->base->surface);
+    grant_keyboard_focus_to_non_toplevel(server, surface);
 }
 
 static void xdg_popup_unmap(wl_listener *listener, void *data) {

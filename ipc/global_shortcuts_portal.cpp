@@ -3,6 +3,7 @@
 #include "ipc/global_shortcuts_portal.h"
 
 #include "core/keybindings.h"
+#include "desktop/xdg_activation.h"
 
 #include <QDBusConnection>
 #include <QDBusError>
@@ -10,6 +11,7 @@
 #include <QDBusMetaType>
 #include <QDBusServiceWatcher>
 #include <QDateTime>
+#include <QTimer>
 
 #include <utility>
 
@@ -105,15 +107,24 @@ uint GlobalShortcutsPortal::BindShortcuts(const QDBusObjectPath &handle,
         // QString living in the caller's temporary shortcuts list.
         const QString shortcut_id = spec.id;
         add_portal_keybinding(owner, *parsed,
-            [this, session_handle, shortcut_id](BiomeServer *, uint32_t) {
-                const qulonglong now = static_cast<qulonglong>(QDateTime::currentMSecsSinceEpoch());
-                // Every bound shortcut is treated as an instant (press-only)
-                // action for this prototype - fire Activated immediately
-                // followed by Deactivated rather than tracking real
-                // press/hold state. Press/hold semantics are deferred, per
-                // the plan doc.
-                emit Activated(session_handle, shortcut_id, now, {});
-                emit Deactivated(session_handle, shortcut_id, now, {});
+            [this, session_handle, shortcut_id](BiomeServer *server, uint32_t) {
+                // Queued: the token must be issued after input.cpp notes this
+                // press, which would otherwise make it stale at once.
+                QTimer::singleShot(0, this, [this, server, session_handle, shortcut_id]() {
+                    const qulonglong now = static_cast<qulonglong>(QDateTime::currentMSecsSinceEpoch());
+                    QVariantMap options;
+                    const std::string token = xdg_activation_issue_token(server);
+                    if (!token.empty()) {
+                        options.insert(QStringLiteral("activation_token"), QString::fromStdString(token));
+                    }
+                    // Every bound shortcut is treated as an instant (press-only)
+                    // action for this prototype - fire Activated immediately
+                    // followed by Deactivated rather than tracking real
+                    // press/hold state. Press/hold semantics are deferred, per
+                    // the plan doc.
+                    emit Activated(session_handle, shortcut_id, now, options);
+                    emit Deactivated(session_handle, shortcut_id, now, {});
+                });
                 return true;
             });
 

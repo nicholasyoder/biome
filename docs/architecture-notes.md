@@ -338,19 +338,26 @@ A token is honored iff all of:
 
 - wlroots accepted it (serial sent to the requester; source surface focused
   *at issue*) **and** it has a seat + serial — seat-less tokens skip
-  wlroots' checks entirely;
+  wlroots' checks entirely. Exception: tokens Biome issues itself
+  (`xdg_activation_issue_token()`, the GlobalShortcuts `activation_token`),
+  minted after the hotkey's press is noted so it doesn't count against them;
 - the requester got the most recent button/key press when it was issued, and
   no press has gone to a different client since (`press_recipient_changes`).
   Input-based, not focus-based: a menu closing after the click moves focus
   without invalidating the token. Presses on Biome's decoration count as the
   window's client; compositor-consumed keys and clicks on nothing count as
   "different";
-- the session isn't locked; the target is a mapped xdg toplevel.
+- the session isn't locked; the target is a mapped xdg toplevel, or a popup.
 
 Honored → `activate_toplevel()` (same as a taskbar click; no fullscreen
 exception). Otherwise → `set_toplevel_urgent()`: `urgent` QSS property on
 `#biomeFrame` and switcher icons, plus `ext-workspace-v1` `urgent` on the
 window's workspace; cleared on focus. Token lifetime is wlroots' 30 s.
+
+A popup has no raise or urgency: an honored token gives it keyboard focus
+(on map if not yet mapped), otherwise nothing. This is how a non-grabbing
+popup opened by a hotkey (no press serial to grab with) gets keys; other
+popups take focus on map only if they grab.
 
 Xwayland has no tokens: `_NET_ACTIVE_WINDOW` sets urgent, `WM_HINTS`
 urgency sets/clears it; neither focuses.
