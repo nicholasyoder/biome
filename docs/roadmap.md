@@ -80,6 +80,11 @@ session logs or design discussion.
   `SPLASH` windows undecorated (and probably unfocused/centered, like
   sway). wlroots 0.18 has no `has_window_type()` helper; compare
   `xsurface->window_type` against `server->ewmh`'s atoms.
+- **A monitor that bounces for over 10 s while powered off comes back lit**
+  (`kReconnectOffWindowSec`), and can loop as it sleeps and drops again. Keep
+  `recently_unplugged_off` records until user activity (`idle_notify_activity`)
+  or a `set_mode(on)` instead of a time window. Needed by Forest's
+  "never wake idle-blanked displays" (Forest roadmap 0.10.0).
 
 ### Other protocol deviations
 
@@ -150,6 +155,11 @@ Currently the single biggest user-visible gap versus sway/Hyprland
   window isn't even marked urgent (terminal relaunch of a single-instance
   app). Needs a wlroots change or a Biome-side xdg-activation. Forest works
   around it with a seat-less token.
+- **Keep powered-off outputs off across output-management applies.**
+  `output_power_wake_all()` lights every blanked output before a modeset,
+  since wlroots refuses a modeset on a disabled output. Test the config, apply
+  positions now, and defer an off output's mode/scale/transform to its
+  power-on. Forest never applies while blanked; this covers other clients.
 - **Minor opportunistic protocols** — `single-pixel-buffer-v1`, `content-type-v1`,
   `alpha-modifier-v1`. Toolkits probe for these and fall back gracefully if
   absent — pick up opportunistically rather than as a dedicated push.
