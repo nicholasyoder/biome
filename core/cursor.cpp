@@ -425,11 +425,10 @@ void server_cursor_button(wl_listener *listener, void *data) {
             // with one means it's unmanaged.
             bool unmanaged_xwayland = wlr_xwayland_surface_try_from_wlr_surface(surface) != nullptr;
 
-            // Matches xdg_popup_map's guard (desktop/xdg_shell.cpp,
-            // popup_wants_keyboard_focus()). root_surface resolves through
-            // any subsurface (e.g. Chromium renders a popup's content as
-            // one) to the actual role surface, both for the check below and
-            // for what gets granted focus.
+            // See popup_wants_keyboard_focus() (desktop/xdg_shell.cpp).
+            // root_surface resolves through any subsurface (e.g. Chromium
+            // renders a popup's content as one) to the actual role surface,
+            // both for the check below and for what gets granted focus.
             wlr_surface *root_surface = wlr_surface_get_root_surface(surface);
             wlr_xdg_surface *xdg_surface = wlr_xdg_surface_try_from_wlr_surface(root_surface);
             bool unwanted_popup_focus = xdg_surface != nullptr &&

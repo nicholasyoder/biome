@@ -14,7 +14,5 @@
 // globals and wires their listeners.
 void xdg_shell_init(BiomeServer *server);
 
-// Whether a popup should get real keyboard focus - see the definition in
-// xdg_shell.cpp for why grab state alone can't decide this. Shared by
-// xdg_popup_map() there and core/cursor.cpp's click handler.
+// Whether a clicked popup may take keyboard focus (core/cursor.cpp).
 bool popup_wants_keyboard_focus(wlr_xdg_popup *xdg_popup);

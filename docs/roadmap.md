@@ -81,17 +81,6 @@ session logs or design discussion.
   sway). wlroots 0.18 has no `has_window_type()` helper; compare
   `xsurface->window_type` against `server->ewmh`'s atoms.
 
-### Spec-compliant focus
-
-Each lands only *after* its Forest-side counterpart (Forest roadmap 0.10.0,
-"Compositor portability"), or Forest input breaks.
-
-- **Non-grabbing layer-shell popups get keyboard focus.**
-  `popup_wants_keyboard_focus()` (`desktop/xdg_shell.cpp`, also used by
-  `core/cursor.cpp`) focuses any popup chain rooted on a layer surface, a
-  Forest-shaped exception for `panel-library/popup.h`'s non-grabbing popups.
-  Per spec only grabbing popups get focus; drop the layer-shell branch.
-
 ### Other protocol deviations
 
 - **Layer surfaces survive their output being disabled.** Biome reparents

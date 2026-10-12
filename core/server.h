@@ -308,6 +308,8 @@ struct BiomeServer {
     wl_listener xdg_activation_request_activate = {};
     uint64_t press_recipient_changes = 0;
     wl_client *last_press_recipient = nullptr;
+    // Honored activation for a popup not mapped yet; xdg_popup_map focuses it.
+    wlr_surface *activated_unmapped_popup = nullptr;
 
     // ext-idle-notify-v1 + idle-inhibit-unstable-v1 (desktop/idle.cpp).
     wlr_idle_notifier_v1 *idle_notifier = nullptr;
