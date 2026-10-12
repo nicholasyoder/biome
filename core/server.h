@@ -17,6 +17,7 @@
 #include <ctime>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 struct BiomeToplevel;
@@ -321,9 +322,9 @@ struct BiomeServer {
     // wlr-output-power-management-unstable-v1 (core/output_power.cpp).
     wlr_output_power_manager_v1 *output_power_manager = nullptr;
     wl_listener output_power_set_mode = {};
-    // Connector name -> when it was destroyed while powered off; lets an HPD
-    // bounce on power-off come back off (server_new_output).
-    std::unordered_map<std::string, timespec> recently_unplugged_off;
+    // Connectors destroyed while powered off, kept until a wake; an HPD bounce
+    // on power-off comes back off (server_new_output).
+    std::unordered_set<std::string> unplugged_while_off;
 };
 
 struct BiomeOutput {

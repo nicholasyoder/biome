@@ -2,6 +2,8 @@
 
 #include "desktop/idle.h"
 
+#include "core/output_power.h"
+
 namespace {
 
 struct BiomeIdleInhibitor {
@@ -83,6 +85,7 @@ void idle_init(BiomeServer *server) {
 }
 
 void idle_notify_activity(BiomeServer *server) {
+    output_power_forget_unplugged(server);
     wlr_idle_notifier_v1_notify_activity(server->idle_notifier, server->seat);
 }
 

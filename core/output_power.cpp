@@ -11,9 +11,6 @@ namespace {
 // busy DRM commit on another connector); one delayed retry clears that.
 constexpr int kRetryDelayMs = 250;
 
-// Longer than an HPD bounce, short enough that a deliberate replug comes up lit.
-constexpr time_t kReconnectOffWindowSec = 10;
-
 // Commits wlr enabled = !powered_off. Returns false on failure.
 bool apply_power(BiomeOutput *output) {
     if (output->disabled) {
@@ -70,6 +67,9 @@ void handle_set_mode(wl_listener *listener, void *data) {
     BiomeServer *server = wl_container_of(listener, server, output_power_set_mode);
     auto *event = static_cast<wlr_output_power_v1_set_mode_event *>(data);
     BiomeOutput *output = biome_output_from_wlr(server, event->output);
+    if (event->mode == ZWLR_OUTPUT_POWER_V1_MODE_ON) {
+        output_power_forget_unplugged(server);
+    }
     if (output == nullptr || output->disabled) {
         return; // a logically disabled output stays off regardless
     }
@@ -85,6 +85,7 @@ void output_power_init(BiomeServer *server) {
 }
 
 void output_power_wake_all(BiomeServer *server) {
+    output_power_forget_unplugged(server);
     BiomeOutput *output;
     wl_list_for_each(output, &server->outputs, link) {
         if (output->powered_off) {
@@ -96,9 +97,7 @@ void output_power_wake_all(BiomeServer *server) {
 void output_power_handle_output_destroy(BiomeOutput *output) {
     cancel_retry(output);
     if (output->powered_off && output->wlr->name != nullptr) {
-        timespec now;
-        clock_gettime(CLOCK_MONOTONIC, &now);
-        output->server->recently_unplugged_off[output->wlr->name] = now;
+        output->server->unplugged_while_off.insert(output->wlr->name);
     }
 }
 
@@ -106,13 +105,9 @@ bool output_power_reconnected_off(BiomeServer *server, const char *name) {
     if (name == nullptr) {
         return false;
     }
-    auto it = server->recently_unplugged_off.find(name);
-    if (it == server->recently_unplugged_off.end()) {
-        return false;
-    }
-    timespec now;
-    clock_gettime(CLOCK_MONOTONIC, &now);
-    bool recent = now.tv_sec - it->second.tv_sec < kReconnectOffWindowSec;
-    server->recently_unplugged_off.erase(it);
-    return recent;
+    return server->unplugged_while_off.erase(name) > 0;
+}
+
+void output_power_forget_unplugged(BiomeServer *server) {
+    server->unplugged_while_off.clear();
 }

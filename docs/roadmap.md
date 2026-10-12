@@ -80,11 +80,6 @@ session logs or design discussion.
   `SPLASH` windows undecorated (and probably unfocused/centered, like
   sway). wlroots 0.18 has no `has_window_type()` helper; compare
   `xsurface->window_type` against `server->ewmh`'s atoms.
-- **A monitor that bounces for over 10 s while powered off comes back lit**
-  (`kReconnectOffWindowSec`), and can loop as it sleeps and drops again. Keep
-  `recently_unplugged_off` records until user activity (`idle_notify_activity`)
-  or a `set_mode(on)` instead of a time window. Needed by Forest's
-  "never wake idle-blanked displays" (Forest roadmap 0.10.0).
 
 ### Other protocol deviations
 
