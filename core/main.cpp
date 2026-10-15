@@ -34,7 +34,32 @@
 #include <cstdlib>
 #include <cstring>
 #include <getopt.h>
+#include <sys/syscall.h>
+#include <sys/wait.h>
 #include <unistd.h>
+
+namespace {
+
+pid_t startup_pid = -1;
+int startup_status = 0;
+
+// greetd only starts the session once its greeter command exits, so Biome
+// exits with the -s command (as cage does).
+int handle_startup_exit(int, uint32_t, void *data) {
+    auto *display = static_cast<wl_display *>(data);
+    if (waitpid(startup_pid, &startup_status, 0) == startup_pid) {
+        if (WIFEXITED(startup_status)) {
+            wlr_log(WLR_INFO, "Startup command exited with status %d", WEXITSTATUS(startup_status));
+        } else if (WIFSIGNALED(startup_status)) {
+            wlr_log(WLR_INFO, "Startup command killed by signal %d", WTERMSIG(startup_status));
+        }
+    }
+    startup_pid = -1;
+    wl_display_terminate(display);
+    return 0;
+}
+
+} // namespace
 
 int main(int argc, char *argv[]) {
 #ifdef BIOME_DEV_BUILD
@@ -185,14 +210,35 @@ int main(int argc, char *argv[]) {
     }
 
     setenv("WAYLAND_DISPLAY", socket, true);
+    // pidfd rather than a SIGCHLD signalfd: Qt's threads already exist with
+    // SIGCHLD unblocked, and it can't steal wlroots' Xwayland waitpid.
+    int startup_pidfd = -1;
+    wl_event_source *startup_source = nullptr;
     if (startup_cmd) {
-        if (fork() == 0) {
+        startup_pid = fork();
+        if (startup_pid == 0) {
             execl("/bin/sh", "/bin/sh", "-c", startup_cmd, (void *)nullptr);
             _exit(127);
+        }
+        if (startup_pid < 0) {
+            wlr_log_errno(WLR_ERROR, "failed to fork startup command");
+        } else if ((startup_pidfd = static_cast<int>(syscall(SYS_pidfd_open, startup_pid, 0))) < 0) {
+            wlr_log_errno(WLR_ERROR, "pidfd_open failed; Biome won't exit with the startup command");
+        } else {
+            startup_source = wl_event_loop_add_fd(wl_display_get_event_loop(server.display),
+                                                  startup_pidfd, WL_EVENT_READABLE,
+                                                  handle_startup_exit, server.display);
         }
     }
     wlr_log(WLR_INFO, "Running Biome on WAYLAND_DISPLAY=%s", socket);
     wl_display_run(server.display);
+
+    if (startup_source) {
+        wl_event_source_remove(startup_source);
+    }
+    if (startup_pidfd >= 0) {
+        close(startup_pidfd);
+    }
 
     wl_display_destroy_clients(server.display);
     if (server.ewmh_ready) {
@@ -201,12 +247,13 @@ int main(int argc, char *argv[]) {
     if (server.xwayland) {
         wlr_xwayland_destroy(server.xwayland);
     }
+    // First: output_destroy() still touches the scene, cursor and renderer.
+    wlr_backend_destroy(server.backend);
     wlr_scene_node_destroy(&server.scene->tree.node);
     wlr_xcursor_manager_destroy(server.cursor_mgr);
     wlr_cursor_destroy(server.cursor);
     wlr_allocator_destroy(server.allocator);
     wlr_renderer_destroy(server.renderer);
-    wlr_backend_destroy(server.backend);
     // wlr_session_lock_v1's own display-destroy handler asserts that
     // nothing is still listening on its new_lock signal - session_lock_init()
     // (desktop/session_lock.cpp) registers server.new_session_lock on it for
@@ -218,5 +265,8 @@ int main(int argc, char *argv[]) {
     wl_list_remove(&server.output_apply.link);
     wl_list_remove(&server.output_test.link);
     wl_display_destroy(server.display);
-    return 0;
+    if (WIFEXITED(startup_status)) {
+        return WEXITSTATUS(startup_status);
+    }
+    return WIFSIGNALED(startup_status) ? 128 + WTERMSIG(startup_status) : 0;
 }
