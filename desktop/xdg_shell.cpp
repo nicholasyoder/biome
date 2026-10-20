@@ -542,6 +542,20 @@ static void xdg_toplevel_decoration_destroy_handler(wl_listener *listener, void 
     // back to the default" signal to honor even if it didn't.
 }
 
+// After xdg_client_side_decorated flips on an initialized toplevel. Pre-map,
+// the premap configure was sized for the old mode (e.g. LibreOffice creates
+// its KDE decoration after the initial commit), so redo it.
+static void apply_decoration_change(BiomeToplevel *toplevel) {
+    if (!toplevel->placed) {
+        toplevel_configure_premap(toplevel);
+        return;
+    }
+    wlr_scene_node_set_position(&toplevel->content_tree->node,
+        decoration_border_width(toplevel, toplevel->maximized),
+        decoration_titlebar_height(toplevel, toplevel->maximized));
+    render_toplevel_decoration(toplevel);
+}
+
 // A client's zxdg_toplevel_decoration_v1 asked for a mode change (also
 // fires once for its first set_mode/unset_mode, sent before the initial
 // commit - see xdg_toplevel_commit, which acks that first request instead
@@ -559,10 +573,7 @@ static void xdg_toplevel_decoration_request_mode(wl_listener *listener, void *da
                           : WLR_XDG_TOPLEVEL_DECORATION_V1_MODE_SERVER_SIDE);
     if (toplevel->xdg_client_side_decorated != want_client_side) {
         toplevel->xdg_client_side_decorated = want_client_side;
-        wlr_scene_node_set_position(&toplevel->content_tree->node,
-            decoration_border_width(toplevel, toplevel->maximized),
-            decoration_titlebar_height(toplevel, toplevel->maximized));
-        render_toplevel_decoration(toplevel);
+        apply_decoration_change(toplevel);
     }
 }
 
@@ -615,10 +626,7 @@ static void apply_kde_decoration_mode(BiomeToplevel *toplevel) {
         // initial_commit branch runs, same as the xdg-decoration path.
         return;
     }
-    wlr_scene_node_set_position(&toplevel->content_tree->node,
-        decoration_border_width(toplevel, toplevel->maximized),
-        decoration_titlebar_height(toplevel, toplevel->maximized));
-    render_toplevel_decoration(toplevel);
+    apply_decoration_change(toplevel);
 }
 
 static void kde_decoration_mode_handler(wl_listener *listener, void *data) {
