@@ -71,8 +71,10 @@ static void keyboard_handle_key(wl_listener *listener, void *data) {
     const bool pressed = event->state == WL_KEYBOARD_KEY_STATE_PRESSED;
     if (pressed) {
         for (int i = 0; i < nsyms; i++) {
-            handled = handle_key_press(server, syms[i], modifiers);
+            handled = handle_key_press(server, keyboard->wlr, event->keycode, syms[i], modifiers);
         }
+    } else if (handle_key_release(keyboard->wlr, event->keycode)) {
+        handled = true;
     }
 
     // Runs on both press and release, independent of handle_key_press()

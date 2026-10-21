@@ -100,11 +100,8 @@ session logs or design discussion.
   `show_window_menu`, `set_fullscreen`'s output argument, and min/max size
   hints during interactive resize.
 - **GlobalShortcuts backend gaps** (`ipc/global_shortcuts_portal.cpp`):
-  `Activated`+`Deactivated` both fire on press (no hold semantics — breaks
-  press-and-hold actions like volume keys; plan:
-  [`docs/global-shortcuts-hold-plan.md`](global-shortcuts-hold-plan.md)); a
-  second `BindShortcuts` on a session double-registers; `trigger_description`
-  is the raw trigger string; no consent UI.
+  a second `BindShortcuts` on a session double-registers;
+  `trigger_description` is the raw trigger string; no consent UI.
 - **Foreign-toplevel `parent` never set**, so dialogs list as independent
   windows.
 
