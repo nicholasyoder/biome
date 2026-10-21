@@ -49,11 +49,6 @@ session logs or design discussion.
   on config change, and document the selectors as a stable contract. Forest
   ships the themes (Forest roadmap 0.10.0). Plan:
   [`docs/theming-plan.md`](theming-plan.md).
-- **Exit when the `-s` command exits.** greetd starts the user's session
-  only once the greeter command exits; cage exits with its client, Biome
-  doesn't. Watch the forked pid (`SIGCHLD` source) and terminate the
-  display. Needed for Forest's greeter on Biome (Forest roadmap 0.10.0,
-  plan: `forest/docs/greeter-on-biome-plan.md`).
 - **Pointer lock/confinement** (`pointer-constraints-unstable-v1`) +
   **`relative-pointer-unstable-v1`** — required for FPS-style mouse look in
   any game or 3D app. Ship together; they're used together.
