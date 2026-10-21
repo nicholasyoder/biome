@@ -1,78 +1,78 @@
 # GlobalShortcuts hold/repeat semantics — Plan
 
-Let a bound global shortcut keep firing while its key is held, instead of
-once per press. Status: **proposed, not started**.
+Let a held global shortcut keep acting while its key is down, instead of once
+per press. Status: **planned, not started**. Spans both repos: Biome reports
+real press/release, Forest does the repeating.
 
 ## Problem
 
-Volume keys bound via `org.freedesktop.impl.portal.GlobalShortcuts` only
-nudge the level once per press; holding the key down no longer ramps it up
-or down. Forest's `AudioEngine` volume up/down D-Bus handlers are a one-shot
-±2% step per call — by design, they rely on being re-invoked repeatedly
-while the key is held, the same way a normal (non-global) key-repeat would
-drive a text field.
+Holding a bound volume key steps the level once instead of ramping it.
+Forest's volume up/down D-Bus handlers are a one-shot ±2% step per call.
 
 ## Current behavior
 
-- `ipc/global_shortcuts_portal.cpp`'s `BindShortcuts` callback treats every
-  bound shortcut as an instant action: on a matched press it fires
-  `Activated` immediately followed synchronously by `Deactivated`. This is
-  original to the Wayland port (commit 6474945) and is already called out in
-  `docs/roadmap.md` (0.2.0, "GlobalShortcuts backend gaps") as "no hold
-  semantics" — this plan is that gap's fix.
-- `core/input.cpp`'s `keyboard_handle_key()` runs `handle_key_press()` once
-  per `wlr_keyboard_key` event where `event->state ==
-  WL_KEYBOARD_KEY_STATE_PRESSED` (`core/input.cpp:71-74`). There's no timer
-  or repeat synthesis in this path.
-- `wlr_keyboard_set_repeat_info(wlr_keyboard, 25, 600)` (`core/input.cpp:136`)
-  only sets the `repeat_info` Biome advertises to focused Wayland clients via
-  `wl_keyboard`, so normal apps can self-repeat typed input on their own
-  timer. It has no effect on the global-shortcut dispatch path, which
-  doesn't go through seat/focus at all.
+- `ipc/global_shortcuts_portal.cpp` fires `Activated` and then `Deactivated`
+  back-to-back on press (roadmap 0.2.0, "GlobalShortcuts backend gaps").
+- `core/input.cpp`'s `keyboard_handle_key()` only runs `handle_key_press()` on
+  `PRESSED`; nothing tracks which shortcut a held key triggered.
+- libinput drops kernel autorepeat, so a held key gives one `PRESSED` and one
+  `RELEASED`. No raw repeat stream exists to forward.
+- Forest's `GlobalShortcutsPortal` (`services/services-app/hotkeys/`) only
+  listens to `Activated`; `Deactivated` is ignored.
 
-**Open question, check first:** whether a held key already produces a
-stream of raw `PRESSED` events reaching `keyboard_handle_key()` (i.e.
-hardware/kernel-level autorepeat passed through unchanged by libinput), or
-whether holding a key truly produces exactly one `PRESSED` + one `RELEASED`
-and Biome would have to synthesize the repeat itself. Confirm by logging
-`event->state` timestamps in `keyboard_handle_key()` while holding a key.
-This decides which of the two shapes below applies.
+## Design
 
-## Shape
+The spec's `Activated`/`Deactivated` mean "became active" and "became
+inactive". The compositor reports press/release truthfully and the client
+repeats between them, the same split as `wl_keyboard` `repeat_info`. Biome
+re-emitting `Activated` while held would be Biome-only behavior, and Forest's
+ramp would silently break on any other compositor (decoupling goal).
 
-No new wlroots/protocol capability needed — the shortcuts-spec portal
-already supports separate `Activated`/`Deactivated` signals with real
-press/release timing; Biome just needs to stop firing them back-to-back.
+## Biome
 
-1. Track "shortcut armed" state per bound shortcut in
-   `global_shortcuts_portal.cpp`: `Activated` fires on press (as today),
-   `Deactivated` fires on the matching release instead of immediately after.
-2. While armed, keep the bound action re-firing at the same cadence Biome
-   already uses for client-side repeat (25 ms period after a 600 ms initial
-   delay, mirroring `wlr_keyboard_set_repeat_info`'s values) — exact
-   mechanism depends on the open question above:
-   - If raw repeat events already arrive at `keyboard_handle_key()`, forward
-     each one to the armed shortcut's `Activated` instead of adding a timer.
-   - If not, add a `wl_event_source_timer` in the portal backend (or
-     `core/keybindings.cpp`) started on arm, re-firing `Activated` on the
-     delay/period above, cancelled on release.
-3. `AudioEngine`'s step-per-call handlers need no change — they already do
-   the right thing if `Activated` repeats while held.
+1. On a matched portal-shortcut press, record keycode → (session, shortcut
+   id). Emit `Activated` as today; drop the immediate `Deactivated`
+   (`global_shortcuts_portal.cpp:125-126`).
+2. On release of that keycode in `keyboard_handle_key()`, emit `Deactivated`
+   and swallow the release. Key on the triggering key, not the modifiers:
+   releasing Ctrl first doesn't end the hold.
+3. Emit `Deactivated` for any still-held shortcut when its session closes or
+   the keyboard is destroyed.
+4. No repeat timer in Biome.
 
-## Scope
+## Forest
 
-Confined to `ipc/global_shortcuts_portal.cpp` (arm/disarm + re-fire) and
-possibly `core/input.cpp`/`core/keybindings.cpp` if a timer is needed there
-instead. No Forest-side change expected; `AudioEngine` already behaves
-correctly given a repeating `Activated`.
+1. `GlobalShortcutsPortal`: connect `Deactivated`, emit
+   `shortcutDeactivated(id)`.
+2. Per-hotkey config in `Forest.conf`: `repeat` (bool, default false) and
+   `repeat_interval` (ms, default 100). One interval: the first repeat fires
+   one interval after the press, then every interval. No separate initial
+   delay; an occasional double step on a slow tap is acceptable.
+3. `foresthotkeys`/`globalhotkey`: on `Activated`, `exec()` once. If `repeat`
+   is set, start a `QTimer` at `repeat_interval` that re-runs `exec()`. Stop
+   it on `Deactivated`, `sessionLost`, pause, and reload.
+4. Settings (`services-settings/hotkeys/edithotkeywidget`): a "Repeat while
+   held" checkbox, plus an interval spinbox (ms) enabled only when the box is
+   checked. Save/load both through `HotkeyData` and
+   `HotkeySettingItem::save()`.
+5. Defaults: turn `repeat` on for the shipped Volume Up/Down and Brightness
+   Up/Down items in `etc/forest/Forest.conf`. Add a `SettingsUpgradeManager`
+   step that does the same for existing configs whose items match those
+   shipped actions.
+
+## Order
+
+Biome first, as its own PR: it's spec-correct alone, and current Forest
+ignores `Deactivated`, so nothing regresses. Then the Forest PR.
 
 ## Testing
 
-- Hold a bound volume key: level should ramp continuously, not step once.
-- Tap a bound shortcut (e.g. launch-app): still fires exactly once, no
-  double-fire from the arm/disarm change.
-- Release the key before the initial repeat delay elapses: exactly one
-  `Activated`+`Deactivated` pair, no repeat fired.
-- A second `BindShortcuts` on the same session (existing known gap, not
-  fixed here): shouldn't double-fire repeats on top of the existing
-  double-registration bug.
+- Hold Volume Up: ramps at the configured interval and stops on release.
+- Tap a non-repeat shortcut (e.g. launch-app): fires exactly once.
+- Set a repeat hotkey's interval to 500 ms: the ramp visibly slows.
+- Hold Ctrl+X (repeat on), release Ctrl first: keeps repeating until X is
+  released.
+- Kill Forest's services while holding a key, or pause hotkeys: no runaway
+  timer, and Biome doesn't leak the held state.
+- A second `BindShortcuts` on the same session (existing double-registration
+  bug, not fixed here): note whether it now double-fires `Deactivated`.
