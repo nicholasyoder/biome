@@ -1,8 +1,8 @@
 # GlobalShortcuts hold/repeat semantics — Plan
 
 Let a held global shortcut keep acting while its key is down, instead of once
-per press. Status: **planned, not started**. Spans both repos: Biome reports
-real press/release, Forest does the repeating.
+per press. Status: **Biome side done; Forest side not started**. Spans both
+repos: Biome reports real press/release, Forest does the repeating.
 
 ## Problem
 

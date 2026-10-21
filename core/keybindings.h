@@ -55,8 +55,16 @@ struct BiomeKeybinding {
 
 // The single entry point called from core/input.cpp's keyboard_handle_key()
 // for every key press, regardless of which modifiers are held - portal-
-// registered shortcuts aren't restricted to Alt-chords.
-bool handle_key_press(BiomeServer *server, xkb_keysym_t sym, uint32_t modifiers);
+// registered shortcuts aren't restricted to Alt-chords. `keyboard`/`keycode`
+// identify the physical key, so a portal binding's release can be matched.
+bool handle_key_press(BiomeServer *server, wlr_keyboard *keyboard, uint32_t keycode,
+    xkb_keysym_t sym, uint32_t modifiers);
+
+// Called from keyboard_handle_key() for every key release. Runs the release
+// callback of a portal binding this key triggered (modifiers don't matter,
+// only the triggering key). Returns true to swallow the release, matching
+// the swallowed press.
+bool handle_key_release(wlr_keyboard *keyboard, uint32_t keycode);
 
 // Also called from keyboard_handle_key(), but for every key event - press
 // AND release alike (handle_key_press() above is press-only), since a bare-
@@ -89,6 +97,9 @@ bool handle_switcher_key_release(BiomeServer *server, xkb_keysym_t sym);
 // remove_session_keybindings() once its session ends. Built-in bindings
 // always take priority over a portal-registered one on an exact-trigger
 // collision - see handle_key_press()'s own comment on that choice.
+// `release` runs when the triggering key comes up (straight after `invoke`
+// for a bare-modifier tap), or when the session ends mid-hold.
 void add_portal_keybinding(const QString &owner, ParsedTrigger trigger,
-    std::function<bool(BiomeServer *, uint32_t modifiers)> invoke);
+    std::function<bool(BiomeServer *, uint32_t modifiers)> invoke,
+    std::function<void()> release);
 void remove_session_keybindings(const QString &owner);

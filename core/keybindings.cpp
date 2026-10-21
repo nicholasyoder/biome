@@ -60,11 +60,27 @@ bool is_modifier_keysym(xkb_keysym_t sym) {
 struct PortalBinding {
     QString owner;
     BiomeKeybinding binding;
+    std::function<void()> release;
 };
 
 std::vector<PortalBinding> &portal_bindings() {
     static std::vector<PortalBinding> bindings;
     return bindings;
+}
+
+// A key currently held down that triggered a portal binding. `release` is
+// cleared if the session ends mid-hold; the entry stays so the release is
+// still swallowed.
+struct HeldBinding {
+    wlr_keyboard *keyboard;
+    uint32_t keycode;
+    QString owner;
+    std::function<void()> release;
+};
+
+std::vector<HeldBinding> &held_bindings() {
+    static std::vector<HeldBinding> held;
+    return held;
 }
 
 // Alt-Tab/Alt-Shift-Tab. Not a builtin_keybindings() entry: it spans a whole
@@ -199,7 +215,8 @@ std::optional<ParsedTrigger> parse_trigger(const QString &trigger) {
     return ParsedTrigger{modmask, keysym};
 }
 
-bool handle_key_press(BiomeServer *server, xkb_keysym_t sym, uint32_t modifiers) {
+bool handle_key_press(BiomeServer *server, wlr_keyboard *keyboard, uint32_t keycode,
+        xkb_keysym_t sym, uint32_t modifiers) {
     // Ctrl-Alt-F1..F12: hand VT switching back to the session/kernel. Taking
     // over a KMS/DRM session puts the console in graphics mode, so the
     // compositor has to notice these and call wlr_session_change_vt() itself.
@@ -240,11 +257,34 @@ bool handle_key_press(BiomeServer *server, xkb_keysym_t sym, uint32_t modifiers)
 
     for (const PortalBinding &entry : portal_bindings()) {
         if (trigger_matches(entry.binding.trigger, sym, modifiers)) {
-            return entry.binding.invoke(server, modifiers);
+            if (!entry.binding.invoke(server, modifiers)) {
+                return false;
+            }
+            held_bindings().push_back(HeldBinding{keyboard, keycode, entry.owner, entry.release});
+            return true;
         }
     }
 
     return false;
+}
+
+bool handle_key_release(wlr_keyboard *keyboard, uint32_t keycode) {
+    std::vector<HeldBinding> released;
+    std::vector<HeldBinding> &held = held_bindings();
+    for (auto it = held.begin(); it != held.end();) {
+        if (it->keyboard == keyboard && it->keycode == keycode) {
+            released.push_back(std::move(*it));
+            it = held.erase(it);
+        } else {
+            ++it;
+        }
+    }
+    for (const HeldBinding &entry : released) {
+        if (entry.release) {
+            entry.release();
+        }
+    }
+    return !released.empty();
 }
 
 bool handle_modifier_tap(BiomeServer *server, xkb_keysym_t sym, uint32_t modifiers, bool pressed,
@@ -310,7 +350,13 @@ bool handle_modifier_tap(BiomeServer *server, xkb_keysym_t sym, uint32_t modifie
 
     for (const PortalBinding &entry : portal_bindings()) {
         if (entry.binding.trigger.keysym == XKB_KEY_NoSymbol && entry.binding.trigger.modmask == candidate) {
-            return entry.binding.invoke(server, modifiers);
+            if (!entry.binding.invoke(server, modifiers)) {
+                return false;
+            }
+            if (entry.release) {
+                entry.release();
+            }
+            return true;
         }
     }
     return false;
@@ -321,11 +367,20 @@ bool handle_switcher_key_release(BiomeServer *server, xkb_keysym_t sym) {
 }
 
 void add_portal_keybinding(const QString &owner, ParsedTrigger trigger,
-        std::function<bool(BiomeServer *, uint32_t)> invoke) {
-    portal_bindings().push_back(PortalBinding{owner, BiomeKeybinding{trigger, std::move(invoke)}});
+        std::function<bool(BiomeServer *, uint32_t)> invoke, std::function<void()> release) {
+    portal_bindings().push_back(
+        PortalBinding{owner, BiomeKeybinding{trigger, std::move(invoke)}, std::move(release)});
 }
 
 void remove_session_keybindings(const QString &owner) {
+    for (HeldBinding &entry : held_bindings()) {
+        if (entry.owner == owner && entry.release) {
+            std::function<void()> release = std::move(entry.release);
+            entry.release = nullptr;
+            release();
+        }
+    }
+
     std::vector<PortalBinding> &bindings = portal_bindings();
     bindings.erase(
         std::remove_if(bindings.begin(), bindings.end(),

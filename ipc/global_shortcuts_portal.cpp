@@ -117,15 +117,16 @@ uint GlobalShortcutsPortal::BindShortcuts(const QDBusObjectPath &handle,
                     if (!token.empty()) {
                         options.insert(QStringLiteral("activation_token"), QString::fromStdString(token));
                     }
-                    // Every bound shortcut is treated as an instant (press-only)
-                    // action for this prototype - fire Activated immediately
-                    // followed by Deactivated rather than tracking real
-                    // press/hold state. Press/hold semantics are deferred, per
-                    // the plan doc.
                     emit Activated(session_handle, shortcut_id, now, options);
-                    emit Deactivated(session_handle, shortcut_id, now, {});
                 });
                 return true;
+            },
+            [this, session_handle, shortcut_id]() {
+                // Queued too, so it can't overtake the queued Activated.
+                QTimer::singleShot(0, this, [this, session_handle, shortcut_id]() {
+                    const qulonglong now = static_cast<qulonglong>(QDateTime::currentMSecsSinceEpoch());
+                    emit Deactivated(session_handle, shortcut_id, now, {});
+                });
             });
 
         GlobalShortcutSpec out;
