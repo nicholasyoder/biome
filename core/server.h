@@ -172,6 +172,14 @@ struct BiomeServer {
     wlr_cursor_shape_manager_v1 *cursor_shape_manager = nullptr;
     wl_listener request_set_shape = {};
 
+    // relative-pointer-unstable-v1 + pointer-constraints-unstable-v1
+    // (core/pointer_constraints.cpp).
+    wlr_relative_pointer_manager_v1 *relative_pointer_manager = nullptr;
+    wlr_pointer_constraints_v1 *pointer_constraints = nullptr;
+    wl_listener new_pointer_constraint = {};
+    wl_listener keyboard_focus_change = {};
+    wlr_pointer_constraint_v1 *active_constraint = nullptr;
+
     wlr_seat *seat = nullptr;
     wl_listener new_input = {};
     wl_listener request_cursor = {};

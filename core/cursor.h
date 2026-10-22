@@ -29,6 +29,9 @@ void cursor_reload_theme(BiomeServer *server, const char *theme, uint32_t size);
 
 void reset_cursor_mode(BiomeServer *server);
 
+// Re-runs pointer focus/hover at the current position, e.g. after a warp.
+void cursor_rebase(BiomeServer *server);
+
 // check_pointer_focus should be true for client-requested moves/resizes
 // (xdg-shell/Xwayland request_move/request_resize - an unfocused client
 // could send these unprompted, so they're checked against actual pointer

@@ -49,9 +49,6 @@ session logs or design discussion.
   on config change, and document the selectors as a stable contract. Forest
   ships the themes (Forest roadmap 0.10.0). Plan:
   [`docs/theming-plan.md`](theming-plan.md).
-- **Pointer lock/confinement** (`pointer-constraints-unstable-v1`) +
-  **`relative-pointer-unstable-v1`** — required for FPS-style mouse look in
-  any game or 3D app. Ship together; they're used together.
 - **Trackpad gestures** (`pointer-gestures-unstable-v1`) — pinch/swipe/hold;
   sway and Hyprland both support it. Without it, GTK/Qt apps that key off
   trackpad swipes just see raw pointer motion.

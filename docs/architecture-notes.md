@@ -368,3 +368,23 @@ host passes one via SNI `ProvideXdgActivationToken` before `Activate`.
 Relaunching an app from a terminal (no `XDG_ACTIVATION_TOKEN`) only marks it
 urgent — intended, but only if the client sends a token wlroots accepted
 (e.g. seat-less); see the roadmap's rejected-token item.
+
+## Pointer constraints (`core/pointer_constraints.cpp`)
+
+A lock/confine is active only while its surface's root has keyboard focus
+(sway's model; `seat->keyboard_state.events.focus_change` is the single
+hook). Every way out of a game — Alt+Tab, the launcher hotkey, session lock,
+closing the window — already moves focus, so there's no dedicated
+"release pointer" chord. Root matching lets a client constrain a subsurface
+(Firefox's content) while focus sits on the toplevel.
+
+- On activation (and region change) the cursor warps into the region if
+  outside it; the region stays empty until the surface's first commit after
+  the request, so confinement also re-warps lazily from the motion path.
+- Clamping only applies while the constrained surface has pointer focus and
+  no Biome move/resize grab is running.
+- Relative motion is always sent unclamped. Absolute motion (nested
+  backends) is converted to a delta so both protocols work nested.
+- On unlock, a locked pointer's `cursor_hint` is honored.
+- Xwayland translates X11 grabs (Wine, SDL) into these same protocols; no
+  X-specific handling.
