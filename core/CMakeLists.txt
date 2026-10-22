@@ -3,6 +3,8 @@ find_package(Qt6 REQUIRED COMPONENTS Core DBus)
 find_package(PkgConfig REQUIRED)
 # qt_glib_bridge.cpp drives g_main_context_default() directly.
 pkg_check_modules(GLIB REQUIRED IMPORTED_TARGET glib-2.0)
+# pointer_constraints.cpp calls pixman directly; wlroots only links it privately.
+pkg_check_modules(PIXMAN REQUIRED IMPORTED_TARGET pixman-1)
 
 add_executable(biome
     main.cpp
@@ -29,6 +31,8 @@ add_executable(biome
     keybindings.cpp
     cursor.h
     cursor.cpp
+    pointer_constraints.h
+    pointer_constraints.cpp
     qt_glib_bridge.h
     qt_glib_bridge.cpp
     wlroots.hpp
@@ -36,7 +40,8 @@ add_executable(biome
 
 add_dependencies(biome biome_wlroots_cxx_shim
     ${XDG_SHELL_PROTOCOL_HEADER_TARGET} ${LAYER_SHELL_PROTOCOL_HEADER_TARGET}
-    ${CURSOR_SHAPE_PROTOCOL_HEADER_TARGET} ${OUTPUT_POWER_PROTOCOL_HEADER_TARGET})
+    ${CURSOR_SHAPE_PROTOCOL_HEADER_TARGET} ${OUTPUT_POWER_PROTOCOL_HEADER_TARGET}
+    ${POINTER_CONSTRAINTS_PROTOCOL_HEADER_TARGET})
 
 # BIOME_WLROOTS_SHIM_DIR must come before PkgConfig::WLROOTS's own include
 # dir so the patched copies of wlr_scene.h/wlr_matrix.h are the ones found.
@@ -53,6 +58,7 @@ target_link_libraries(biome PRIVATE
     PkgConfig::WAYLAND_SERVER
     PkgConfig::XKBCOMMON
     PkgConfig::GLIB
+    PkgConfig::PIXMAN
     Qt6::Core
     Qt6::DBus
 )

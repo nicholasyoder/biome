@@ -11,6 +11,7 @@
 #include "core/input.h"
 #include "core/output.h"
 #include "core/output_power.h"
+#include "core/pointer_constraints.h"
 #include "core/qt_glib_bridge.h"
 #include "core/server.h"
 #include "decoration/theme.h"
@@ -190,6 +191,7 @@ int main(int argc, char *argv[]) {
     xdg_shell_init(&server);
     cursor_init(&server);
     input_init(&server);
+    pointer_constraints_init(&server);
     idle_init(&server);
     output_power_init(&server);
     xwayland_init(&server, compositor);

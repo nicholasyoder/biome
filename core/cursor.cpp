@@ -2,6 +2,7 @@
 
 #include "core/cursor.h"
 
+#include "core/pointer_constraints.h"
 #include "desktop/decoration_bridge.h"
 #include "desktop/idle.h"
 #include "desktop/toplevel.h"
@@ -11,6 +12,7 @@
 #include <linux/input-event-codes.h>
 
 #include <cstdlib>
+#include <ctime>
 
 static void server_cursor_motion(wl_listener *listener, void *data);
 static void server_cursor_motion_absolute(wl_listener *listener, void *data);
@@ -329,8 +331,14 @@ void server_cursor_motion(wl_listener *listener, void *data) {
     // Forwarded by the cursor for a _relative_ pointer motion event (a delta).
     BiomeServer *server = wl_container_of(listener, server, cursor_motion);
     auto *event = static_cast<wlr_pointer_motion_event *>(data);
-    wlr_cursor_move(server->cursor, &event->pointer->base,
-        event->delta_x, event->delta_y);
+    // Sent unclamped - relative motion is exactly what a locked client wants.
+    wlr_relative_pointer_manager_v1_send_relative_motion(server->relative_pointer_manager, server->seat,
+        static_cast<uint64_t>(event->time_msec) * 1000, event->delta_x, event->delta_y,
+        event->unaccel_dx, event->unaccel_dy);
+    double dx = event->delta_x;
+    double dy = event->delta_y;
+    pointer_constraints_clamp_motion(server, &dx, &dy);
+    wlr_cursor_move(server->cursor, &event->pointer->base, dx, dy);
     process_cursor_motion(server, event->time_msec);
 }
 
@@ -340,8 +348,23 @@ void server_cursor_motion_absolute(wl_listener *listener, void *data) {
     // mouse can enter from any edge, so the cursor has to be warped there.
     BiomeServer *server = wl_container_of(listener, server, cursor_motion_absolute);
     auto *event = static_cast<wlr_pointer_motion_absolute_event *>(data);
-    wlr_cursor_warp_absolute(server->cursor, &event->pointer->base, event->x, event->y);
+    // Turned into a delta so constraints (and relative-pointer clients) work
+    // nested too.
+    double lx, ly;
+    wlr_cursor_absolute_to_layout_coords(server->cursor, &event->pointer->base, event->x, event->y, &lx, &ly);
+    double dx = lx - server->cursor->x;
+    double dy = ly - server->cursor->y;
+    wlr_relative_pointer_manager_v1_send_relative_motion(server->relative_pointer_manager, server->seat,
+        static_cast<uint64_t>(event->time_msec) * 1000, dx, dy, dx, dy);
+    pointer_constraints_clamp_motion(server, &dx, &dy);
+    wlr_cursor_move(server->cursor, &event->pointer->base, dx, dy);
     process_cursor_motion(server, event->time_msec);
+}
+
+void cursor_rebase(BiomeServer *server) {
+    timespec now;
+    clock_gettime(CLOCK_MONOTONIC, &now);
+    process_cursor_motion(server, static_cast<uint32_t>(now.tv_sec * 1000 + now.tv_nsec / 1000000));
 }
 
 void server_cursor_button(wl_listener *listener, void *data) {

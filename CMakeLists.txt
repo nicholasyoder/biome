@@ -58,6 +58,10 @@ biome_generate_protocol_header(CURSOR_SHAPE_PROTOCOL_HEADER CURSOR_SHAPE_PROTOCO
 biome_generate_protocol_header(OUTPUT_POWER_PROTOCOL_HEADER OUTPUT_POWER_PROTOCOL_HEADER_TARGET
     "${CMAKE_SOURCE_DIR}/protocol/wlr-output-power-management-unstable-v1.xml")
 
+# Included by name from wlr/types/wlr_pointer_constraints_v1.h.
+biome_generate_protocol_header(POINTER_CONSTRAINTS_PROTOCOL_HEADER POINTER_CONSTRAINTS_PROTOCOL_HEADER_TARGET
+    "${WAYLAND_PROTOCOLS_DATADIR}/unstable/pointer-constraints/pointer-constraints-unstable-v1.xml")
+
 # ext-workspace-v1 (desktop/ext_workspace.cpp) has no wlroots-provided C
 # type - unlike xdg-shell/layer-shell above, wlroots doesn't implement this
 # protocol at all, so Biome needs the generated private-code source (the
