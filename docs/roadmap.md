@@ -42,13 +42,6 @@ session logs or design discussion.
 
 ## 0.2.0 — input, clipboard & spec compliance (Phases 6–7)
 
-- **External decoration themes.** Decorations and the switcher only use the
-  compiled-in `biome-dark.qss`. Add `[Theme] dir=`/`name=` config: load a
-  layered theme (`theme.conf` `parent_themes` + per-layer `biome.css`, the
-  same format as Forest's) with the built-in theme as fallback, reload live
-  on config change, and document the selectors as a stable contract. Forest
-  ships the themes (Forest roadmap 0.10.0). Plan:
-  [`docs/theming-plan.md`](theming-plan.md).
 - **Trackpad gestures** (`pointer-gestures-unstable-v1`) — pinch/swipe/hold;
   sway and Hyprland both support it. Without it, GTK/Qt apps that key off
   trackpad swipes just see raw pointer motion.

@@ -5,6 +5,8 @@ set(CMAKE_AUTOMOC ON)
 add_library(biome_ipc STATIC
     cursor_theme_watcher.h
     cursor_theme_watcher.cpp
+    theme_watcher.h
+    theme_watcher.cpp
     global_shortcuts_portal.h
     global_shortcuts_portal.cpp
     workspace_bridge.h

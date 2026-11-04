@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 //
 // Loads Biome's own self-contained decoration theme (decoration/theme/
-// biome-dark.qss) - not Forest's installed theme. Forest's real QSS never
+// builtin.qss) - not Forest's installed theme. Forest's real QSS never
 // defines window-decoration styling itself (fstyleloader only ever styles
 // Forest's own widget chrome: panel, menus, popups), so this reproduces the
 // color/shape values of Forest's base-dark + base-rounded theme layers for
@@ -13,16 +13,17 @@
 
 #include "frame_widget.h"
 
+#include <QString>
+
 namespace biome_decoration {
 
-// Reads the embedded biome-dark.qss and applies it application-wide via
-// qApp->setStyleSheet() - every widget created afterwards picks the rules up
-// automatically with no per-widget setStyleSheet() call needed (verified
-// empirically: an app-wide stylesheet cascades to widgets constructed later
-// exactly the same as one set directly on them). Must be called once, after
-// a QApplication exists, before any DecorationFrame/SwitcherPanel is
-// constructed - not live-reloaded.
-void load_decoration_theme();
+// Applies the external layered theme `name` from `dir` (see docs/theming-plan.md
+// and architecture-notes.md), or the built-in one if either is empty or the
+// theme yields no biome.css. Replaces any previously applied stylesheet;
+// existing widgets are re-polished by Qt but callers must re-layout/re-render.
+// Call after a QApplication exists, before any DecorationFrame/SwitcherPanel
+// is constructed.
+void load_decoration_theme(const QString &dir = {}, const QString &name = {});
 
 // Constructs a new DecorationFrame, already given a valid initial layout, so it's immediately safe to query geometry from or render.
 // load_decoration_theme() must have already been called.

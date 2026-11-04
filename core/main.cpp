@@ -25,7 +25,9 @@
 #include "desktop/xdg_activation.h"
 #include "desktop/xdg_shell.h"
 #include "desktop/xwayland_shell.h"
+#include "core/config.h"
 #include "ipc/cursor_theme_watcher.h"
+#include "ipc/theme_watcher.h"
 #include "ipc/global_shortcuts_portal.h"
 #include "ipc/workspace_bridge.h"
 
@@ -105,7 +107,8 @@ int main(int argc, char *argv[]) {
     QApplication qt_app(qt_argc, qt_argv);
 
     BiomeServer server;
-    biome_decoration::load_decoration_theme();
+    biome_decoration::load_decoration_theme(
+        biome_config().value("Theme/dir").toString(), biome_config().value("Theme/name").toString());
     init_icon_theme();
     server.display = wl_display_create();
     // Bridges Qt's GLib-backed dispatcher into wl_event_loop so Qt/QtDBus
@@ -198,6 +201,7 @@ int main(int argc, char *argv[]) {
     global_shortcuts_portal_init(&server);
     workspace_bridge_init(&server);
     cursor_theme_watcher_init(&server);
+    theme_watcher_init(&server);
 
     const char *socket = wl_display_add_socket_auto(server.display);
     if (!socket) {

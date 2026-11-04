@@ -239,6 +239,34 @@ void render_toplevel_decoration(BiomeToplevel *toplevel) {
     }
 }
 
+void reload_decoration_theme(BiomeServer *server, const QString &dir, const QString &name) {
+    // Content stays put: remember where each window's content sits, restyle,
+    // then move the frame so the content origin is unchanged.
+    std::vector<std::pair<BiomeToplevel *, wlr_box>> origins;
+    BiomeToplevel *toplevel;
+    wl_list_for_each(toplevel, &server->toplevels, link) {
+        origins.push_back({toplevel, {
+            static_cast<int>(toplevel->scene_tree->node.x) + decoration_border_width(toplevel, toplevel->maximized),
+            static_cast<int>(toplevel->scene_tree->node.y) + decoration_titlebar_height(toplevel, toplevel->maximized),
+            0, 0}});
+    }
+
+    biome_decoration::load_decoration_theme(dir, name);
+
+    for (auto &[tl, origin] : origins) {
+        tl->decoration_frame->layoutFor(200, 200);
+        tl->decoration_rendered_once = false;
+        if (!tl->placed) {
+            continue;
+        }
+        toplevel_set_position(tl, origin.x - decoration_border_width(tl, tl->maximized),
+            origin.y - decoration_titlebar_height(tl, tl->maximized));
+        render_toplevel_decoration(tl);
+    }
+    // Re-fit maximized/fullscreen windows to the new metrics.
+    toplevels_relocate_for_layout(server);
+}
+
 BiomeToplevel *decoration_toplevel_at_node(
         wlr_scene_node *node, double sx, double sy, biome_decoration::Region *out_region) {
     if (node == nullptr || node->type != WLR_SCENE_NODE_BUFFER) {

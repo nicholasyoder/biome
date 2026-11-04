@@ -11,7 +11,7 @@
 namespace biome_decoration {
 
 // Renders the persistent, QSS-styled SwitcherHighlight widget
-// (biome-dark.qss's #biomeSwitcherHighlight rule) at the given size - same
+// (builtin.qss's #biomeSwitcherHighlight rule) at the given size - same
 // build/resize/QWidget::render() pattern as render_switcher()/
 // render_decoration(). Callers position the result at the target window's
 // on-screen box themselves.

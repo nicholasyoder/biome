@@ -44,19 +44,21 @@ QStringList BiomeConfig::child_groups(const QString &group) const {
     return groups;
 }
 
+BiomeConfig load_biome_config() {
+    BiomeConfig c;
+    const QDir drop_ins(kSystemDropInDir);
+    for (const QString &name : drop_ins.entryList({"*.conf"}, QDir::Files, QDir::Name)) {
+        QSettings settings(drop_ins.filePath(name), QSettings::IniFormat);
+        merge_from(settings, c.values_);
+    }
+    QSettings user("Biome", "Biome");
+    // Otherwise /etc/xdg/Biome/Biome.conf would be a second system location.
+    user.setFallbacksEnabled(false);
+    merge_from(user, c.values_);
+    return c;
+}
+
 const BiomeConfig &biome_config() {
-    static const BiomeConfig config = [] {
-        BiomeConfig c;
-        const QDir drop_ins(kSystemDropInDir);
-        for (const QString &name : drop_ins.entryList({"*.conf"}, QDir::Files, QDir::Name)) {
-            QSettings settings(drop_ins.filePath(name), QSettings::IniFormat);
-            merge_from(settings, c.values_);
-        }
-        QSettings user("Biome", "Biome");
-        // Otherwise /etc/xdg/Biome/Biome.conf would be a second system location.
-        user.setFallbacksEnabled(false);
-        merge_from(user, c.values_);
-        return c;
-    }();
+    static const BiomeConfig config = load_biome_config();
     return config;
 }
