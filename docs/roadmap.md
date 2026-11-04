@@ -151,6 +151,12 @@ Currently the single biggest user-visible gap versus sway/Hyprland
   since wlroots refuses a modeset on a disabled output. Test the config, apply
   positions now, and defer an off output's mode/scale/transform to its
   power-on. Forest never applies while blanked; this covers other clients.
+- **Window snapping / tiling zones.** Snap a window to a half or quarter of
+  the output (or maximize) by dragging it to a screen edge/corner, and via a
+  menu on right-click or press-and-hold of the decoration's maximize button.
+  Biome draws the decorations, so both the drag zones (with a preview
+  overlay) and the button menu are compositor-side. Related: `show_window_menu`
+  is currently ignored (see xdg-shell deviations).
 - **Minor opportunistic protocols** — `single-pixel-buffer-v1`, `content-type-v1`,
   `alpha-modifier-v1`. Toolkits probe for these and fall back gracefully if
   absent — pick up opportunistically rather than as a dedicated push.
