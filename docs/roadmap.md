@@ -132,6 +132,11 @@ Currently the single biggest user-visible gap versus sway/Hyprland
   since wlroots refuses a modeset on a disabled output. Test the config, apply
   positions now, and defer an off output's mode/scale/transform to its
   power-on. Forest never applies while blanked; this covers other clients.
+- **Compositor-side window menu.** Restore/maximize/minimize/move/resize/
+  always-on-top/move-to-workspace/close, popped up by Biome. Callers: its own
+  titlebar (right-click, icon click), CSD clients via xdg `show_window_menu`
+  (then advertise `WINDOW_MENU` in `wm_capabilities`), and the snapping
+  menu below.
 - **Window snapping / tiling zones.** Snap a window to a half or quarter of
   the output (or maximize) by dragging it to a screen edge/corner, and via a
   menu on right-click or press-and-hold of the decoration's maximize button.
