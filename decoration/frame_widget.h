@@ -103,6 +103,7 @@ public:
     // move/resize/maximize math.
     int borderWidth() const { return content_spacer_->x(); }
     int titlebarHeight() const { return content_spacer_->y(); }
+    QRect contentRect() const { return content_spacer_->geometry(); }
     // Same idea, but for the right/bottom edges - border strips are
     // independently QSS-sized, so these can't be assumed equal to
     // borderWidth()/titlebarHeight(). Derived from the frame's total size
