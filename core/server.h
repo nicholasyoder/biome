@@ -164,6 +164,17 @@ struct BiomeServer {
     wl_listener cursor_axis = {};
     wl_listener cursor_frame = {};
 
+    // pointer-gestures-unstable-v1; libinput trackpad events forwarded in cursor.cpp.
+    wlr_pointer_gestures_v1 *pointer_gestures = nullptr;
+    wl_listener cursor_swipe_begin = {};
+    wl_listener cursor_swipe_update = {};
+    wl_listener cursor_swipe_end = {};
+    wl_listener cursor_pinch_begin = {};
+    wl_listener cursor_pinch_update = {};
+    wl_listener cursor_pinch_end = {};
+    wl_listener cursor_hold_begin = {};
+    wl_listener cursor_hold_end = {};
+
     // cursor-shape-v1 - lets a client (Qt 6.6+'s QtWayland client plugin
     // among others) ask for a named CSS-style cursor shape instead of
     // rendering its own image, so a live cursor_mgr reload (ipc/
