@@ -61,18 +61,9 @@ session logs or design discussion.
 
 ### Other protocol deviations
 
-- **Layer surfaces survive their output being disabled.** Biome reparents
-  them to another output and rewrites `layer_surface->output` rather than
-  sending `closed`, though the `wl_output` global is gone
-  (`wlr_output_layout_remove`). Sway closes them. Deliberate (see
-  architecture notes, "Layer surfaces have a home"); decide whether to keep.
-- **Null-output layer surfaces go to the first output**, not the
-  focused/cursor output as in sway/Hyprland.
 - **GlobalShortcuts backend gaps** (`ipc/global_shortcuts_portal.cpp`):
   a second `BindShortcuts` on a session double-registers;
   `trigger_description` is the raw trigger string; no consent UI.
-- **Foreign-toplevel `parent` never set**, so dialogs list as independent
-  windows.
 
 ## 0.3.0 — touch, tablet & accessibility input (Phase 7)
 

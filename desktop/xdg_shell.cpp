@@ -152,6 +152,12 @@ static void xdg_toplevel_set_title(wl_listener *listener, void *data) {
     foreign_toplevel_update_title_app_id(toplevel);
 }
 
+static void xdg_toplevel_set_parent(wl_listener *listener, void *data) {
+    (void)data;
+    BiomeToplevel *toplevel = wl_container_of(listener, toplevel, set_parent);
+    foreign_toplevel_update_parent(toplevel);
+}
+
 static void xdg_toplevel_destroy(wl_listener *listener, void *data) {
     (void)data;
     BiomeToplevel *toplevel = wl_container_of(listener, toplevel, destroy);
@@ -160,6 +166,7 @@ static void xdg_toplevel_destroy(wl_listener *listener, void *data) {
     wl_list_remove(&toplevel->unmap.link);
     wl_list_remove(&toplevel->commit.link);
     wl_list_remove(&toplevel->set_title.link);
+    wl_list_remove(&toplevel->set_parent.link);
     wl_list_remove(&toplevel->destroy.link);
     wl_list_remove(&toplevel->request_move.link);
     wl_list_remove(&toplevel->request_resize.link);
@@ -281,6 +288,8 @@ static void server_new_xdg_toplevel(wl_listener *listener, void *data) {
     wl_signal_add(&xdg_toplevel->base->surface->events.commit, &toplevel->commit);
     toplevel->set_title.notify = xdg_toplevel_set_title;
     wl_signal_add(&xdg_toplevel->events.set_title, &toplevel->set_title);
+    toplevel->set_parent.notify = xdg_toplevel_set_parent;
+    wl_signal_add(&xdg_toplevel->events.set_parent, &toplevel->set_parent);
 
     toplevel->destroy.notify = xdg_toplevel_destroy;
     wl_signal_add(&xdg_toplevel->events.destroy, &toplevel->destroy);

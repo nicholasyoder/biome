@@ -20,9 +20,6 @@ struct BiomeLayerSurface {
     wl_list link = {};
     BiomeServer *server = nullptr;
     BiomeOutput *output = nullptr;
-    // Where the client asked to be; `output` differs only while home is
-    // disabled (see layer_shell_reconcile_outputs).
-    BiomeOutput *home = nullptr;
     wlr_layer_surface_v1 *layer_surface = nullptr;
     wlr_scene_layer_surface_v1 *scene_layer_surface = nullptr;
 

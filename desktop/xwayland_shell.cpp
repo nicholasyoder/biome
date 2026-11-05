@@ -77,11 +77,18 @@ static void xwayland_toplevel_set_title(wl_listener *listener, void *data) {
     foreign_toplevel_update_title_app_id(toplevel);
 }
 
+static void xwayland_toplevel_set_parent(wl_listener *listener, void *data) {
+    (void)data;
+    BiomeToplevel *toplevel = wl_container_of(listener, toplevel, set_parent);
+    foreign_toplevel_update_parent(toplevel);
+}
+
 static void destroy_xwayland_toplevel(BiomeToplevel *toplevel) {
     BiomeServer *server = toplevel->server;
     wl_list_remove(&toplevel->associate.link);
     wl_list_remove(&toplevel->dissociate.link);
     wl_list_remove(&toplevel->set_title.link);
+    wl_list_remove(&toplevel->set_parent.link);
     wl_list_remove(&toplevel->destroy.link);
     wl_list_remove(&toplevel->request_move.link);
     wl_list_remove(&toplevel->request_resize.link);
@@ -353,6 +360,8 @@ static BiomeToplevel *create_xwayland_toplevel(BiomeServer *server, wlr_xwayland
     wl_signal_add(&xsurface->events.destroy, &toplevel->destroy);
     toplevel->set_title.notify = xwayland_toplevel_set_title;
     wl_signal_add(&xsurface->events.set_title, &toplevel->set_title);
+    toplevel->set_parent.notify = xwayland_toplevel_set_parent;
+    wl_signal_add(&xsurface->events.set_parent, &toplevel->set_parent);
     toplevel->request_move.notify = toplevel_request_move;
     wl_signal_add(&xsurface->events.request_move, &toplevel->request_move);
     toplevel->request_resize.notify = xwayland_toplevel_request_resize;

@@ -31,8 +31,6 @@ static void rescue_cursor(BiomeServer *server) {
 }
 
 void output_layout_settled(BiomeServer *server) {
-    // Layer surfaces first: their exclusive zones feed the maximize targets.
-    layer_shell_reconcile_outputs(server);
     toplevels_relocate_for_layout(server);
     rescue_cursor(server);
 }
@@ -242,12 +240,6 @@ static void output_destroy(wl_listener *listener, void *data) {
     (void)data;
     BiomeOutput *output = wl_container_of(listener, output, destroy);
 
-    // Must run before this output is freed below - any layer surface still
-    // bound to it (BiomeLayerSurface::output) would otherwise dangle until
-    // its own destroy listener fires later (e.g. its client disconnecting),
-    // which then dereferences freed memory via arrange_layers(). See
-    // desktop/layer_shell.cpp for the full explanation.
-    layer_shell_handle_output_destroy(output);
     output_power_handle_output_destroy(output);
 
     // Leaves the layout now (rather than in the layout's own destroy
@@ -318,6 +310,7 @@ void output_set_enabled(BiomeOutput *output, bool enabled, std::optional<std::pa
         }
         output->disabled = false;
     } else {
+        layer_shell_close_output_surfaces(output);
         wlr_output_layout_remove(server->output_layout, output->wlr);
         // Not guaranteed to have been destroyed along with the layout entry.
         if (wlr_scene_output *scene_output = wlr_scene_get_scene_output(server->scene, output->wlr)) {
