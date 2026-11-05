@@ -59,12 +59,6 @@ session logs or design discussion.
   main-loop stall, a third of the 220 ms wall-clock fade. Find the stall,
   and whether per-pixel fades can be made cheaper in general.
 
-### Other protocol deviations
-
-- **GlobalShortcuts backend gaps** (`ipc/global_shortcuts_portal.cpp`):
-  a second `BindShortcuts` on a session double-registers;
-  `trigger_description` is the raw trigger string; no consent UI.
-
 ## 0.3.0 — touch, tablet & accessibility input (Phase 7)
 
 Currently the single biggest user-visible gap versus sway/Hyprland
@@ -133,3 +127,10 @@ Currently the single biggest user-visible gap versus sway/Hyprland
 - **Minor opportunistic protocols** — `single-pixel-buffer-v1`, `content-type-v1`,
   `alpha-modifier-v1`. Toolkits probe for these and fall back gracefully if
   absent — pick up opportunistically rather than as a dedicated push.
+- **GlobalShortcuts consent / configuration UI.** Today every
+  `BindShortcuts` request is auto-accepted unless its trigger collides with
+  a built-in or another binding. A real consent dialog needs a Wayland
+  surface (layer-shell overlay, or a Forest-provided dialog over an IPC
+  path), persisted per-app decisions, and would back `ConfigureShortcuts`
+  (currently "not supported"). Open question: whether Biome or Forest owns
+  the UI, given the decoupling goal.

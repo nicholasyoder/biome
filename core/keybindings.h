@@ -18,6 +18,7 @@
 #pragma once
 
 #include "core/server.h"
+#include "core/trigger.h"
 
 #include <QString>
 
@@ -25,26 +26,6 @@
 
 #include <functional>
 #include <optional>
-
-// A trigger parsed from the shortcuts-spec grammar
-// (https://specifications.freedesktop.org/shortcuts/latest/): modifiers
-// CTRL/ALT/SHIFT/NUM/LOGO (matched against WLR_MODIFIER_*), '+'-joined,
-// followed by a key name resolved via xkb_keysym_from_name() - e.g.
-// "CTRL+ALT+Return". NUM parses successfully (WLR_MODIFIER_MOD2) but isn't
-// currently honored at match time - see keybindings.cpp's
-// kMatchableModifierMask comment.
-//
-// keysym == XKB_KEY_NoSymbol is a sentinel for a bare-modifier ("tap")
-// trigger - a trigger string that's just a single recognized modifier name
-// on its own, e.g. "LOGO" for forest's Meta-only "Show menu" binding, which
-// the shortcuts-spec grammar has no dedicated syntax for. Matched by
-// handle_modifier_tap() below, not trigger_matches().
-struct ParsedTrigger {
-    uint32_t modmask = 0;
-    xkb_keysym_t keysym = XKB_KEY_NoSymbol;
-};
-
-std::optional<ParsedTrigger> parse_trigger(const QString &trigger);
 
 struct BiomeKeybinding {
     ParsedTrigger trigger;
@@ -93,13 +74,15 @@ bool handle_switcher_key_release(BiomeServer *server, xkb_keysym_t sym);
 
 // Registration API for ipc/global_shortcuts_portal.cpp. `owner` is an
 // opaque per-session key (the portal's session_handle object path) used
-// only to remove every binding for that session again in
-// remove_session_keybindings() once its session ends. Built-in bindings
-// always take priority over a portal-registered one on an exact-trigger
-// collision - see handle_key_press()'s own comment on that choice.
+// only to remove every binding for that session again.
+// Built-in bindings always take priority over a portal-registered one on an
+// exact-trigger collision - see handle_key_press()'s own comment on that choice.
 // `release` runs when the triggering key comes up (straight after `invoke`
 // for a bare-modifier tap), or when the session ends mid-hold.
 void add_portal_keybinding(const QString &owner, ParsedTrigger trigger,
     std::function<bool(BiomeServer *, uint32_t modifiers)> invoke,
     std::function<void()> release);
 void remove_session_keybindings(const QString &owner);
+
+// True if a built-in or portal binding already uses this trigger.
+bool trigger_in_use(const ParsedTrigger &trigger);
