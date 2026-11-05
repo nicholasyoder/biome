@@ -20,6 +20,14 @@ static void server_cursor_button(wl_listener *listener, void *data);
 static void server_cursor_axis(wl_listener *listener, void *data);
 static void server_cursor_frame(wl_listener *listener, void *data);
 static void cursor_shape_manager_request_set_shape(wl_listener *listener, void *data);
+static void server_cursor_swipe_begin(wl_listener *listener, void *data);
+static void server_cursor_swipe_update(wl_listener *listener, void *data);
+static void server_cursor_swipe_end(wl_listener *listener, void *data);
+static void server_cursor_pinch_begin(wl_listener *listener, void *data);
+static void server_cursor_pinch_update(wl_listener *listener, void *data);
+static void server_cursor_pinch_end(wl_listener *listener, void *data);
+static void server_cursor_hold_begin(wl_listener *listener, void *data);
+static void server_cursor_hold_end(wl_listener *listener, void *data);
 
 // wlr_xcursor_theme_load(NULL, size) falls back to the literal theme name
 // "default" (resolved via ~/.icons/default/index.theme's Inherits= line) -
@@ -52,6 +60,21 @@ void cursor_init(BiomeServer *server) {
     wl_signal_add(&server->cursor->events.axis, &server->cursor_axis);
     server->cursor_frame.notify = server_cursor_frame;
     wl_signal_add(&server->cursor->events.frame, &server->cursor_frame);
+
+    server->pointer_gestures = wlr_pointer_gestures_v1_create(server->display);
+    auto add = [&](wl_listener *l, wl_signal *sig, wl_notify_func_t fn) {
+        l->notify = fn;
+        wl_signal_add(sig, l);
+    };
+    auto &ev = server->cursor->events;
+    add(&server->cursor_swipe_begin, &ev.swipe_begin, server_cursor_swipe_begin);
+    add(&server->cursor_swipe_update, &ev.swipe_update, server_cursor_swipe_update);
+    add(&server->cursor_swipe_end, &ev.swipe_end, server_cursor_swipe_end);
+    add(&server->cursor_pinch_begin, &ev.pinch_begin, server_cursor_pinch_begin);
+    add(&server->cursor_pinch_update, &ev.pinch_update, server_cursor_pinch_update);
+    add(&server->cursor_pinch_end, &ev.pinch_end, server_cursor_pinch_end);
+    add(&server->cursor_hold_begin, &ev.hold_begin, server_cursor_hold_begin);
+    add(&server->cursor_hold_end, &ev.hold_end, server_cursor_hold_end);
 
     server->cursor_shape_manager = wlr_cursor_shape_manager_v1_create(server->display, 1);
     server->request_set_shape.notify = cursor_shape_manager_request_set_shape;
@@ -493,3 +516,30 @@ void server_cursor_frame(wl_listener *listener, void *data) {
     idle_notify_activity(server);
     wlr_seat_pointer_notify_frame(server->seat);
 }
+
+// Gestures go to the focused client only; during a compositor move/resize
+// grab they're dropped (as in sway). Sent events are closed by the
+// cursor's frame event.
+#define GESTURE_HANDLER(name, event_type, listener_field, ...)                                \
+    void server_cursor_##name(wl_listener *listener, void *data) {                            \
+        BiomeServer *server = wl_container_of(listener, server, listener_field);              \
+        auto *event = static_cast<event_type *>(data);                                        \
+        idle_notify_activity(server);                                                         \
+        if (server->cursor_mode != BiomeCursorMode::Passthrough) {                           \
+            return;                                                                           \
+        }                                                                                     \
+        wlr_pointer_gestures_v1_send_##name(server->pointer_gestures, server->seat,           \
+            event->time_msec, __VA_ARGS__);                                                   \
+    }
+
+GESTURE_HANDLER(swipe_begin, wlr_pointer_swipe_begin_event, cursor_swipe_begin, event->fingers)
+GESTURE_HANDLER(swipe_update, wlr_pointer_swipe_update_event, cursor_swipe_update, event->dx, event->dy)
+GESTURE_HANDLER(swipe_end, wlr_pointer_swipe_end_event, cursor_swipe_end, event->cancelled)
+GESTURE_HANDLER(pinch_begin, wlr_pointer_pinch_begin_event, cursor_pinch_begin, event->fingers)
+GESTURE_HANDLER(pinch_update, wlr_pointer_pinch_update_event, cursor_pinch_update, event->dx, event->dy,
+    event->scale, event->rotation)
+GESTURE_HANDLER(pinch_end, wlr_pointer_pinch_end_event, cursor_pinch_end, event->cancelled)
+GESTURE_HANDLER(hold_begin, wlr_pointer_hold_begin_event, cursor_hold_begin, event->fingers)
+GESTURE_HANDLER(hold_end, wlr_pointer_hold_end_event, cursor_hold_end, event->cancelled)
+
+#undef GESTURE_HANDLER

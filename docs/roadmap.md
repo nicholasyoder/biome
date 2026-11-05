@@ -42,9 +42,6 @@ session logs or design discussion.
 
 ## 0.2.0 — input, clipboard & spec compliance (Phases 6–7)
 
-- **Trackpad gestures** (`pointer-gestures-unstable-v1`) — pinch/swipe/hold;
-  sway and Hyprland both support it. Without it, GTK/Qt apps that key off
-  trackpad swipes just see raw pointer motion.
 - **`wlr-gamma-control-unstable-v1`** — night-light/redshift-style color
   temperature.
 - **An Xwayland override-redirect popup can render (and steal focus) behind
