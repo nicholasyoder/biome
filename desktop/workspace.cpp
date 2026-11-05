@@ -21,6 +21,11 @@ void update_toplevel_visibility(BiomeToplevel *toplevel) {
     // disable this node too.
     bool visible = toplevel->workspace == toplevel->server->active_workspace && !toplevel->minimized;
     wlr_scene_node_set_enabled(&toplevel->scene_tree->node, visible);
+    // Not before the first configure has gone out (toplevel_configure_premap).
+    if (toplevel->type == BiomeToplevelType::Xdg && toplevel->placed &&
+        toplevel->xdg_toplevel->scheduled.suspended == visible) {
+        wlr_xdg_toplevel_set_suspended(toplevel->xdg_toplevel, !visible);
+    }
 }
 
 void focus_topmost_on_active_workspace(BiomeServer *server) {

@@ -555,7 +555,7 @@ static wlr_box fullscreen_target_box(BiomeToplevel *toplevel) {
     return fullscreen_box_on(toplevel->server, toplevel_content_output(toplevel));
 }
 
-void set_toplevel_fullscreen(BiomeToplevel *toplevel, bool fullscreen) {
+void set_toplevel_fullscreen(BiomeToplevel *toplevel, bool fullscreen, wlr_output *output) {
     if (toplevel->fullscreen == fullscreen) {
         return;
     }
@@ -572,7 +572,10 @@ void set_toplevel_fullscreen(BiomeToplevel *toplevel, bool fullscreen) {
         toplevel->fullscreen_restore_box.width = old_geo.width;
         toplevel->fullscreen_restore_box.height = old_geo.height;
 
-        target = fullscreen_target_box(toplevel);
+        target = output != nullptr ? fullscreen_box_on(toplevel->server, output) : wlr_box{};
+        if (wlr_box_empty(&target)) {
+            target = fullscreen_target_box(toplevel);
+        }
         if (wlr_box_empty(&target)) {
             return;
         }
@@ -642,6 +645,12 @@ void toplevel_configure_premap(BiomeToplevel *toplevel) {
         decoration_border_width(toplevel, toplevel->maximized),
         decoration_titlebar_height(toplevel, toplevel->maximized));
 
+    // No WINDOW_MENU: Biome has no window menu, so show_window_menu is ignored.
+    wlr_xdg_toplevel_set_wm_capabilities(xdg,
+        WLR_XDG_TOPLEVEL_WM_CAPABILITIES_MAXIMIZE | WLR_XDG_TOPLEVEL_WM_CAPABILITIES_FULLSCREEN |
+            WLR_XDG_TOPLEVEL_WM_CAPABILITIES_MINIMIZE);
+    wlr_box bounds = maximize_box_on(toplevel, output);
+    wlr_xdg_toplevel_set_bounds(xdg, std::max(bounds.width, 0), std::max(bounds.height, 0));
     wlr_xdg_toplevel_set_maximized(xdg, toplevel->maximized);
     wlr_xdg_toplevel_set_fullscreen(xdg, toplevel->fullscreen);
     toplevel->premap_serial = wlr_xdg_toplevel_set_size(xdg, target.width, target.height);

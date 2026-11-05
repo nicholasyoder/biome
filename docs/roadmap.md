@@ -68,10 +68,6 @@ session logs or design discussion.
   architecture notes, "Layer surfaces have a home"); decide whether to keep.
 - **Null-output layer surfaces go to the first output**, not the
   focused/cursor output as in sway/Hyprland.
-- **xdg-shell advertised at v3** (wlroots 0.18 supports v6): no
-  `configure_bounds`, `wm_capabilities` or `suspended`. Also ignored:
-  `show_window_menu`, `set_fullscreen`'s output argument, and min/max size
-  hints during interactive resize.
 - **GlobalShortcuts backend gaps** (`ipc/global_shortcuts_portal.cpp`):
   a second `BindShortcuts` on a session double-registers;
   `trigger_description` is the raw trigger string; no consent UI.
@@ -136,8 +132,8 @@ Currently the single biggest user-visible gap versus sway/Hyprland
   the output (or maximize) by dragging it to a screen edge/corner, and via a
   menu on right-click or press-and-hold of the decoration's maximize button.
   Biome draws the decorations, so both the drag zones (with a preview
-  overlay) and the button menu are compositor-side. Related: `show_window_menu`
-  is currently ignored (see xdg-shell deviations).
+  overlay) and the button menu are compositor-side. Related: xdg-shell `show_window_menu`
+  is ignored (no WINDOW_MENU capability advertised) until a menu exists.
 - **Minor opportunistic protocols** — `single-pixel-buffer-v1`, `content-type-v1`,
   `alpha-modifier-v1`. Toolkits probe for these and fall back gracefully if
   absent — pick up opportunistically rather than as a dedicated push.

@@ -21,7 +21,7 @@ static void claim_pending_kde_decoration(BiomeServer *server, BiomeToplevel *top
 void xdg_shell_init(BiomeServer *server) {
     wl_list_init(&server->toplevels);
     wl_list_init(&server->pending_kde_decorations);
-    server->xdg_shell = wlr_xdg_shell_create(server->display, 3);
+    server->xdg_shell = wlr_xdg_shell_create(server->display, 6);
     server->new_xdg_toplevel.notify = server_new_xdg_toplevel;
     wl_signal_add(&server->xdg_shell->events.new_toplevel, &server->new_xdg_toplevel);
     server->new_xdg_popup.notify = server_new_xdg_popup;
@@ -235,7 +235,7 @@ static void xdg_toplevel_request_fullscreen(wl_listener *listener, void *data) {
     }
     bool requested = toplevel->xdg_toplevel->requested.fullscreen;
     bool was_fullscreen = toplevel->fullscreen;
-    set_toplevel_fullscreen(toplevel, requested);
+    set_toplevel_fullscreen(toplevel, requested, requested ? toplevel->xdg_toplevel->requested.fullscreen_output : nullptr);
     if (was_fullscreen == requested) {
         wlr_xdg_toplevel_set_fullscreen(toplevel->xdg_toplevel, requested);
     }
