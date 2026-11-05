@@ -92,7 +92,7 @@ configurable. Two directions:
   `xdg-decoration`, `wlr-foreign-toplevel-management`, `wlr-screencopy`,
   `ext-idle-notify`, `wlr-output-management`) is standard Wayland protocol —
   any shell speaking it can use Biome regardless of what built it. Phase 3's
-  decoration theme (`decoration/theme/biome-dark.qss`) is already
+  decoration theme (`decoration/theme/builtin.qss`) is already
   self-contained and only modeled on Forest's look, not dependent on
   Forest's installed theme files at runtime — this already met the goal by
   accident before the goal was made explicit.
@@ -195,7 +195,7 @@ new `decoration/` module (`biome_decoration` static lib) renders a
 persistent Qt widget tree (`DecorationFrame`/`DecorationButton`/
 `DecorationBorder`) offscreen into a `QImage`, uploaded to the scene graph
 as a `wlr_scene_buffer`. Styling comes from a self-contained theme embedded
-in Biome itself (`decoration/theme/biome-dark.qss`, modeled on Forest's
+in Biome itself (`decoration/theme/builtin.qss`, modeled on Forest's
 dark+rounded theme rather than depending on Forest's installed files) —
 real QSS border/radius/padding/`:hover`/`:pressed` states, driven by actual
 pointer input. Window icons (resolved from a client's app_id/WM_CLASS via

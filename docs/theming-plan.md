@@ -2,7 +2,7 @@
 
 Let a shell theme Biome's decorations and Alt-Tab switcher from its own
 layered theme files, so one theme (e.g. Forest's Round-Dark) can style the
-shell and the compositor from one place. Status: **proposed, not started**.
+shell and the compositor from one place. Status: **Biome side implemented** (see `architecture-notes.md`); Forest side (themes, `50-forest.conf`, `set_desktop_theme()`) not started. Delete this file once Forest's side lands.
 
 ## Shape
 
@@ -55,7 +55,7 @@ without changing Forest's loader too.
 
 Stays compiled in (`decoration/theme/theme.qrc`), as a single fallback that
 looks sane with no shell installed. It doesn't need the layered format. Its
-content is today's `biome-dark.qss`; rename to something neutral (e.g.
+content is today's `builtin.qss`; rename to something neutral (e.g.
 `builtin.qss`) since it's no longer "the dark one".
 
 ## Selector contract
@@ -109,7 +109,7 @@ The blurry-on-scaled-outputs fix (roadmap 0.2.0) needs the same
 
 - Add `biome.css` to the theme layers: `base` (shapes/sizes shared by all),
   `base-dark` / `base-light` (colours, button icons), `base-rounded` /
-  `base-circle` (radii). Start by splitting today's `biome-dark.qss` across
+  `base-circle` (radii). Start by splitting today's `builtin.qss` across
   `base` + `base-dark` + `base-rounded`, then write the light and circle
   layers. Button SVGs ship under the colour layers, referenced by absolute
   path.

@@ -19,9 +19,12 @@ public:
     QStringList child_groups(const QString &group) const;
 
 private:
-    friend const BiomeConfig &biome_config();
+    friend BiomeConfig load_biome_config();
     QMap<QString, QVariant> values_;
 };
 
-// Loaded on first call; startup-only, never reloaded.
+// Fresh read of every config source, uncached.
+BiomeConfig load_biome_config();
+
+// Cached on first call; startup snapshot. Use load_biome_config() to see later changes.
 const BiomeConfig &biome_config();

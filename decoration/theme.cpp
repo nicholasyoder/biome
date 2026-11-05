@@ -3,7 +3,11 @@
 #include "theme.h"
 
 #include <QApplication>
+#include <QDir>
 #include <QFile>
+#include <QFileInfo>
+#include <QSettings>
+#include <QStringList>
 #include <QIODevice>
 #include <QString>
 
@@ -20,17 +24,58 @@ namespace biome_decoration {
 
 namespace {
 
-constexpr const char *kStylesheetPath = ":/biome/decoration/biome-dark.qss";
+constexpr const char *kBuiltinPath = ":/biome/decoration/builtin.qss";
+
+QString read_file(const QString &path) {
+    QFile file(path);
+    if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        return {};
+    }
+    return QString::fromUtf8(file.readAll());
+}
+
+// Same algorithm as Forest's fstyleloader: parent_themes layers, then the theme itself.
+QString external_stylesheet(const QString &dir, const QString &name) {
+    const QString theme_dir = QDir(dir).filePath(name);
+    if (!QFileInfo::exists(QDir(theme_dir).filePath("theme.conf"))) {
+        qWarning("biome: theme '%s' not found in %s", qPrintable(name), qPrintable(dir));
+        return {};
+    }
+    QSettings conf(QDir(theme_dir).filePath("theme.conf"), QSettings::IniFormat);
+    QStringList layers = conf.value("parent_themes").toStringList();
+    layers.append(name);
+
+    QString sheet;
+    for (const QString &layer : layers) {
+        const QString path = QDir(dir).filePath(layer + "/biome.css");
+        if (!QFileInfo::exists(path)) {
+            continue;
+        }
+        QFile file(path);
+        if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+            qWarning("biome: cannot read %s", qPrintable(path));
+            continue;
+        }
+        sheet += QString::fromUtf8(file.readAll()) + '\n';
+    }
+    if (sheet.trimmed().isEmpty()) {
+        qWarning("biome: theme '%s' has no biome.css layers", qPrintable(name));
+        return {};
+    }
+    return sheet;
+}
 
 } // namespace
 
-void load_decoration_theme() {
+void load_decoration_theme(const QString &dir, const QString &name) {
     ensure_decoration_resources_registered();
 
     QString stylesheet;
-    QFile file(kStylesheetPath);
-    if (file.open(QIODevice::ReadOnly | QIODevice::Text)) {
-        stylesheet = QString::fromUtf8(file.readAll());
+    if (!dir.isEmpty() && !name.isEmpty()) {
+        stylesheet = external_stylesheet(dir, name);
+    }
+    if (stylesheet.isEmpty()) {
+        stylesheet = read_file(kBuiltinPath);
     }
     qApp->setStyleSheet(stylesheet);
 }

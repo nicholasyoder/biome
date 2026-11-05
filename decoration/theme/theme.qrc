@@ -1,6 +1,6 @@
 <RCC>
     <qresource prefix="/biome/decoration">
-        <file>biome-dark.qss</file>
+        <file>builtin.qss</file>
         <file>icons/minimize-normal.svg</file>
         <file>icons/minimize-dim.svg</file>
         <file>icons/maximize-normal.svg</file>

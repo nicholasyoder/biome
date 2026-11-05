@@ -388,3 +388,37 @@ closing the window — already moves focus, so there's no dedicated
 - On unlock, a locked pointer's `cursor_hint` is honored.
 - Xwayland translates X11 grabs (Wine, SDL) into these same protocols; no
   X-specific handling.
+
+## External decoration themes (`decoration/theme.cpp`, `ipc/theme_watcher.cpp`)
+
+Config `[Theme] dir=` + `name=` selects a layered theme: `<dir>/<name>/theme.conf`
+(`[General] parent_themes`, comma list), then `<dir>/<layer>/biome.css`
+concatenated for parents + the theme itself (same format as Forest's
+`fstyleloader`; don't change one without the other). Layers without `biome.css`
+are skipped; no usable layer, or keys unset → compiled-in `builtin.qss`. An
+external theme replaces the built-in one, it isn't layered over it.
+
+Live reload: `theme_watcher` watches `~/.config/Biome/` (atomic-rename writes),
+re-reads config fresh (`load_biome_config()`), and only on a `Theme/*` change
+calls `reload_decoration_theme()`: restyle, re-layout every frame, keep each
+window's content origin fixed, re-render, then `toplevels_relocate_for_layout`
+to re-fit maximized/fullscreen windows. Drop-in (`/etc`) changes aren't watched.
+
+### Selector contract (renaming any of these breaks shell themes)
+
+| Selector | Widget |
+|---|---|
+| `biome_decoration--DecorationFrame#biomeFrame` | Whole frame; props `focused`, `biomeMaximized` |
+| `QWidget#biomeTitlebar` | Titlebar |
+| `QLabel#biomeTitle` | Title text |
+| `QToolButton#biomeTitleIcon` | App icon |
+| `biome_decoration--DecorationBorder`, `#biomeBorderLeft/Right/Bottom` | Borders |
+| `biome_decoration--DecorationButton#biomeButtonMinimize/Maximize/Close` | Buttons (`qproperty-icon`, `:hover`, `:pressed`) |
+| `#biomeContent` | Client-area spacer |
+| `QWidget#biomeSwitcherRoot`, `QFrame#biomeSwitcherPanel` | Switcher |
+| `QToolButton#biomeSwitcherIcon` | Switcher entry; prop `selected` |
+| `QLabel#biomeSwitcherTitleLabel` | Switcher title |
+| `QWidget#biomeSwitcherHighlightRoot`, `QFrame#biomeSwitcherHighlight` | Switcher highlight |
+
+Icon `url()`s must be absolute paths (Qt resolves relative ones against the
+process cwd). Built-in `:/biome/decoration/icons/*.svg` are dark-coloured.

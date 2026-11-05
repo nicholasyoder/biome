@@ -12,6 +12,8 @@
 #include "decoration/layout.h" // biome_decoration::Region
 #include "desktop/toplevel.h"
 
+#include <QString>
+
 // Hands frame's pixels to scene_buffer, displayed at the frame's logical
 // size. Returns false (scene_buffer left untouched) for an empty frame.
 bool set_decoration_buffer(wlr_scene_buffer *scene_buffer, biome_decoration::RenderedFrame &&frame);
@@ -49,6 +51,11 @@ void destroy_toplevel_decoration(BiomeToplevel *toplevel);
 // Re-renders the full decoration frame and uploads it. Called whenever a
 // toplevel's content geometry, focus, title, or hover/press state changes.
 void render_toplevel_decoration(BiomeToplevel *toplevel);
+
+// Applies theme `name` from `dir` (empty = built-in) to the running compositor:
+// restyles, then re-lays-out and re-renders every toplevel's frame, keeping
+// each window's content in place and re-fitting maximized/fullscreen ones.
+void reload_decoration_theme(BiomeServer *server, const QString &dir, const QString &name);
 
 // Classifies an already-found scene node (see desktop/toplevel.h's
 // scene_node_at) the same way decoration_toplevel_at does - split out so a

@@ -46,7 +46,7 @@ void flush_layouts();
 
 // One left/right/bottom border strip - a plain styled widget rather than a
 // single CSS border spanning the whole frame, so each edge can be styled and
-// sized independently (decoration/theme/biome-dark.qss's min-width/
+// sized independently (decoration/theme/builtin.qss's min-width/
 // min-height per object name). A near-empty subclass only so one QSS type
 // selector can style all three at once, same as DecorationButton below.
 class DecorationBorder : public QWidget {
@@ -73,7 +73,7 @@ protected:
 
 // Paints its QSS background/border/radius/hover/pressed state and its icon
 // (minimize/maximize/close glyph) entirely via the base IconButton -  the
-// icon itself comes from QSS qproperty-icon (biome-dark.qss selects per
+// icon itself comes from QSS qproperty-icon (builtin.qss selects per
 // button, and a dimmer variant when unfocused), so there's no C++
 // glyph-drawing to keep in sync with the theme.
 class DecorationButton : public IconButton {
@@ -103,6 +103,7 @@ public:
     // move/resize/maximize math.
     int borderWidth() const { return content_spacer_->x(); }
     int titlebarHeight() const { return content_spacer_->y(); }
+    QRect contentRect() const { return content_spacer_->geometry(); }
     // Same idea, but for the right/bottom edges - border strips are
     // independently QSS-sized, so these can't be assumed equal to
     // borderWidth()/titlebarHeight(). Derived from the frame's total size
