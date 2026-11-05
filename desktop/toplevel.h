@@ -266,6 +266,10 @@ void toplevel_get_frame_box(BiomeToplevel *toplevel, wlr_box *box);
 // toplevel is first created.
 bool toplevel_decorated(const BiomeToplevel *toplevel);
 
+// Xwayland surface with _NET_WM_WINDOW_TYPE_SPLASH: undecorated, centered on
+// the cursor's output without cascade, and not focused on map.
+bool toplevel_is_splash(const BiomeToplevel *toplevel);
+
 // content_tree->node.data is set to the owning BiomeToplevel for both xdg
 // and Xwayland, so these can recover a BiomeToplevel from a bare protocol
 // object - used for looking up a parent (transient placement) or the

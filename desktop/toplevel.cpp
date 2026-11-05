@@ -50,8 +50,21 @@ void toplevel_get_frame_box(BiomeToplevel *toplevel, wlr_box *box) {
         + decoration_border_bottom_height(toplevel, toplevel->maximized);
 }
 
+bool toplevel_is_splash(const BiomeToplevel *toplevel) {
+    if (toplevel->type != BiomeToplevelType::Xwayland || !toplevel->server->ewmh_ready) {
+        return false;
+    }
+    const wlr_xwayland_surface *xsurface = toplevel->xwayland_surface;
+    for (size_t i = 0; i < xsurface->window_type_len; i++) {
+        if (xsurface->window_type[i] == toplevel->server->ewmh._NET_WM_WINDOW_TYPE_SPLASH) {
+            return true;
+        }
+    }
+    return false;
+}
+
 bool toplevel_decorated(const BiomeToplevel *toplevel) {
-    if (toplevel->fullscreen) {
+    if (toplevel->fullscreen || toplevel_is_splash(toplevel)) {
         return false;
     }
     if (toplevel->type == BiomeToplevelType::Xdg) {
@@ -408,7 +421,7 @@ void place_new_toplevel(BiomeToplevel *toplevel) {
             return;
         }
         int index = static_cast<int>(wl_list_length(&server->toplevels)) % 8;
-        int cascade = index * 24;
+        int cascade = toplevel_is_splash(toplevel) ? 0 : index * 24;
         vis_x = target.x + (target.width - width) / 2 + cascade;
         vis_y = target.y + (target.height - height) / 2 + cascade;
         toplevel->workspace = server->active_workspace;
@@ -801,7 +814,9 @@ void toplevel_map(wl_listener *listener, void *data) {
         ext_workspace_sync_state(toplevel->server);
     }
     foreign_toplevel_create(toplevel);
-    focus_toplevel(toplevel);
+    if (!toplevel_is_splash(toplevel)) {
+        focus_toplevel(toplevel);
+    }
 }
 
 void toplevel_unmap(wl_listener *listener, void *data) {

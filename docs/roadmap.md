@@ -59,15 +59,6 @@ session logs or design discussion.
   main-loop stall, a third of the 220 ms wall-clock fade. Find the stall,
   and whether per-pixel fades can be made cheaper in general.
 
-### Bugs
-
-- **Xwayland splash screens get a Biome frame** (e.g. MuseScore's:
-  `_NET_WM_WINDOW_TYPE_SPLASH`, `_KDE_NET_WM_WINDOW_TYPE_OVERRIDE`, no
-  `_MOTIF_WM_HINTS`). `toplevel_decorated()` only checks Motif hints. Leave
-  `SPLASH` windows undecorated (and probably unfocused/centered, like
-  sway). wlroots 0.18 has no `has_window_type()` helper; compare
-  `xsurface->window_type` against `server->ewmh`'s atoms.
-
 ### Other protocol deviations
 
 - **Layer surfaces survive their output being disabled.** Biome reparents
