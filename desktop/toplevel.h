@@ -373,7 +373,9 @@ void set_toplevel_maximized(BiomeToplevel *toplevel, bool maximized);
 // toplevel_decorated) and the scene node raised above every layer-shell
 // layer for the same reason (see BiomeServer::layers.fullscreen).
 // Independent of maximized state - see fullscreen_restore_box's declaration.
-void set_toplevel_fullscreen(BiomeToplevel *toplevel, bool fullscreen);
+// `output`, if non-null and in the layout, is the output to fullscreen on
+// (xdg set_fullscreen); otherwise the one the window mostly overlaps.
+void set_toplevel_fullscreen(BiomeToplevel *toplevel, bool fullscreen, wlr_output *output = nullptr);
 
 // xdg only, between the initial commit and map: replies to the client's
 // requested maximized/fullscreen state with a configure already sized for

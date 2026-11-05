@@ -9,6 +9,7 @@
 #include "desktop/xdg_activation.h"
 #include "desktop/xdg_shell.h"
 
+#include <algorithm>
 #include <linux/input-event-codes.h>
 
 #include <cstdlib>
@@ -266,6 +267,29 @@ static void process_cursor_resize(BiomeServer *server, uint32_t time) {
 
     int new_width = new_right - new_left;
     int new_height = new_bottom - new_top;
+
+    if (toplevel->type == BiomeToplevelType::Xdg) {
+        // 0 means unset; the opposite edge stays anchored when clamping.
+        const wlr_xdg_toplevel_state &state = toplevel->xdg_toplevel->current;
+        int width = new_width;
+        int height = new_height;
+        if (state.max_width > 0) {
+            width = std::min(width, state.max_width);
+        }
+        width = std::max(width, state.min_width);
+        if (state.max_height > 0) {
+            height = std::min(height, state.max_height);
+        }
+        height = std::max(height, state.min_height);
+        if (server->resize_edges & WLR_EDGE_LEFT) {
+            new_left = new_right - width;
+        }
+        if (server->resize_edges & WLR_EDGE_TOP) {
+            new_top = new_bottom - height;
+        }
+        new_width = width;
+        new_height = height;
+    }
 
     if (toplevel->type != BiomeToplevelType::Xdg) {
         // Xwayland surfaces own their absolute position and have no async
