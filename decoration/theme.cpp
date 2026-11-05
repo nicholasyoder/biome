@@ -42,7 +42,7 @@ QString external_stylesheet(const QString &dir, const QString &name) {
         return {};
     }
     QSettings conf(QDir(theme_dir).filePath("theme.conf"), QSettings::IniFormat);
-    QStringList layers = conf.value("General/parent_themes").toStringList();
+    QStringList layers = conf.value("parent_themes").toStringList();
     layers.append(name);
 
     QString sheet;
