@@ -166,6 +166,7 @@ struct BiomeToplevel {
     // general commit hook to catch this opportunistically like xdg-shell's
     // commit listener above does.
     wl_listener set_title = {};
+    wl_listener set_parent = {};
     wl_listener destroy = {};
     wl_listener request_move = {};
     wl_listener request_resize = {};

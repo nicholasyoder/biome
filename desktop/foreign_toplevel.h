@@ -47,6 +47,11 @@ void foreign_toplevel_sync_state(BiomeToplevel *toplevel);
 // overlap. Geometry-based, so minimized/other-workspace windows keep theirs.
 void foreign_toplevel_update_outputs(BiomeToplevel *toplevel);
 
+// Sends the toplevel's transient parent (xdg/X11 parent), or none if it has
+// no parent or the parent has no handle (unmapped). Called at create and from
+// the set_parent listeners.
+void foreign_toplevel_update_parent(BiomeToplevel *toplevel);
+
 // Finds the toplevel whose ext-foreign-toplevel-list-v1 identifier matches
 // (see BiomeServer::ext_foreign_toplevel_list's doc comment in
 // core/server.h) - used by ipc/workspace_bridge.cpp's

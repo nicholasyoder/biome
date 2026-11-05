@@ -90,6 +90,7 @@ void foreign_toplevel_create(BiomeToplevel *toplevel) {
     foreign_toplevel_update_title_app_id(toplevel);
     foreign_toplevel_sync_state(toplevel);
     foreign_toplevel_update_outputs(toplevel);
+    foreign_toplevel_update_parent(toplevel);
 
     if (server->ext_foreign_toplevel_list != nullptr) {
         wlr_ext_foreign_toplevel_handle_v1_state ext_state = {};
@@ -154,6 +155,19 @@ void foreign_toplevel_update_title_app_id(BiomeToplevel *toplevel) {
         ext_state.app_id = app_id;
         wlr_ext_foreign_toplevel_handle_v1_update_state(wrapper->ext_handle, &ext_state);
     }
+}
+
+void foreign_toplevel_update_parent(BiomeToplevel *toplevel) {
+    BiomeForeignToplevel *wrapper = toplevel->foreign_toplevel;
+    if (wrapper == nullptr) {
+        return;
+    }
+    BiomeToplevel *parent = toplevel->type == BiomeToplevelType::Xdg
+        ? toplevel_from_xdg(toplevel->xdg_toplevel->parent)
+        : toplevel_from_xwayland(toplevel->xwayland_surface->parent);
+    // wlroots sends parent=none to children when a parent's handle is destroyed.
+    BiomeForeignToplevel *parent_wrapper = parent != nullptr ? parent->foreign_toplevel : nullptr;
+    wlr_foreign_toplevel_handle_v1_set_parent(wrapper->handle, parent_wrapper != nullptr ? parent_wrapper->handle : nullptr);
 }
 
 BiomeToplevel *foreign_toplevel_find_by_identifier(BiomeServer *server, const char *identifier) {

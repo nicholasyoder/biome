@@ -357,7 +357,7 @@ static void handle_layer_surface_destroy(wl_listener *listener, void *data) {
     arrange_layers_refitting(output);
 }
 
-void layer_shell_handle_output_destroy(BiomeOutput *output) {
+void layer_shell_close_output_surfaces(BiomeOutput *output) {
     // Before the surfaces below: their unmap would otherwise start a fade-out
     // here, and the fade's scene_buffer lives in this output's layer trees.
     BiomeScanoutFade *fade, *fade_tmp;
@@ -367,56 +367,24 @@ void layer_shell_handle_output_destroy(BiomeOutput *output) {
         }
     }
 
+    // Fires handle_layer_surface_destroy() synchronously (unmap first if
+    // mapped), which frees the wrapper.
     BiomeLayerSurface *wrapper, *tmp;
     wl_list_for_each_safe(wrapper, tmp, &output->server->layer_surfaces, link) {
         if (wrapper->output == output) {
-            // Fires handle_layer_surface_destroy() synchronously (unmap first
-            // if mapped), which frees `wrapper` - safe here since `output`
-            // itself is still valid until the caller frees it after this
-            // returns.
             wlr_layer_surface_v1_destroy(wrapper->layer_surface);
-        } else if (wrapper->home == output) {
-            // Displaced here while its home was disabled; the home is gone now.
-            wrapper->home = wrapper->output;
-        }
-    }
-}
-
-void layer_shell_reconcile_outputs(BiomeServer *server) {
-    BiomeOutput *fallback = nullptr;
-    BiomeOutput *candidate;
-    wl_list_for_each(candidate, &server->outputs, link) {
-        if (!candidate->disabled) {
-            fallback = candidate;
-            break;
         }
     }
 
-    // A disabled output stops ticking, so its fades would never finish.
-    BiomeScanoutFade *fade, *fade_tmp;
-    wl_list_for_each_safe(fade, fade_tmp, &server->scanout_fading_surfaces, link) {
-        if (fade->output->disabled) {
-            scanout_fade_destroy(fade);
+    // Fade-outs started by the unmaps above (or in flight); a disabled output
+    // stops ticking, so they would never finish.
+    BiomeFadingOutSurface *fading, *fading_tmp;
+    wl_list_for_each_safe(fading, fading_tmp, &output->server->fading_out_layer_surfaces, link) {
+        if (fading->output == output) {
+            wlr_scene_node_destroy(&fading->tree->node);
+            wl_list_remove(&fading->link);
+            free(fading);
         }
-    }
-
-    BiomeLayerSurface *wrapper;
-    wl_list_for_each(wrapper, &server->layer_surfaces, link) {
-        BiomeOutput *desired = !wrapper->home->disabled ? wrapper->home : fallback;
-        if (desired == nullptr || desired == wrapper->output) {
-            continue;
-        }
-        // Scanout fades cache per-output swapchain/buffer state; end rather than move.
-        if (wrapper->scanout_fade != nullptr) {
-            scanout_fade_destroy(wrapper->scanout_fade);
-        }
-        BiomeOutput *previous = wrapper->output;
-        wlr_scene_node_reparent(&wrapper->scene_layer_surface->tree->node,
-            output_layer_tree(desired, wrapper->layer_surface->current.layer));
-        wrapper->output = desired;
-        wrapper->layer_surface->output = desired->wlr;
-        arrange_layers(previous);
-        arrange_layers(desired);
     }
 }
 
@@ -461,13 +429,20 @@ static void handle_new_layer_surface(wl_listener *listener, void *data) {
     if (layer_surface->output != nullptr) {
         output = biome_output_from_wlr(server, layer_surface->output);
     } else if (!wl_list_empty(&server->outputs)) {
-        // Per wlr_layer_shell_v1's own doc comment: the output may be null,
-        // in which case it's the compositor's responsibility to assign one
-        // before returning. Biome has no per-seat "active output" concept
-        // yet (workspaces are global, not per-output - see
-        // desktop/workspace.h), so this just picks the first output.
-        output = wl_container_of(server->outputs.next, output, link);
-        layer_surface->output = output->wlr;
+        // Null output: the compositor must pick one. Cursor's output, else the
+        // first enabled one (a disabled output is out of the layout).
+        wlr_output *at_cursor =
+            wlr_output_layout_output_at(server->output_layout, server->cursor->x, server->cursor->y);
+        output = at_cursor != nullptr ? biome_output_from_wlr(server, at_cursor) : nullptr;
+        BiomeOutput *candidate;
+        wl_list_for_each(candidate, &server->outputs, link) {
+            if (output == nullptr && !candidate->disabled) {
+                output = candidate;
+            }
+        }
+        if (output != nullptr) {
+            layer_surface->output = output->wlr;
+        }
     }
     if (output == nullptr) {
         wlr_layer_surface_v1_destroy(layer_surface);
@@ -477,7 +452,6 @@ static void handle_new_layer_surface(wl_listener *listener, void *data) {
     auto *wrapper = static_cast<BiomeLayerSurface *>(calloc(1, sizeof(BiomeLayerSurface)));
     wrapper->server = server;
     wrapper->output = output;
-    wrapper->home = output;
     wrapper->layer_surface = layer_surface;
     wrapper->scene_layer_surface = wlr_scene_layer_surface_v1_create(
         output_layer_tree(output, layer_surface->current.layer), layer_surface);

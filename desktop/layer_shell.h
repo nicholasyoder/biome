@@ -46,15 +46,7 @@ void arrange_layers(BiomeOutput *output);
 // damage-driven, not continuous.
 bool update_layer_surface_fades(BiomeOutput *output);
 
-// Destroys every layer surface still bound to this output (via
-// wlr_layer_surface_v1_destroy(), which sends the client a `closed` event
-// first). Must be called before core/output.cpp's output_destroy() frees the
-// output - otherwise a bound BiomeLayerSurface::output is left dangling until
-// its own destroy listener fires later (e.g. its client disconnecting),
-// which then dereferences freed memory in arrange_layers().
-void layer_shell_handle_output_destroy(BiomeOutput *output);
-
-// Moves layer surfaces bound to a disabled output onto the first enabled one,
-// and back to their original output once it is enabled again. Idempotent.
-// Ends any scanout fade on a disabled output or on a surface that has to move.
-void layer_shell_reconcile_outputs(BiomeServer *server);
+// Closes every layer surface bound to this output (`closed` event) and drops
+// its in-flight fades. Called when the output is disabled or destroyed (the
+// latter before it is freed, or a surface would dangle on it).
+void layer_shell_close_output_surfaces(BiomeOutput *output);

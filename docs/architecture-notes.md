@@ -253,9 +253,9 @@ same approach other wlr-ecosystem clients use for this exact gap.
   cursor. Windows still overlapping an output keep absolute coordinates;
   only off-screen windows and their restore boxes are pulled to the nearest
   output, and maximized/fullscreen ones re-fit.
-- **Layer surfaces have a `home`.** Disabling an output reparents its layer
-  surfaces to the first enabled output; re-enabling moves them back. Unplug
-  still closes them (protocol `closed`).
+- **Disabling an output closes its layer surfaces** (protocol `closed`), same
+  as unplug (`output_set_enabled` -> `layer_shell_close_output_surfaces`).
+  Clients re-create them on the remaining screens.
 - **DRM gotchas.** A disabled head has no mode, so clients send none and
   wlroots makes a 0x0 custom mode; we substitute the current/preferred mode.
   Batched `wlr_backend_test/commit` allocates no buffer, so enabling or
