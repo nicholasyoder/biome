@@ -20,6 +20,7 @@ static void claim_pending_kde_decoration(BiomeServer *server, BiomeToplevel *top
 
 void xdg_shell_init(BiomeServer *server) {
     wl_list_init(&server->toplevels);
+    wl_list_init(&server->unmanaged);
     wl_list_init(&server->pending_kde_decorations);
     server->xdg_shell = wlr_xdg_shell_create(server->display, 6);
     server->new_xdg_toplevel.notify = server_new_xdg_toplevel;

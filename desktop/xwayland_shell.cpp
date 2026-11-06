@@ -213,6 +213,40 @@ static void xwayland_toplevel_request_configure(wl_listener *listener, void *dat
 
 // --- Xwayland: override-redirect (unmanaged) surfaces -----------------
 
+// X11 popups above a fullscreen window must live in layers.fullscreen. Follows
+// the transient-for owner when set, else any fullscreen window on this workspace.
+static wlr_scene_tree *unmanaged_target_layer(BiomeUnmanaged *s) {
+    BiomeServer *server = s->server;
+    for (wlr_xwayland_surface *x = s->xwayland_surface->parent; x != nullptr; x = x->parent) {
+        if (!x->override_redirect) {
+            if (BiomeToplevel *owner = toplevel_from_xwayland(x)) {
+                return owner->fullscreen ? server->layers.fullscreen : server->layers.toplevels;
+            }
+        }
+    }
+    BiomeToplevel *t;
+    wl_list_for_each(t, &server->toplevels, link) {
+        if (t->fullscreen && t->workspace == server->active_workspace && !t->minimized) {
+            return server->layers.fullscreen;
+        }
+    }
+    return server->layers.toplevels;
+}
+
+static void unmanaged_reparent(BiomeUnmanaged *s) {
+    wlr_scene_node_reparent(&s->scene_tree->node, unmanaged_target_layer(s));
+    wlr_scene_node_raise_to_top(&s->scene_tree->node);
+}
+
+void unmanaged_update_layers(BiomeServer *server) {
+    BiomeUnmanaged *s;
+    wl_list_for_each(s, &server->unmanaged, link) {
+        if (s->scene_tree != nullptr && s->xwayland_surface->surface->mapped) {
+            unmanaged_reparent(s);
+        }
+    }
+}
+
 static void unmanaged_associate(wl_listener *listener, void *data) {
     (void)data;
     BiomeUnmanaged *surface = wl_container_of(listener, surface, associate);
@@ -239,7 +273,7 @@ static void unmanaged_associate(wl_listener *listener, void *data) {
         // seat-level concern structural z-order doesn't touch, though: while
         // locked, the lock surface holds focus (desktop/session_lock.cpp)
         // and nothing else may take it, so that grab still needs its own check.
-        wlr_scene_node_raise_to_top(&s->scene_tree->node);
+        unmanaged_reparent(s);
         if (!s->server->session_locked && wlr_xwayland_or_surface_wants_focus(s->xwayland_surface)) {
             grant_keyboard_focus_to_non_toplevel(s->server, s->xwayland_surface->surface);
         }
@@ -266,6 +300,7 @@ static void unmanaged_dissociate(wl_listener *listener, void *data) {
 }
 
 static void destroy_unmanaged(BiomeUnmanaged *surface) {
+    wl_list_remove(&surface->link);
     wl_list_remove(&surface->associate.link);
     wl_list_remove(&surface->dissociate.link);
     wl_list_remove(&surface->destroy.link);
@@ -325,6 +360,7 @@ static BiomeUnmanaged *create_unmanaged(BiomeServer *server, wlr_xwayland_surfac
     auto *surface = static_cast<BiomeUnmanaged *>(calloc(1, sizeof(BiomeUnmanaged)));
     surface->server = server;
     surface->xwayland_surface = xsurface;
+    wl_list_insert(&server->unmanaged, &surface->link);
 
     surface->associate.notify = unmanaged_associate;
     wl_signal_add(&xsurface->events.associate, &surface->associate);

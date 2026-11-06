@@ -44,15 +44,6 @@ session logs or design discussion.
 
 - **`wlr-gamma-control-unstable-v1`** — night-light/redshift-style color
   temperature.
-- **An Xwayland override-redirect popup can render (and steal focus) behind
-  a fullscreen window.** `BiomeUnmanaged` surfaces are parented directly to
-  `layers.toplevels`, not nested under their owning toplevel, so they don't
-  get carried into `layers.fullscreen` on reparent. Not yet confirmed against
-  a real app; fix is likely raising unmanaged surfaces above
-  `layers.fullscreen` while any toplevel is fullscreen.
-- **Possible: untyped Xwayland popups deactivate their window.** Typed X11
-  menus never get focus, so this is fine for Qt/GTK; watch for apps whose
-  override-redirect popups lack a window type.
 - **Opacity fades lose most of their frames on logout.** `forest-logout`
   barely fades in: its map follows three `forest-logout-dim` scanout-fade
   setups (fresh output-sized buffers, 4K on DP-1) and the log shows a ~73 ms

@@ -10,6 +10,7 @@
 #include "desktop/foreign_toplevel.h"
 #include "desktop/layer_shell.h"
 #include "desktop/workspace.h"
+#include "desktop/xwayland_shell.h"
 
 #include <algorithm>
 #include <xcb/xproto.h>
@@ -147,7 +148,7 @@ void set_toplevel_urgent(BiomeToplevel *toplevel, bool urgent) {
 }
 
 // The toplevel surface is, or whose xdg_popup chain is rooted on; null for
-// layer surfaces, layer-owned popups and Xwayland unmanaged surfaces.
+// layer surfaces, layer-owned popups and parentless Xwayland unmanaged surfaces.
 static BiomeToplevel *toplevel_owning_surface(wlr_surface *surface) {
     wlr_xdg_popup *popup;
     while (surface != nullptr && (popup = wlr_xdg_popup_try_from_wlr_surface(surface)) != nullptr) {
@@ -160,10 +161,11 @@ static BiomeToplevel *toplevel_owning_surface(wlr_surface *surface) {
         return toplevel_from_xdg(xdg);
     }
     wlr_xwayland_surface *xsurface = wlr_xwayland_surface_try_from_wlr_surface(surface);
-    if (xsurface != nullptr && !xsurface->override_redirect) {
-        return toplevel_from_xwayland(xsurface);
+    // An override-redirect popup belongs to its transient-for owner, if any.
+    while (xsurface != nullptr && xsurface->override_redirect) {
+        xsurface = xsurface->parent;
     }
-    return nullptr;
+    return xsurface != nullptr ? toplevel_from_xwayland(xsurface) : nullptr;
 }
 
 void clear_focused_toplevel(BiomeServer *server) {
@@ -601,6 +603,7 @@ void set_toplevel_fullscreen(BiomeToplevel *toplevel, bool fullscreen, wlr_outpu
     }
 
     apply_target_box(toplevel, target);
+    unmanaged_update_layers(toplevel->server);
 
     if (toplevel->type == BiomeToplevelType::Xdg) {
         // See the maximized case's comment above.

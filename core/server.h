@@ -86,6 +86,8 @@ struct BiomeServer {
     wl_listener new_xdg_toplevel = {};
     wl_listener new_xdg_popup = {};
     wl_list toplevels = {};
+    // Every BiomeUnmanaged (override-redirect Xwayland surface).
+    wl_list unmanaged = {};
 
     // wlr-foreign-toplevel-management-unstable-v1 (desktop/foreign_toplevel.cpp).
     // Exposes server->toplevels to external clients (taskbars) for listing

@@ -15,3 +15,7 @@
 // Wayland-only compositor - logs its own error and leaves server->xwayland
 // null in that case.
 void xwayland_init(BiomeServer *server, wlr_compositor *compositor);
+
+// Re-parents mapped override-redirect surfaces above a fullscreen window
+// (layers.fullscreen) or back to layers.toplevels. Call after a fullscreen change.
+void unmanaged_update_layers(BiomeServer *server);

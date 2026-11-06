@@ -218,6 +218,7 @@ struct BiomeToplevel {
 // These position themselves and are never part of server->toplevels - no
 // compositor-driven focus, move, or resize.
 struct BiomeUnmanaged {
+    wl_list link = {}; // BiomeServer::unmanaged
     BiomeServer *server = nullptr;
     wlr_xwayland_surface *xwayland_surface = nullptr;
     wlr_scene_tree *scene_tree = nullptr;
