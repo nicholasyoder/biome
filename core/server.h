@@ -341,6 +341,8 @@ struct BiomeServer {
     bool idle_inhibited = false;
 
     // wlr-output-power-management-unstable-v1 (core/output_power.cpp).
+    wlr_gamma_control_manager_v1 *gamma_manager = nullptr; // core/gamma.cpp
+    wl_listener gamma_set_gamma = {};
     wlr_output_power_manager_v1 *output_power_manager = nullptr;
     wl_listener output_power_set_mode = {};
     // Connectors destroyed while powered off, kept until a wake; an HPD bounce

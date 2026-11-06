@@ -42,8 +42,6 @@ session logs or design discussion.
 
 ## 0.2.0 — input, clipboard & spec compliance (Phases 6–7)
 
-- **`wlr-gamma-control-unstable-v1`** — night-light/redshift-style color
-  temperature.
 - **Opacity fades lose most of their frames on logout.** `forest-logout`
   barely fades in: its map follows three `forest-logout-dim` scanout-fade
   setups (fresh output-sized buffers, 4K on DP-1) and the log shows a ~73 ms

@@ -17,6 +17,8 @@ add_executable(biome
     output_arrange.cpp
     output_management.h
     output_management.cpp
+    gamma.h
+    gamma.cpp
     output_power.h
     output_power.cpp
     config.h
