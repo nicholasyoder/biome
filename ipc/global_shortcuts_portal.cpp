@@ -13,6 +13,7 @@
 #include <QDateTime>
 #include <QTimer>
 
+#include <algorithm>
 #include <utility>
 
 QDBusArgument &operator<<(QDBusArgument &arg, const GlobalShortcutSpec &spec) {
@@ -90,8 +91,16 @@ uint GlobalShortcutsPortal::BindShortcuts(const QDBusObjectPath &handle,
     // just re-registers on top of whatever's already there rather than
     // replacing it, which would double-fire on a second call. Left as a
     // known gap for the later step that actually wires up reloadhotkeys().
-    QList<GlobalShortcutSpec> bound;
+    // A repeat call adds shortcuts (or retries rejected ones); ids already
+    // bound keep their existing binding.
+    QList<GlobalShortcutSpec> bound = m_sessions.value(owner);
     for (const GlobalShortcutSpec &spec : shortcuts) {
+        const bool already_bound = std::any_of(bound.cbegin(), bound.cend(),
+            [&spec](const GlobalShortcutSpec &existing) { return existing.id == spec.id; });
+        if (already_bound) {
+            continue;
+        }
+
         const QString preferred_trigger = spec.options.value(QStringLiteral("preferred_trigger")).toString();
         const std::optional<ParsedTrigger> parsed = parse_trigger(preferred_trigger);
         if (!parsed) {
@@ -105,6 +114,13 @@ uint GlobalShortcutsPortal::BindShortcuts(const QDBusObjectPath &handle,
         // Auto-accept with no confirmation dialog - see this file's header
         // comment. shortcut_id is captured by value since spec.id is a
         // QString living in the caller's temporary shortcuts list.
+        if (trigger_in_use(*parsed)) {
+            wlr_log(WLR_INFO,
+                "GlobalShortcuts: trigger \"%s\" for shortcut \"%s\" is already in use - skipping",
+                qPrintable(preferred_trigger), qPrintable(spec.id));
+            continue;
+        }
+
         const QString shortcut_id = spec.id;
         add_portal_keybinding(owner, *parsed,
             [this, session_handle, shortcut_id](BiomeServer *server, uint32_t) {
@@ -137,7 +153,7 @@ uint GlobalShortcutsPortal::BindShortcuts(const QDBusObjectPath &handle,
         // (e.g. "Ctrl+Alt+Return"); echoing the raw trigger string back is a
         // stand-in good enough to confirm round-tripping for this
         // prototype.
-        out.options.insert(QStringLiteral("trigger_description"), preferred_trigger);
+        out.options.insert(QStringLiteral("trigger_description"), describe_trigger(*parsed));
         bound.push_back(out);
     }
 

@@ -10,10 +10,12 @@
 // "GlobalShortcuts portal architecture (Workstream C)" section for the full
 // research behind this choice.
 //
-// CreateSession/BindShortcuts/ListShortcuts are implemented, auto-accepting
-// every requested shortcut with no confirmation dialog (matches Biome's
-// fixed-policy identity - there's no shortcut-picker UI and none is
-// planned). ConfigureShortcuts replies "not supported". System wiring
+// CreateSession/BindShortcuts/ListShortcuts are implemented. There is no
+// confirmation dialog (none is planned); a shortcut is bound unless its
+// trigger is unparseable or already used by a built-in or another binding,
+// in which case it's omitted from the reply. A repeat BindShortcuts adds new
+// ids and leaves already-bound ids untouched (no rebinding).
+// ConfigureShortcuts replies "not supported". System wiring
 // (data/xdg-desktop-portal/biome-portals.conf and portals/biome.portal,
 // installed by the top-level CMakeLists.txt) is done - see
 // docs/architecture-notes.md's Workstream C section. Trigger parsing and the

@@ -16,3 +16,11 @@ add_executable(output_config_test
 target_include_directories(output_config_test PRIVATE ${CMAKE_SOURCE_DIR})
 target_link_libraries(output_config_test PRIVATE PkgConfig::WAYLAND_SERVER Qt6::Core)
 add_test(NAME output_config COMMAND output_config_test)
+
+add_executable(trigger_test
+    trigger_test.cpp
+    ${CMAKE_SOURCE_DIR}/core/trigger.cpp
+)
+target_include_directories(trigger_test PRIVATE ${CMAKE_SOURCE_DIR})
+target_link_libraries(trigger_test PRIVATE PkgConfig::WLROOTS PkgConfig::XKBCOMMON Qt6::Core)
+add_test(NAME trigger COMMAND trigger_test)

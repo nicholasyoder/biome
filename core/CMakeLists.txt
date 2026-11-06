@@ -29,6 +29,8 @@ add_executable(biome
     input.cpp
     keybindings.h
     keybindings.cpp
+    trigger.h
+    trigger.cpp
     cursor.h
     cursor.cpp
     pointer_constraints.h
