@@ -114,17 +114,10 @@ struct BiomeScanoutFade {
     timespec fade_start = {};
     float fade_from = 0.0f; // continuity value - same role as BiomeFadingOutSurface::fade_from
 
-    // Cold-start compensation: a fresh BiomeScanoutFade's first couple of
-    // real ticks are delivered much slower than steady state (measured:
-    // ~70-90ms each vs. a clean 16.7ms once warmed up) - a one-time cost in
-    // getting new buffers flowing through the display pipeline, present
-    // even without direct scan-out. update_layer_surface_fades() spends
-    // this many ticks rendering fraction 0.0 (invisible) before starting
-    // the timed ramp, so the cold-start cost lands before the animation
-    // starts instead of eating into it. Set well above the 2 slow ticks
-    // actually measured - an extra warmup tick only costs one steady-state
-    // vsync, while under-padding brings the visible blink right back.
-    int warmup_ticks_remaining = 6;
+    // Cold-start compensation: the first flip of a fresh fade is slow
+    // (~65 ms vs 16.7 steady), so render this many invisible ticks before
+    // the timed ramp. Under-padding brings back a visible blink.
+    int warmup_ticks_remaining = 3;
 };
 
 // Must stay comfortably under forest-logout's 250ms post-close quit delay

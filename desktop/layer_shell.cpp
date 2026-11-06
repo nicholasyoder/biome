@@ -255,8 +255,12 @@ static void handle_layer_surface_map(wl_listener *listener, void *data) {
     // right at the map transition to make sure that reservation actually
     // takes effect promptly - handle_layer_surface_commit() above is now
     // gated on layout-relevant committed state and won't reliably re-arrange
-    // on its own right at this exact point.
-    arrange_layers_refitting(wrapper->output);
+    // on its own right at this exact point. Skipped otherwise: every arrange
+    // re-sends configure to every surface on the output, and each client
+    // answers with a full-buffer recommit.
+    if (layer_surface->current.exclusive_zone > 0) {
+        arrange_layers_refitting(wrapper->output);
+    }
 
     switch (layer_surface_fade_kind(wrapper->server, layer_surface)) {
     case FadeKind::Opacity: {
@@ -345,6 +349,7 @@ static void handle_layer_surface_destroy(wl_listener *listener, void *data) {
     (void)data;
     BiomeLayerSurface *wrapper = wl_container_of(listener, wrapper, destroy);
     BiomeOutput *output = wrapper->output;
+    const bool had_exclusive_zone = wrapper->layer_surface->current.exclusive_zone > 0;
 
     wl_list_remove(&wrapper->link);
     wl_list_remove(&wrapper->commit.link);
@@ -354,7 +359,9 @@ static void handle_layer_surface_destroy(wl_listener *listener, void *data) {
     wl_list_remove(&wrapper->new_popup.link);
     free(wrapper);
 
-    arrange_layers_refitting(output);
+    if (had_exclusive_zone) {
+        arrange_layers_refitting(output);
+    }
 }
 
 void layer_shell_close_output_surfaces(BiomeOutput *output) {

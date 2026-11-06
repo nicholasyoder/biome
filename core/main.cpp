@@ -180,6 +180,8 @@ int main(int argc, char *argv[]) {
     // globals here is the only wiring needed.
     wlr_fractional_scale_manager_v1_create(server.display, 1);
     wlr_viewporter_create(server.display);
+    // Lets clients paint solid fills (dim overlays) without a full-size shm upload.
+    wlr_single_pixel_buffer_manager_v1_create(server.display);
 
     // wlroots captures straight off output commits and requests the frame
     // itself; nothing else to wire. See architecture-notes.md "Screencopy".
