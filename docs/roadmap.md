@@ -42,11 +42,12 @@ session logs or design discussion.
 
 ## 0.2.0 — input, clipboard & spec compliance (Phases 6–7)
 
-- **Opacity fades lose most of their frames on logout.** `forest-logout`
-  barely fades in: its map follows three `forest-logout-dim` scanout-fade
-  setups (fresh output-sized buffers, 4K on DP-1) and the log shows a ~73 ms
-  main-loop stall, a third of the 220 ms wall-clock fade. Find the stall,
-  and whether per-pixel fades can be made cheaper in general.
+- **First presented frame of a fresh scanout fade is ~65 ms late.** After a
+  `forest-logout-dim` map, the first flip with the new output-sized swapchain
+  buffers (4K on DP-1) takes ~65 ms, then frames run at a steady 16.7 ms.
+  Covered by `warmup_ticks_remaining` for the dim, but `forest-logout`'s
+  `Opacity` fade stamps its start at map and loses that frame. Candidates:
+  stamp `Opacity` fades on their first rendered frame, or pre-warm swapchains.
 
 ## 0.3.0 — touch, tablet & accessibility input (Phase 7)
 
