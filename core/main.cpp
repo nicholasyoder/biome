@@ -10,6 +10,7 @@
 #include "core/cursor.h"
 #include "core/input.h"
 #include "core/output.h"
+#include "core/gamma.h"
 #include "core/output_power.h"
 #include "core/pointer_constraints.h"
 #include "core/qt_glib_bridge.h"
@@ -197,6 +198,7 @@ int main(int argc, char *argv[]) {
     pointer_constraints_init(&server);
     idle_init(&server);
     output_power_init(&server);
+    gamma_init(&server);
     xwayland_init(&server, compositor);
     global_shortcuts_portal_init(&server);
     workspace_bridge_init(&server);
