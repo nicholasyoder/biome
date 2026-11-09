@@ -220,13 +220,14 @@ static wlr_scene_tree *unmanaged_target_layer(BiomeUnmanaged *s) {
     for (wlr_xwayland_surface *x = s->xwayland_surface->parent; x != nullptr; x = x->parent) {
         if (!x->override_redirect) {
             if (BiomeToplevel *owner = toplevel_from_xwayland(x)) {
-                return owner->fullscreen ? server->layers.fullscreen : server->layers.toplevels;
+                return owner->scene_tree->node.parent == server->layers.fullscreen
+                    ? server->layers.fullscreen : server->layers.toplevels;
             }
         }
     }
     BiomeToplevel *t;
     wl_list_for_each(t, &server->toplevels, link) {
-        if (t->fullscreen && t->workspace == server->active_workspace && !t->minimized) {
+        if (t->scene_tree->node.parent == server->layers.fullscreen && t->workspace == server->active_workspace && !t->minimized) {
             return server->layers.fullscreen;
         }
     }

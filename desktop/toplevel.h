@@ -51,7 +51,8 @@ struct BiomeToplevel {
     // set_toplevel_fullscreen. While true, scene_tree is also reparented
     // into BiomeServer::layers.fullscreen (above every layer-shell layer,
     // still below layers.session_lock) instead of its usual
-    // layers.toplevels - see that field's declaration in core/server.h.
+    // layers.toplevels - see that field's declaration in core/server.h -
+    // until another window on its output takes focus (focus_toplevel).
     bool fullscreen = false;
     wlr_box fullscreen_restore_box = {};
 
