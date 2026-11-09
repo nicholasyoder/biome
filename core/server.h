@@ -65,7 +65,8 @@ struct BiomeServer {
     // toplevel's scene_tree for the duration of being fullscreen, and back
     // to toplevels on restore - above every layer-shell layer (a fullscreen
     // window must cover a panel/dock sitting in top, same convention as
-    // every other desktop) but still below session_lock.
+    // every other desktop) but still below session_lock. Focusing another
+    // window on that output drops it back to toplevels (focus_toplevel).
     // Because nothing can be created as a *later* sibling of scene->tree
     // than session_lock (every other tree in this stack is created here,
     // once, at startup, before any client ever connects), session_lock is

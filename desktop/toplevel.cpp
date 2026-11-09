@@ -207,6 +207,28 @@ void grant_keyboard_focus_to_non_toplevel(BiomeServer *server, wlr_surface *surf
         keyboard ? &keyboard->modifiers : nullptr);
 }
 
+static wlr_output *toplevel_content_output(BiomeToplevel *toplevel);
+
+// Only the topmost window on an output may sit in layers.fullscreen: focusing
+// another window drops that output's fullscreen ones to layers.toplevels (as
+// Mutter/KWin do), so Alt-Tab and transient dialogs can come above them.
+static void restack_fullscreen_for_focus(BiomeToplevel *toplevel) {
+    BiomeServer *server = toplevel->server;
+    if (toplevel->fullscreen) {
+        wlr_scene_node_reparent(&toplevel->scene_tree->node, server->layers.fullscreen);
+    } else {
+        wlr_output *output = toplevel_content_output(toplevel);
+        BiomeToplevel *t;
+        wl_list_for_each(t, &server->toplevels, link) {
+            if (t != toplevel && t->scene_tree->node.parent == server->layers.fullscreen
+                    && toplevel_content_output(t) == output) {
+                wlr_scene_node_reparent(&t->scene_tree->node, server->layers.toplevels);
+            }
+        }
+    }
+    unmanaged_update_layers(server);
+}
+
 // Keyboard focus only (and, for Xwayland, the X11 stacking order with it).
 void focus_toplevel(BiomeToplevel *toplevel) {
     if (toplevel == nullptr) {
@@ -241,6 +263,7 @@ void focus_toplevel(BiomeToplevel *toplevel) {
         clear_focused_toplevel(server);
     }
     wlr_keyboard *keyboard = wlr_seat_get_keyboard(seat);
+    restack_fullscreen_for_focus(toplevel);
     wlr_scene_node_raise_to_top(&toplevel->scene_tree->node);
     wl_list_remove(&toplevel->link);
     wl_list_insert(&server->toplevels, &toplevel->link);
