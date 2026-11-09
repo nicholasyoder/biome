@@ -30,6 +30,7 @@ struct BiomeLayerSurface {
     wl_listener new_popup = {};
 
     // Set only for the Opacity fade kind (see layer_surface_fade_kind()).
+    // fade_start stays zero until the output's fade warmup ends.
     bool fading_in = false;
     timespec fade_start = {};
 
@@ -111,13 +112,8 @@ struct BiomeScanoutFade {
     int buffer_height = 0;
 
     ScanoutFadePhase phase = ScanoutFadePhase::In;
-    timespec fade_start = {};
+    timespec fade_start = {}; // zero during fade-in until the output's fade warmup ends
     float fade_from = 0.0f; // continuity value - same role as BiomeFadingOutSurface::fade_from
-
-    // Cold-start compensation: the first flip of a fresh fade is slow
-    // (~65 ms vs 16.7 steady), so render this many invisible ticks before
-    // the timed ramp. Under-padding brings back a visible blink.
-    int warmup_ticks_remaining = 3;
 };
 
 // Must stay comfortably under forest-logout's 250ms post-close quit delay
@@ -125,7 +121,15 @@ struct BiomeScanoutFade {
 // process to still be alive for its own duration, or it gets cut short.
 static constexpr int kFadeDurationMs = 220;
 
+static bool fade_started(const timespec &start) {
+    return start.tv_sec != 0 || start.tv_nsec != 0;
+}
+
+// 0 for a fade still waiting out BiomeOutput::fade_warmup_ticks.
 static float elapsed_fraction(const timespec &start, int duration_ms) {
+    if (!fade_started(start)) {
+        return 0.0f;
+    }
     timespec now;
     clock_gettime(CLOCK_MONOTONIC, &now);
     double elapsed_ms = (now.tv_sec - start.tv_sec) * 1000.0

@@ -305,9 +305,8 @@ BiomeScanoutFade *scanout_fade_create(BiomeLayerSurface *wrapper) {
 
     // Render tick 0 synchronously so the node is never briefly empty - this
     // pays the first wlr_swapchain_acquire()'s real allocation cost up
-    // front. fade_start is left unset here; update_layer_surface_fades()
-    // only stamps it once warmup_ticks_remaining reaches 0 (see that
-    // field's comment - one tick alone doesn't cover the cold-start cost).
+    // front. fade_start stays unset until update_layer_surface_fades()
+    // finishes the output's fade warmup.
     scanout_fade_render_tick(fade, 0.0f);
 
     return fade;
@@ -321,11 +320,8 @@ void scanout_fade_start_fade_out(BiomeScanoutFade *fade) {
     if (fade == nullptr) {
         return;
     }
-    // While warmup_ticks_remaining > 0, fade_start isn't stamped yet -
-    // elapsed_fraction() on a zero timespec would clamp to 1.0 (fully
-    // elapsed), wrongly jumping to full opacity instead of "not visible yet".
-    float current = fade->warmup_ticks_remaining > 0 ? 0.0f
-        : fade->phase == ScanoutFadePhase::In
+    // elapsed_fraction() is 0 while fade-in is still warming up.
+    float current = fade->phase == ScanoutFadePhase::In
         ? elapsed_fraction(fade->fade_start, kFadeDurationMs)
         : fade->fade_from * (1.0f - elapsed_fraction(fade->fade_start, kFadeDurationMs));
 

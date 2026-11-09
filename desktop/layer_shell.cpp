@@ -15,6 +15,11 @@
 // core/fade_config.h.
 enum class FadeKind { None, Opacity, ScanoutSnapshot };
 
+// Opacity needs one invisible frame to ride out a concurrent scanout fade's
+// slow first flip; ScanoutSnapshot needs two (its own new buffers).
+static constexpr int kOpacityWarmupTicks = 1;
+static constexpr int kScanoutWarmupTicks = 2;
+
 static FadeKind layer_surface_fade_kind(const BiomeServer *server, const wlr_layer_surface_v1 *layer_surface) {
     if (layer_surface->namespace_ == nullptr) {
         return FadeKind::None;
@@ -265,7 +270,9 @@ static void handle_layer_surface_map(wl_listener *listener, void *data) {
     switch (layer_surface_fade_kind(wrapper->server, layer_surface)) {
     case FadeKind::Opacity: {
         wrapper->fading_in = true;
-        clock_gettime(CLOCK_MONOTONIC, &wrapper->fade_start);
+        wrapper->fade_start = {};
+        wrapper->output->fade_warmup_ticks =
+            std::max(wrapper->output->fade_warmup_ticks, kOpacityWarmupTicks);
         set_tree_opacity(wrapper->scene_layer_surface->tree, 0.0f);
         // Nothing else guarantees another frame fires soon after a fresh
         // map with no other damage source - Biome's rendering is otherwise
@@ -276,6 +283,8 @@ static void handle_layer_surface_map(wl_listener *listener, void *data) {
     case FadeKind::ScanoutSnapshot:
         wrapper->scanout_fade = scanout_fade_create(wrapper);
         if (wrapper->scanout_fade != nullptr) {
+            wrapper->output->fade_warmup_ticks =
+                std::max(wrapper->output->fade_warmup_ticks, kScanoutWarmupTicks);
             wlr_output_schedule_frame(wrapper->output->wlr);
         }
         break;
@@ -484,10 +493,27 @@ bool update_layer_surface_fades(BiomeOutput *output) {
     bool still_animating = false;
     BiomeServer *server = output->server;
 
+    // Pending fade-ins all start together on the first tick after warmup, so
+    // e.g. forest-logout and its dim ramp in step.
+    const bool warming_up = output->fade_warmup_ticks > 0;
+    timespec now = {};
+    if (warming_up) {
+        output->fade_warmup_ticks--;
+    } else {
+        clock_gettime(CLOCK_MONOTONIC, &now);
+    }
+
     BiomeLayerSurface *wrapper;
     wl_list_for_each(wrapper, &server->layer_surfaces, link) {
         if (wrapper->output != output || !wrapper->fading_in) {
             continue;
+        }
+        if (!fade_started(wrapper->fade_start)) {
+            if (warming_up) {
+                still_animating = true;
+                continue;
+            }
+            wrapper->fade_start = now;
         }
         float fraction = elapsed_fraction(wrapper->fade_start, kFadeDurationMs);
         set_tree_opacity(wrapper->scene_layer_surface->tree, fraction);
@@ -520,17 +546,13 @@ bool update_layer_surface_fades(BiomeOutput *output) {
             continue;
         }
 
-        // Spend a handful of real ticks on invisible (fraction=0.0) content
-        // before starting the timed ramp - see warmup_ticks_remaining's
-        // comment.
-        if (scanout_fade->phase == ScanoutFadePhase::In && scanout_fade->warmup_ticks_remaining > 0) {
-            scanout_fade_render_tick(scanout_fade, 0.0f);
-            scanout_fade->warmup_ticks_remaining--;
-            if (scanout_fade->warmup_ticks_remaining == 0) {
-                clock_gettime(CLOCK_MONOTONIC, &scanout_fade->fade_start);
+        if (scanout_fade->phase == ScanoutFadePhase::In && !fade_started(scanout_fade->fade_start)) {
+            if (warming_up) {
+                scanout_fade_render_tick(scanout_fade, 0.0f);
+                still_animating = true;
+                continue;
             }
-            still_animating = true;
-            continue;
+            scanout_fade->fade_start = now;
         }
 
         float fraction = elapsed_fraction(scanout_fade->fade_start, kFadeDurationMs);
