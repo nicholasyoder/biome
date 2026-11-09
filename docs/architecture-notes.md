@@ -303,6 +303,20 @@ frame, since anything that shows or hides a surface damages an output.
 - Opaque lock surfaces occlude everything, so a locked session isn't held
   awake by a video behind the lock.
 
+## Layer-shell fade warmup (`desktop/layer_shell.cpp`)
+
+Fade-ins don't stamp their start time at map. Each one raises
+`BiomeOutput::fade_warmup_ticks` (Opacity 1, ScanoutSnapshot 2) and renders
+invisible until it runs out. Then every pending fade-in on that output starts
+on the same tick.
+
+- Why: the first flip after a scanout fade's new output-sized buffers takes
+  ~65 ms (4K). A fade stamped at map loses that time, so forest-logout jumped
+  to ~30% opacity before this.
+- Shared per output, so forest-logout and its dim ramp in step.
+- An unstarted fade has a zero `fade_start`. `elapsed_fraction()` returns 0 for
+  it, so cancelling during warmup fades out from 0, not 1.
+
 ## Screencopy (`core/main.cpp`)
 
 wlroots implements `wlr-screencopy-unstable-v1` entirely; Biome only creates

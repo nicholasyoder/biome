@@ -405,6 +405,9 @@ struct BiomeOutput {
     // output's full box. Output-local; output_target_box() offsets it into
     // layout coordinates for window placement/maximize.
     wlr_box usable_area = {};
+    // Invisible frames left before pending layer-surface fade-ins start, all
+    // at once. Absorbs the slow first flip after a scanout fade's new buffers.
+    int fade_warmup_ticks = 0;
 };
 
 struct BiomeKeyboard {

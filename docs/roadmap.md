@@ -42,12 +42,7 @@ session logs or design discussion.
 
 ## 0.2.0 — input, clipboard & spec compliance (Phases 6–7)
 
-- **First presented frame of a fresh scanout fade is ~65 ms late.** After a
-  `forest-logout-dim` map, the first flip with the new output-sized swapchain
-  buffers (4K on DP-1) takes ~65 ms, then frames run at a steady 16.7 ms.
-  Covered by `warmup_ticks_remaining` for the dim, but `forest-logout`'s
-  `Opacity` fade stamps its start at map and loses that frame. Candidates:
-  stamp `Opacity` fades on their first rendered frame, or pre-warm swapchains.
+Nothing left; ready to ship.
 
 ## 0.3.0 — touch, tablet & accessibility input (Phase 7)
 
