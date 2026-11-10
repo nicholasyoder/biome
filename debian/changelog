@@ -1,3 +1,32 @@
+biome (0.2.0) unstable; urgency=medium
+
+  * Protocols: xdg-activation-v1 (launchers can raise existing windows;
+    unhonored requests mark the window urgent), wlr-data-control (clipboard
+    managers), pointer-constraints and relative-pointer (games, 3D apps),
+    pointer-gestures (trackpad swipe/pinch/hold), wlr-gamma-control (night
+    light tools such as wlsunset), single-pixel-buffer, xdg-shell v6.
+  * Decorations: load themes from external layered QSS (as shipped by
+    Forest themes) with live reload on config change, and render at the
+    output's scale so they stay sharp at fractional scales.
+  * GlobalShortcuts: send Deactivated on the key's release so clients can
+    tell a hold from a tap; idempotent BindShortcuts, readable trigger
+    descriptions, and collisions with existing bindings rejected.
+  * Enforce layer-shell keyboard_interactivity per spec, and focus popups
+    on map only when grabbing or activated through xdg-activation.
+  * Outputs: persist the last output-management apply to Biome.conf; keep
+    reconnected outputs off until the next wake; close layer surfaces when
+    their output is disabled.
+  * Exit when the -s command exits, so Biome can host a greetd greeter.
+  * Limit the Alt-Tab switcher to the active workspace.
+  * Drop a fullscreen window below a newly focused window on its output.
+  * Fix maximized/fullscreen windows flashing unmaximized on map.
+  * Fix a crash when an Xwayland window toggles override-redirect, keep
+    Xwayland popups above fullscreen windows, and leave splash screens
+    undecorated and centered.
+  * Fix layer-shell fade-ins jumping partway on large outputs.
+
+ -- Nicholas Yoder <nicholasyoder@proton.me>  Mon, 09 Nov 2026 12:00:00 -0500
+
 biome (0.1.0) unstable; urgency=medium
 
   * First release: a fixed-policy floating Wayland compositor on wlroots 0.18,

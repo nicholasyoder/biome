@@ -40,14 +40,10 @@ session logs or design discussion.
   Forest-specific shortcut needs justification, not just convenience. Full
   reasoning in `docs/history.md`'s "Decoupling goal" section (2026-08-22).
 
-## 0.2.0 — input, clipboard & spec compliance (Phases 6–7)
-
-Nothing left; ready to ship.
-
 ## 0.3.0 — touch, tablet & accessibility input (Phase 7)
 
 Currently the single biggest user-visible gap versus sway/Hyprland
-(`core/input.cpp`/`cursor.cpp` have zero touch/tablet/gesture handling).
+(`core/input.cpp`/`cursor.cpp` have zero touch/tablet handling).
 
 - **Touch** — no `wlr_touch` handling at all; touchscreens/tablet-PC hardware
   unusable.
