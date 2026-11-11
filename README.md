@@ -35,11 +35,14 @@ sudo dnf install gcc-c++ cmake pkgconf-pkg-config wlroots-devel wayland-devel \
 
 ```bash
 sudo dnf install rpm-build rpmdevtools           # once; plus the build deps above
-git archive --prefix=biome-0.2.1/ -o ~/rpmbuild/SOURCES/biome-0.2.1.tar.gz HEAD   # Source0 is the GitHub tag tarball
-rpmbuild -ba packaging/biome.spec
+mkdir -p rpmbuild/SOURCES
+git archive --prefix=biome-0.2.1/ -o rpmbuild/SOURCES/biome-0.2.1.tar.gz HEAD   # Source0 is the GitHub tag tarball
+rpmbuild -ba --define "_topdir $PWD/rpmbuild" packaging/biome.spec
 ```
 
-Output lands in `~/rpmbuild/RPMS/`. For a clean-chroot build, run `mock -r fedora-45-x86_64`
+Run from the repo root; output lands in `rpmbuild/RPMS/` (gitignored). To use the default
+`~/rpmbuild` instead, drop the `--define`, use `~/rpmbuild/SOURCES` for the tarball, and
+run `rpmdev-setuptree` once. For a clean-chroot build, run `mock -r fedora-45-x86_64`
 on the resulting `.src.rpm`. Keep the spec's `Version` and `%changelog` in step with
 `CMakeLists.txt` at each release.
 
