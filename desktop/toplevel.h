@@ -241,6 +241,10 @@ struct BiomePopup {
     wl_listener commit = {};
     wl_listener destroy = {};
     wl_listener reposition = {};
+    // wlroots 0.19+ asserts on configure before the initial commit, so unconstraining waits for it.
+    bool unconstrain_on_initial_commit = false; // via constrain_popup_to_output()
+    bool has_layer_unconstrain_box = false;
+    wlr_box layer_unconstrain_box = {};
 };
 
 wlr_surface *toplevel_surface(BiomeToplevel *toplevel);

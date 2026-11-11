@@ -307,11 +307,19 @@ static void server_new_xdg_toplevel(wl_listener *listener, void *data) {
     wl_signal_add(&xdg_toplevel->events.request_minimize, &toplevel->request_minimize);
 }
 
+static void constrain_popup_to_output(BiomeServer *server, wlr_xdg_popup *xdg_popup);
+
 static void xdg_popup_commit(wl_listener *listener, void *data) {
     (void)data;
     BiomePopup *popup = wl_container_of(listener, popup, commit);
 
     if (popup->xdg_popup->base->initial_commit) {
+        if (popup->unconstrain_on_initial_commit) {
+            constrain_popup_to_output(popup->server, popup->xdg_popup);
+        }
+        if (popup->has_layer_unconstrain_box) {
+            wlr_xdg_popup_unconstrain_from_box(popup->xdg_popup, &popup->layer_unconstrain_box);
+        }
         // The compositor must reply to an initial commit with a configure so
         // the client can map the surface; Biome sends an empty one.
         wlr_xdg_surface_schedule_configure(popup->xdg_popup->base);
@@ -368,6 +376,9 @@ static wlr_xdg_popup *find_root_popup(wlr_xdg_popup *xdg_popup) {
 // popup, its own scene node's parent is the true root surface (a toplevel's
 // tree or a layer surface's tree either way).
 static void constrain_popup_to_output(BiomeServer *server, wlr_xdg_popup *xdg_popup) {
+    if (!xdg_popup->base->initialized) {
+        return;
+    }
     wlr_xdg_popup *root_popup = find_root_popup(xdg_popup);
 
     auto *root_scene_tree = static_cast<wlr_scene_tree *>(root_popup->base->data);
@@ -521,8 +532,9 @@ static void server_new_xdg_popup(wl_listener *listener, void *data) {
         // constraint_adjustment has no box to slide within and is a no-op.
         // See xdg_popup_reposition() below for why this same call also has
         // to run again on every later reposition, not just here.
-        constrain_popup_to_output(server, xdg_popup);
+        popup->unconstrain_on_initial_commit = true;
     }
+    xdg_popup->base->surface->data = popup; // layer_shell.cpp's new_popup handler finds it here
 
     popup->map.notify = xdg_popup_map;
     wl_signal_add(&xdg_popup->base->surface->events.map, &popup->map);

@@ -275,7 +275,7 @@ static void unmanaged_associate(wl_listener *listener, void *data) {
         // locked, the lock surface holds focus (desktop/session_lock.cpp)
         // and nothing else may take it, so that grab still needs its own check.
         unmanaged_reparent(s);
-        if (!s->server->session_locked && wlr_xwayland_or_surface_wants_focus(s->xwayland_surface)) {
+        if (!s->server->session_locked && wlr_xwayland_surface_override_redirect_wants_focus(s->xwayland_surface)) {
             grant_keyboard_focus_to_non_toplevel(s->server, s->xwayland_surface->surface);
         }
     };
@@ -438,9 +438,11 @@ static void server_xwayland_ready(wl_listener *listener, void *data) {
     wlr_xcursor *xcursor = wlr_xcursor_manager_get_xcursor(server->cursor_mgr, "default", 1.0f);
     if (xcursor != nullptr && xcursor->image_count > 0) {
         wlr_xcursor_image *image = xcursor->images[0];
-        wlr_xwayland_set_cursor(server->xwayland, image->buffer,
-            image->width * 4, image->width, image->height,
-            static_cast<int32_t>(image->hotspot_x), static_cast<int32_t>(image->hotspot_y));
+        wlr_buffer *cursor_buffer = wlr_xcursor_image_get_buffer(image);
+        if (cursor_buffer != nullptr) {
+            wlr_xwayland_set_cursor(server->xwayland, cursor_buffer,
+                static_cast<int32_t>(image->hotspot_x), static_cast<int32_t>(image->hotspot_y));
+        }
     }
 
     // Atom-initialize the EWMH connection used for _NET_WM_ICON lookup

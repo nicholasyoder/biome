@@ -1,5 +1,5 @@
 find_package(PkgConfig REQUIRED)
-# Not a transitive Requires of wlroots-0.18's own .pc, despite wlr/xwayland.h
+# Not a transitive Requires of wlroots-0.20's own .pc, despite wlr/xwayland.h
 # pulling in <xcb/xcb_ewmh.h> - needed explicitly for _NET_WM_ICON lookup
 # (app_icon.cpp).
 pkg_check_modules(XCB_EWMH REQUIRED IMPORTED_TARGET xcb-ewmh)
@@ -42,7 +42,7 @@ add_dependencies(biome_desktop biome_wlroots_cxx_shim
     ${POINTER_CONSTRAINTS_PROTOCOL_HEADER_TARGET} ${EXT_WORKSPACE_PROTOCOL_SOURCE_TARGET})
 
 # BIOME_WLROOTS_SHIM_DIR must come before PkgConfig::WLROOTS's own include
-# dir so the patched copies of wlr_scene.h/wlr_matrix.h are the ones found.
+# dir so the patched copies of wlr_scene.h/render/color.h are the ones found.
 target_include_directories(biome_desktop PUBLIC
     ${BIOME_WLROOTS_SHIM_DIR}
     ${BIOME_PROTOCOL_DIR}

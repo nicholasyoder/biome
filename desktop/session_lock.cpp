@@ -145,6 +145,7 @@ static void handle_new_session_lock(wl_listener *listener, void *data) {
     }
 
     server->active_lock = lock;
+    server->active_lock_locked_sent = false;
     server->lock_new_surface.notify = handle_lock_new_surface;
     wl_signal_add(&lock->events.new_surface, &server->lock_new_surface);
     server->lock_unlock.notify = handle_lock_unlock;
@@ -191,7 +192,7 @@ static void handle_new_session_lock(wl_listener *listener, void *data) {
 }
 
 void session_lock_maybe_send_locked(BiomeServer *server) {
-    if (!server->session_locked || server->active_lock == nullptr || server->active_lock->locked_sent) {
+    if (!server->session_locked || server->active_lock == nullptr || server->active_lock_locked_sent) {
         return;
     }
     BiomeOutput *output;
@@ -200,6 +201,7 @@ void session_lock_maybe_send_locked(BiomeServer *server) {
             return;
         }
     }
+    server->active_lock_locked_sent = true;
     wlr_session_lock_v1_send_locked(server->active_lock);
 }
 

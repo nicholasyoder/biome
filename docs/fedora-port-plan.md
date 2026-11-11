@@ -36,16 +36,16 @@ Work on a branch off `develop` (e.g. `fedora-wlroots-0.20`); one PR for 1–4.
 
 ### 1. Build setup
 
-- [ ] Install the dependencies above; `cmake -B build -S . && cmake --build build`
+- [x] Install the dependencies above; `cmake -B build -S . && cmake --build build`
       against the *unchanged* tree to confirm the toolchain works and see what
       breaks (expected: wlroots 0.18 not found).
-- [ ] Switch `CMakeLists.txt` and `cmake/BiomeWlrootsShim.cmake` to
+- [x] Switch `CMakeLists.txt` and `cmake/BiomeWlrootsShim.cmake` to
       `wlroots-0.20`.
-- [ ] Re-check the shim against 0.20 headers: `[static 4]` in `wlr_scene.h`,
+- [x] Re-check the shim against 0.20 headers: `[static 4]` in `wlr_scene.h`,
       `char *class` in `xwayland.h`, `char *namespace` in `wlr_layer_shell_v1.h`.
       `wlr_matrix.h` may no longer have `[static 9]` or be needed at all.
       Grep new headers for further C++ keyword collisions.
-- [ ] Check the vendored protocols (`protocol/`) still match what 0.20's
+- [x] Check the vendored protocols (`protocol/`) still match what 0.20's
       headers `#include` by name, and whether wayland-protocols 1.50 now ships
       any we vendor or generate (`WAYLAND_PROTOCOLS_DATADIR` paths still exist).
 
@@ -54,44 +54,44 @@ Work on a branch off `develop` (e.g. `fedora-wlroots-0.20`); one PR for 1–4.
 Read the 0.19.0 and 0.20.0 release notes for intent; don't just make it compile.
 Known breaks (from the old plan's source check, line numbers may have moved):
 
-- [ ] `wlr_swapchain_acquire()` lost its age argument (`desktop/layer_shell_fade.cpp`).
-- [ ] `wlr_xdg_surface_get_geometry()` removed → `xdg_surface->geometry`
+- [x] `wlr_swapchain_acquire()` lost its age argument (`desktop/layer_shell_fade.cpp`).
+- [x] `wlr_xdg_surface_get_geometry()` removed → `xdg_surface->geometry`
       (`desktop/toplevel.cpp`).
-- [ ] `wlr_xwayland_or_surface_wants_focus()` renamed
+- [x] `wlr_xwayland_or_surface_wants_focus()` renamed
       `wlr_xwayland_surface_override_redirect_wants_focus()` (`desktop/xwayland_shell.cpp`).
-- [ ] Remaining struct-field / signal changes in output, scene, seat, xwayland.
-- [ ] Unit tests (`tests/`) pass.
+- [x] Remaining struct-field / signal changes in output, scene, seat, xwayland.
+- [x] Unit tests (`tests/`) pass.
 
 ### 3. Re-verify behaviour that depended on 0.18
 
 Each note records 0.18 behaviour Biome relies on or works around; check against
 0.20, then update or delete the note and workaround.
 
-- [ ] `architecture-notes.md` (~110): closing the nested backend's host window
+- [x] `architecture-notes.md` (~110): closing the nested backend's host window
       calls `wlr_output_destroy()`, not terminate.
-- [ ] `architecture-notes.md` (~298) and `desktop/idle.cpp` (~33): stale
+- [x] `architecture-notes.md` (~298) and `desktop/idle.cpp` (~33): stale
       `active_outputs` under a disabled ancestor.
-- [ ] `architecture-notes.md` (~328): screencopy stall on a disabled output
+- [x] `architecture-notes.md` (~328): screencopy stall on a disabled output
       (believed fixed in 0.19, 31f9d6bb).
-- [ ] `grep -rn "wlroots 0\."` for other version-specific comments.
+- [x] `grep -rn "wlroots 0\."` for other version-specific comments.
 
 ### 4. RPM packaging
 
-- [ ] `packaging/biome.spec` (or `rpm/`; decide location, keep `debian/` until
+- [x] `packaging/biome.spec` (or `rpm/`; decide location, keep `debian/` until
       the .deb line is formally dropped). `BuildRequires` per the list above;
       configure with `-DCMAKE_BUILD_TYPE=Release -DBIOME_DEV_BUILD=OFF` via
       `%cmake`. Runtime: `Recommends: xdg-desktop-portal`, `Requires: xorg-x11-server-Xwayland`
       (check what Debian's shlibs/Xwayland handling provided).
-- [ ] Install paths: `install(...)` rules use literal `/usr/share/...` and
+- [x] Install paths: `install(...)` rules use literal `/usr/share/...` and
       `/etc/biome/conf.d`; `%cmake` sets `CMAKE_INSTALL_PREFIX=/usr`, so confirm
       the binary lands in `/usr/bin` and nothing goes to `/usr/lib64` by accident.
-- [ ] Man pages (`debian/biome.manpages`, `debian/man`) → `%files` `%{_mandir}`.
-- [ ] Changelog: spec `%changelog` for 0.2.1. Decide whether `docs/changelog`
+- [x] Man pages (`debian/biome.manpages`, `debian/man`) → `%files` `%{_mandir}`.
+- [x] Changelog: spec `%changelog` for 0.2.1. Decide whether `docs/changelog`
       stays the source (Forest regenerates `debian/changelog` from it; mirror
       that for the spec).
-- [ ] `rpmbuild -ba` / `mock -r fedora-45-x86_64` clean-chroot build succeeds;
+- [x] `rpmbuild -ba` / `mock -r fedora-45-x86_64` clean-chroot build succeeds;
       `rpmlint` output reviewed.
-- [ ] Update `README.md` (build/packaging sections, "wlroots 0.18" → 0.20)
+- [x] Update `README.md` (build/packaging sections, "wlroots 0.18" → 0.20)
       and `CLAUDE.md`.
 
 ### 5. Manual regression pass (user-driven, real hardware)

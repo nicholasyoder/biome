@@ -31,7 +31,7 @@ void close_toplevel(BiomeToplevel *toplevel) {
 
 void toplevel_get_geometry(BiomeToplevel *toplevel, wlr_box *box) {
     if (toplevel->type == BiomeToplevelType::Xdg) {
-        wlr_xdg_surface_get_geometry(toplevel->xdg_toplevel->base, box);
+        *box = toplevel->xdg_toplevel->base->geometry;
         return;
     }
     box->x = 0;
@@ -559,7 +559,7 @@ void set_toplevel_maximized(BiomeToplevel *toplevel, bool maximized) {
         // the serial reposition_pending needs to see acked.
         toplevel->reposition_pending_serial = wlr_xdg_toplevel_set_maximized(toplevel->xdg_toplevel, maximized);
     } else {
-        wlr_xwayland_surface_set_maximized(toplevel->xwayland_surface, maximized);
+        wlr_xwayland_surface_set_maximized(toplevel->xwayland_surface, maximized, maximized);
     }
     render_toplevel_decoration(toplevel);
     foreign_toplevel_sync_state(toplevel);

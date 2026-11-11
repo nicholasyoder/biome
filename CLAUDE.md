@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-Biome is an opinionated, fixed-policy Wayland compositor on wlroots 0.18. See
+Biome is an opinionated, fixed-policy Wayland compositor on wlroots 0.20. See
 `docs/roadmap.md` for planned work, `docs/architecture-notes.md` for settled
 design detail, and `docs/history.md` for the original build-out and rationale.
 

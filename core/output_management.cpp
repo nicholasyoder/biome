@@ -85,7 +85,7 @@ void attach_buffer_if_needed(wlr_backend_output_state *state) {
     if (output->enabled && !mode_changed) {
         return;
     }
-    wlr_render_pass *pass = wlr_output_begin_render_pass(output, &base, nullptr, nullptr);
+    wlr_render_pass *pass = wlr_output_begin_render_pass(output, &base, nullptr);
     if (pass == nullptr) {
         return;
     }
