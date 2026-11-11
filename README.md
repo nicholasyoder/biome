@@ -1,7 +1,10 @@
 # Biome
 
-Wayland compositor on wlroots 0.20. See `docs/roadmap.md` for current status
-and planned work, or `docs/history.md` for the original architecture/design
+Wayland compositor on wlroots 0.20, built as the compositor for the
+[Forest](https://github.com/nicholasyoder/forest) desktop. It targets Fedora 45; download the
+RPM from the [releases page](https://github.com/nicholasyoder/biome/releases) and install it with
+`sudo dnf install ./biome-0*.rpm`, or build it yourself (see [Packaging](#rpm-fedora)). See `docs/roadmap.md`
+for current status and planned work, or `docs/history.md` for the original architecture/design
 narrative.
 
 ## Building
@@ -46,9 +49,9 @@ run `rpmdev-setuptree` once. For a clean-chroot build, run `mock -r fedora-45-x8
 on the resulting `.src.rpm`. Keep the spec's `Version` and `%changelog` in step with
 `CMakeLists.txt` at each release.
 
-### Debian
+### Debian (no longer fully supported)
 
-`debian/` is kept for now and targets wlroots 0.20, so it no longer builds on Trixie (wlroots 0.18); it is untested on Debian sid. A Debian package can be built from `debian/` with:
+`debian/` is kept for now but is untested, and no `.deb`s are published for new releases (the last was 0.2.0, for Debian 13 "Trixie"). It targets wlroots 0.20, so it no longer builds on Trixie (wlroots 0.18) and is untested on Debian sid. A Debian package can be built from `debian/` with:
 
 ```bash
 sudo apt build-dep .            # once: installs debian/control's Build-Depends
