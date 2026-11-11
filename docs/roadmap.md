@@ -63,8 +63,7 @@ Currently the single biggest user-visible gap versus sway/Hyprland
 
 ## Later (unscheduled) — rendering & wlroots bump (Phase 8)
 
-- **wlroots bump past 0.18** (in progress → 0.20.2 on Fedora; see
-  `docs/fedora-port-plan.md`). Unlocks `ext-image-copy-capture-v1` +
+- **Adopt wlroots 0.20 features** (Biome now builds on 0.20.2). Unlocks `ext-image-copy-capture-v1` +
   `ext-foreign-toplevel-image-capture-source-v1` (0.20 only; per-window capture
   for Forest's task view / windowlist previews), `ext-data-control-v1`, and
   `color-management-v1` / HDR (Hyprland and Sway 1.12 have it on wlroots
@@ -95,6 +94,10 @@ Currently the single biggest user-visible gap versus sway/Hyprland
   since wlroots refuses a modeset on a disabled output. Test the config, apply
   positions now, and defer an off output's mode/scale/transform to its
   power-on. Forest never applies while blanked; this covers other clients.
+- **Displays settings: per-output RGB range.** `rgb_range` is hand-edited in
+  `Biome.conf` only. No standard protocol carries it (wlr-output-management
+  has no such field), so a Forest control needs a Biome-specific mechanism;
+  revisit when there's a concrete need.
 - **Compositor-side window menu.** Restore/maximize/minimize/move/resize/
   always-on-top/move-to-workspace/close, popped up by Biome. Callers: its own
   titlebar (right-click, icon click), CSD clients via xdg `show_window_menu`

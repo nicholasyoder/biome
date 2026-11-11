@@ -312,6 +312,7 @@ struct BiomeServer {
     // replacement client can take over locking after the original lock
     // client crashes (session_locked stays true across that handoff).
     wlr_session_lock_v1 *active_lock = nullptr;
+    bool active_lock_locked_sent = false; // wlr_session_lock_v1::locked_sent is private in 0.20
     wl_listener lock_new_surface = {};
     wl_listener lock_unlock = {};
     wl_listener lock_destroy = {};

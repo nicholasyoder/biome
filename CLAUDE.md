@@ -1,8 +1,17 @@
 # CLAUDE.md
 
-Biome is an opinionated, fixed-policy Wayland compositor on wlroots 0.18. See
+Biome is an opinionated, fixed-policy Wayland compositor on wlroots 0.20. See
 `docs/roadmap.md` for planned work, `docs/architecture-notes.md` for settled
 design detail, and `docs/history.md` for the original build-out and rationale.
+
+## Local Install Layout (dev machine)
+
+Build into `build/` (`cmake --build build`). Two binaries, deliberately different:
+
+- **Session:** `/usr/bin/biome` is a symlink to `build/core/biome`, so a rebuild takes effect at the next login. `startforest-wayland` runs it.
+- **Greeter:** `/usr/local/bin/biome-greeter` is a static copy (`sudo install -m755 build/core/biome /usr/local/bin/biome-greeter`), refreshed by hand only when wanted. greetd's user can't exec out of `$HOME`, and `install` gives it the `bin_t` SELinux label (a `cp` from home keeps `user_home_t` and fails).
+
+greetd is started via the `greetd.service.d/50-forest.conf` drop-in with `--config /etc/forest/greetd.toml` (not `/etc/greetd/config.toml`, which is unused); its command is `/usr/local/bin/biome-greeter -s /usr/bin/forest-greeter`.
 
 ## Git Workflow
 

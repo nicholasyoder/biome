@@ -133,10 +133,7 @@ static wlr_texture *capture_frozen_client_texture(BiomeServer *server, wlr_textu
 // works for either of forest-logout's DimLevels without the compositor
 // needing to know which - the render pass's scalar `alpha` does the rest.
 void scanout_fade_render_tick(BiomeScanoutFade *fade, float fraction) {
-    // Buffer age is a damage-tracking hint for partial-redraw renderers;
-    // irrelevant here since every tick fully repaints the buffer.
-    int unused_age = 0;
-    wlr_buffer *frame_buffer = wlr_swapchain_acquire(fade->swapchain, &unused_age);
+    wlr_buffer *frame_buffer = wlr_swapchain_acquire(fade->swapchain);
     if (frame_buffer == nullptr) {
         return; // swapchain exhausted - shouldn't happen at one render/tick; skip this tick
     }

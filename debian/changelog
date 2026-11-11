@@ -1,3 +1,13 @@
+biome (0.2.1) unstable; urgency=medium
+
+  * Port to Fedora 45 and wlroots 0.20.
+  * Fix a crash when a layer-shell popup was created (xdg_popup
+    unconstraining now deferred to the initial commit).
+  * Force DRM Broadcast RGB to Full; per-output rgb_range override in
+    Biome.conf.
+
+ -- Nicholas Yoder <nicholasyoder@proton.me>  Wed, 11 Nov 2026 12:00:00 -0500
+
 biome (0.2.0) unstable; urgency=medium
 
   * Protocols: xdg-activation-v1 (launchers can raise existing windows;

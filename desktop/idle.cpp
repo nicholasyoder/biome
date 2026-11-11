@@ -21,7 +21,7 @@ void find_visible_buffer(wlr_scene_buffer *buffer, int sx, int sy, void *data) {
     (void)sx;
     (void)sy;
     auto *search = static_cast<VisibleSearch *>(data);
-    if (search->found || buffer->active_outputs == 0) {
+    if (search->found || buffer->primary_output == nullptr) {
         return;
     }
     wlr_scene_surface *scene_surface = wlr_scene_surface_try_from_buffer(buffer);
@@ -30,9 +30,8 @@ void find_visible_buffer(wlr_scene_buffer *buffer, int sx, int sy, void *data) {
     }
 }
 
-// The walk skips disabled subtrees, which matters: wlroots 0.18 leaves a
-// buffer's active_outputs stale when an ancestor is disabled (minimize,
-// workspace switch). active_outputs itself covers occlusion and offscreen.
+// The walk skips disabled subtrees; primary_output is NULL for occluded or
+// offscreen buffers.
 bool surface_visible(BiomeServer *server, wlr_surface *surface) {
     VisibleSearch search;
     search.surface = surface;

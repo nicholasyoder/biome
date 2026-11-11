@@ -107,7 +107,7 @@ research writeup).
   source.
 - Any future `GSource` on the default context is dispatched for free.
 
-Closing a nested backend's host window doesn't terminate Biome: wlroots 0.18
+Closing a nested backend's host window doesn't terminate Biome: wlroots
 handles `xdg_toplevel.close` with `wlr_output_destroy()`, not
 `wl_display_terminate()`. Intended, not a bridge bug.
 
@@ -293,11 +293,11 @@ An inhibitor counts only while its surface is visible on some enabled
 output, on any monitor, focused or not. It's re-evaluated on every output
 frame, since anything that shows or hides a surface damages an output.
 
-- Visibility = an enabled scene buffer for that surface with nonzero
-  `active_outputs` (this covers occlusion and offscreen). The walk must skip
-  disabled subtrees (`wlr_scene_node_for_each_buffer` does): wlroots 0.18
-  doesn't refresh `active_outputs` or fire `output_leave` when an *ancestor*
-  is disabled, so minimized and other-workspace windows keep stale values.
+- Visibility = an enabled scene buffer for that surface with a non-NULL
+  `primary_output` (this covers occlusion and offscreen). Disabling an
+  ancestor (minimize, workspace switch) clears the buffers below it in
+  wlroots 0.19+; 0.18 left `active_outputs` stale, which is why this once
+  needed a hand-rolled subtree skip.
 - Disabled (DPMS/blanked) outputs don't count, so inhibitors drop while
   everything is dark; the next frame after wake restores them.
 - Opaque lock surfaces occlude everything, so a locked session isn't held
@@ -325,11 +325,6 @@ the global.
 - Unrestricted: any client, sandboxed or not, can capture. Same stance as
   session-lock (no allowlist mechanism); `security-context-v1` (Phase 8) is
   the eventual fix.
-- wlroots 0.18.2 attaches the frame's `output_enable` listener to
-  `events.destroy`, so a frame pending when its output is DPMS'd/disabled
-  stalls until the output comes back (then completes). Requests on an
-  already-off output fail at once. Fixed upstream in 0.19 (31f9d6bb); not
-  worked around, since sending `failed` ourselves risks a later `ready`.
 - Captures while locked show the lock screen: it copies what's presented.
 
 ## Data control (`core/main.cpp`)

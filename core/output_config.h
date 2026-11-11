@@ -31,6 +31,12 @@ struct OutputConfig {
     // BiomeServer::output_layout_generation when `position` was recorded (Biome.conf = 0).
     unsigned position_generation = 0;
     wl_output_transform transform = WL_OUTPUT_TRANSFORM_NORMAL;
+
+    // DRM "Broadcast RGB". Full by default: with kernel >= 7.3 amdgpu's Automatic
+    // sends limited range to HDMI-capable sinks at CTA timings, and some monitors
+    // then show washed out.
+    enum class RgbRange { Full, Automatic, Limited };
+    RgbRange rgb_range = RgbRange::Full;
 };
 
 // Per-connector overrides keyed by wlr connector name. Malformed fields log

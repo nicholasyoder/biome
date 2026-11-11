@@ -80,6 +80,23 @@ wl_output_transform parse_transform(const QString &raw, const QString &connector
     return WL_OUTPUT_TRANSFORM_NORMAL;
 }
 
+OutputConfig::RgbRange parse_rgb_range(const QString &raw, const QString &connector) {
+    const QString v = raw.trimmed().toLower();
+    if (v == "full") return OutputConfig::RgbRange::Full;
+    if (v == "auto") return OutputConfig::RgbRange::Automatic;
+    if (v == "limited") return OutputConfig::RgbRange::Limited;
+    qWarning() << "Biome: output" << connector << "has unknown rgb_range" << raw << "- using full";
+    return OutputConfig::RgbRange::Full;
+}
+
+QString format_rgb_range(OutputConfig::RgbRange range) {
+    switch (range) {
+    case OutputConfig::RgbRange::Automatic: return "auto";
+    case OutputConfig::RgbRange::Limited: return "limited";
+    default: return "full";
+    }
+}
+
 double parse_scale(const QString &raw, const QString &connector) {
     bool ok = false;
     const double scale = raw.toDouble(&ok);
@@ -148,6 +165,7 @@ std::unordered_map<std::string, OutputConfig> load_output_configs() {
         }
 
         cfg.transform = parse_transform(settings.value(group + "transform", "normal").toString(), connector);
+        cfg.rgb_range = parse_rgb_range(settings.value(group + "rgb_range", "full").toString(), connector);
 
         result.emplace(connector.toStdString(), cfg);
     }
@@ -169,6 +187,7 @@ void save_output_configs(const std::vector<std::pair<std::string, OutputConfig>>
             settings.setValue(group + "y", cfg.position->second);
         }
         settings.setValue(group + "transform", format_transform(cfg.transform));
+        settings.setValue(group + "rgb_range", format_rgb_range(cfg.rgb_range));
     }
     settings.sync();
     if (settings.status() != QSettings::NoError) {

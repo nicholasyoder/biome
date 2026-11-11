@@ -2,7 +2,7 @@
 #
 # A few wlroots headers aren't valid C++ as-is, for two different reasons:
 #
-# - wlr_scene.h / wlr_matrix.h declare parameters like
+# - wlr_scene.h / render/color.h declare parameters like
 #   `const float color[static 4]`. That syntax is C99-only - a hard parse
 #   error in C++, not just a linkage issue `extern "C"` can paper over. The
 #   `static N` there is only a hint that the caller passes at least N
@@ -26,8 +26,8 @@
 # path so `#include <wlr/...>` resolves to the patched copy.
 
 find_package(PkgConfig REQUIRED)
-pkg_get_variable(WLROOTS_INCLUDEDIR wlroots-0.18 includedir)
-set(BIOME_WLROOTS_SYSTEM_INCLUDE_DIR "${WLROOTS_INCLUDEDIR}/wlroots-0.18")
+pkg_get_variable(WLROOTS_INCLUDEDIR wlroots-0.20 includedir)
+set(BIOME_WLROOTS_SYSTEM_INCLUDE_DIR "${WLROOTS_INCLUDEDIR}/wlroots-0.20")
 
 set(BIOME_WLROOTS_SHIM_DIR "${CMAKE_BINARY_DIR}/wlroots-cxx-shim")
 set(BIOME_WLROOTS_SHIM_HEADERS "")
@@ -52,7 +52,7 @@ function(biome_patch_cxx_header relpath)
 endfunction()
 
 biome_patch_cxx_header("wlr/types/wlr_scene.h")
-biome_patch_cxx_header("wlr/types/wlr_matrix.h")
+biome_patch_cxx_header("wlr/render/color.h")
 biome_patch_cxx_header("wlr/xwayland/xwayland.h"
     SED_EXPR "s/\\bclass\\b/class_/")
 biome_patch_cxx_header("wlr/types/wlr_layer_shell_v1.h"

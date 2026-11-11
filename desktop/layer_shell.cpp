@@ -434,7 +434,10 @@ static void handle_layer_surface_new_popup(wl_listener *listener, void *data) {
     wlr_box unconstrain_box = full_area;
     unconstrain_box.x = -wrapper->scene_layer_surface->tree->node.x;
     unconstrain_box.y = -wrapper->scene_layer_surface->tree->node.y;
-    wlr_xdg_popup_unconstrain_from_box(xdg_popup, &unconstrain_box);
+    // The popup isn't initialized yet; xdg_popup_commit applies this on its initial commit.
+    auto *popup = static_cast<BiomePopup *>(xdg_popup->base->surface->data);
+    popup->layer_unconstrain_box = unconstrain_box;
+    popup->has_layer_unconstrain_box = true;
 }
 
 static void handle_new_layer_surface(wl_listener *listener, void *data) {

@@ -4,7 +4,7 @@ cmake_minimum_required(VERSION 3.16)
 # it enabled here, CMake silently emits no compile rule for that source at
 # all rather than erroring, so the OBJECT library looks like it built but
 # is actually empty.
-project(biome VERSION 0.2.0 LANGUAGES CXX C)
+project(biome VERSION 0.2.1 LANGUAGES CXX C)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -22,7 +22,7 @@ include(BiomeProtocols)
 include(BiomeWlrootsShim)
 
 find_package(PkgConfig REQUIRED)
-pkg_check_modules(WLROOTS REQUIRED IMPORTED_TARGET wlroots-0.18)
+pkg_check_modules(WLROOTS REQUIRED IMPORTED_TARGET wlroots-0.20)
 pkg_check_modules(WAYLAND_SERVER REQUIRED IMPORTED_TARGET wayland-server)
 pkg_check_modules(XKBCOMMON REQUIRED IMPORTED_TARGET xkbcommon)
 
@@ -36,7 +36,7 @@ biome_generate_protocol_header(XDG_SHELL_PROTOCOL_HEADER XDG_SHELL_PROTOCOL_HEAD
 
 # wlr-layer-shell-unstable-v1 isn't part of the wayland-protocols package
 # (unlike xdg-shell above) - it originates in wlroots' own protocol/ dir and
-# isn't installed by the wlroots-0.18-dev package either, so a copy is
+# isn't installed by the wlroots-0.20-dev package either, so a copy is
 # vendored here instead of assuming a system path for it. wlr/types/
 # wlr_layer_shell_v1.h itself #includes the generated
 # "wlr-layer-shell-unstable-v1-protocol.h" by name, so this only needs
