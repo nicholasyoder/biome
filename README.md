@@ -45,7 +45,7 @@ on the resulting `.src.rpm`. Keep the spec's `Version` and `%changelog` in step 
 
 ### Debian
 
-`debian/` is kept for now but targets wlroots 0.18 and no longer builds on Trixie. A Debian package can be built from `debian/` with:
+`debian/` is kept for now and targets wlroots 0.20, so it no longer builds on Trixie (wlroots 0.18); it is untested on Debian sid. A Debian package can be built from `debian/` with:
 
 ```bash
 sudo apt build-dep .            # once: installs debian/control's Build-Depends
