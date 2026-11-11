@@ -22,6 +22,11 @@ struct BiomeForeignToplevel {
     // request listeners of its own (the list protocol has no requests
     // beyond destroy).
     wlr_ext_foreign_toplevel_handle_v1 *ext_handle = nullptr;
+    // Private always-enabled scene holding a second copy of the surface tree:
+    // capturing scene_tree itself would skip hidden (minimized/other-workspace)
+    // windows and include windows stacked above.
+    wlr_scene *capture_scene = nullptr;
+    wlr_ext_image_capture_source_v1 *capture_source = nullptr;
     wl_listener request_maximize = {};
     wl_listener request_minimize = {};
     wl_listener request_activate = {};
@@ -59,9 +64,38 @@ static void handle_request_close(wl_listener *listener, void *data) {
     close_toplevel(wrapper->toplevel);
 }
 
+static void handle_capture_request(wl_listener *listener, void *data) {
+    (void)listener;
+    auto *request = static_cast<wlr_ext_foreign_toplevel_image_capture_source_manager_v1_request *>(data);
+    auto *wrapper = static_cast<BiomeForeignToplevel *>(request->toplevel_handle->data);
+    if (wrapper == nullptr || wrapper->capture_scene == nullptr) {
+        wlr_ext_foreign_toplevel_image_capture_source_manager_v1_request_accept(request, nullptr); // inert resource
+        return;
+    }
+    // One source per toplevel, freed with capture_scene: each source owns a
+    // scene output that would otherwise pile up per request.
+    if (wrapper->capture_source == nullptr) {
+        BiomeServer *server = wrapper->toplevel->server;
+        wrapper->capture_source = wlr_ext_image_capture_source_v1_create_with_scene_node(
+            &wrapper->capture_scene->tree.node, wl_display_get_event_loop(server->display),
+            server->allocator, server->renderer);
+    }
+    if (wrapper->capture_source == nullptr) {
+        wlr_ext_foreign_toplevel_image_capture_source_manager_v1_request_accept(request, nullptr); // inert resource
+        return;
+    }
+    wlr_ext_foreign_toplevel_image_capture_source_manager_v1_request_accept(request, wrapper->capture_source);
+}
+
+static wl_listener capture_request_listener = {};
+
 void foreign_toplevel_init(BiomeServer *server) {
     server->foreign_toplevel_manager = wlr_foreign_toplevel_manager_v1_create(server->display);
     server->ext_foreign_toplevel_list = wlr_ext_foreign_toplevel_list_v1_create(server->display, 1);
+
+    auto *capture_manager = wlr_ext_foreign_toplevel_image_capture_source_manager_v1_create(server->display, 1);
+    capture_request_listener.notify = handle_capture_request;
+    wl_signal_add(&capture_manager->events.new_request, &capture_request_listener);
 }
 
 void foreign_toplevel_create(BiomeToplevel *toplevel) {
@@ -98,6 +132,15 @@ void foreign_toplevel_create(BiomeToplevel *toplevel) {
         ext_state.app_id = "";
         wrapper->ext_handle =
             wlr_ext_foreign_toplevel_handle_v1_create(server->ext_foreign_toplevel_list, &ext_state);
+        wrapper->ext_handle->data = wrapper;
+
+        wrapper->capture_scene = wlr_scene_create();
+        wrapper->capture_scene->restack_xwayland_surfaces = false;
+        if (toplevel->type == BiomeToplevelType::Xdg) {
+            wlr_scene_xdg_surface_create(&wrapper->capture_scene->tree, toplevel->xdg_toplevel->base);
+        } else {
+            wlr_scene_surface_create(&wrapper->capture_scene->tree, toplevel_surface(toplevel));
+        }
     }
 
     if (server->window_workspaces_changed != nullptr) {
@@ -119,6 +162,9 @@ void foreign_toplevel_destroy(BiomeToplevel *toplevel) {
     wl_list_remove(&wrapper->request_fullscreen.link);
     wl_list_remove(&wrapper->request_close.link);
 
+    if (wrapper->capture_scene != nullptr) {
+        wlr_scene_node_destroy(&wrapper->capture_scene->tree.node);
+    }
     // Sends the `closed` event to any client still holding this handle.
     wlr_foreign_toplevel_handle_v1_destroy(wrapper->handle);
     if (wrapper->ext_handle != nullptr) {

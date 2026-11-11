@@ -186,6 +186,9 @@ int main(int argc, char *argv[]) {
     // wlroots captures straight off output commits and requests the frame
     // itself; nothing else to wire. See architecture-notes.md "Screencopy".
     wlr_screencopy_manager_v1_create(server.display);
+    // Per-window sources are wired in foreign_toplevel_init.
+    wlr_ext_image_copy_capture_manager_v1_create(server.display, 1);
+    wlr_ext_output_image_capture_source_manager_v1_create(server.display, 1);
 
     output_manager_init(&server);
     session_lock_init(&server);
