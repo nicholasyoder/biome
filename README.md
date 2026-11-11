@@ -35,7 +35,7 @@ sudo dnf install gcc-c++ cmake pkgconf-pkg-config wlroots-devel wayland-devel \
 
 ```bash
 sudo dnf install rpm-build rpmdevtools           # once; plus the build deps above
-git archive --prefix=biome-0.2.0/ -o ~/rpmbuild/SOURCES/biome-0.2.0.tar.gz HEAD   # Source0 is the GitHub tag tarball
+git archive --prefix=biome-0.2.1/ -o ~/rpmbuild/SOURCES/biome-0.2.1.tar.gz HEAD   # Source0 is the GitHub tag tarball
 rpmbuild -ba packaging/biome.spec
 ```
 

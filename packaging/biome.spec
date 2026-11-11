@@ -1,5 +1,5 @@
 Name:           biome
-Version:        0.2.0
+Version:        0.2.1
 Release:        1%{?dist}
 Summary:        Fixed-policy Wayland compositor for Forest
 
@@ -51,6 +51,12 @@ install -Dpm 0644 debian/man/biome.1 %{buildroot}%{_mandir}/man1/biome.1
 %{_datadir}/xdg-desktop-portal/portals/biome.portal
 
 %changelog
+* Wed Nov 11 2026 Nicholas Yoder <nicholasyoder@proton.me> - 0.2.1-1
+- Port to Fedora 45 and wlroots 0.20
+- Fix a crash when a layer-shell popup was created (xdg_popup unconstraining
+  now deferred to the initial commit)
+- Force DRM Broadcast RGB to Full; per-output rgb_range override in Biome.conf
+
 * Mon Nov 09 2026 Nicholas Yoder <nicholasyoder@proton.me> - 0.2.0-1
 - Protocols: xdg-activation-v1, wlr-data-control, pointer-constraints,
   relative-pointer, pointer-gestures, wlr-gamma-control, single-pixel-buffer,
