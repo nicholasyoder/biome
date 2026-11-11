@@ -327,6 +327,19 @@ the global.
   the eventual fix.
 - Captures while locked show the lock screen: it copies what's presented.
 
+## Image copy capture (`core/main.cpp`, `desktop/foreign_toplevel.cpp`)
+
+`ext-image-copy-capture-v1` with output and foreign-toplevel sources (wlroots
+implements both; Biome creates the globals). Same unrestricted stance as
+screencopy.
+
+- Each `BiomeForeignToplevel` owns a private always-enabled `wlr_scene` holding
+  a second copy of the surface tree, and the capture source is built from that
+  scene. Capturing `scene_tree` directly would render nothing for hidden
+  (minimized/other-workspace) windows and would include windows stacked above.
+- One source per toplevel, created on first request, freed with the scene.
+- Frames are only sent on damage, so a static window yields one frame.
+
 ## Data control (`core/main.cpp`)
 
 wlroots implements `wlr-data-control-unstable-v1` entirely; Biome only creates

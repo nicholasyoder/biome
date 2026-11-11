@@ -63,9 +63,7 @@ Currently the single biggest user-visible gap versus sway/Hyprland
 
 ## Later (unscheduled) — rendering & wlroots bump (Phase 8)
 
-- **Adopt wlroots 0.20 features** (Biome now builds on 0.20.2). Unlocks `ext-image-copy-capture-v1` +
-  `ext-foreign-toplevel-image-capture-source-v1` (0.20 only; per-window capture
-  for Forest's task view / windowlist previews), `ext-data-control-v1`, and
+- **Adopt wlroots 0.20 features** (Biome now builds on 0.20.2). Unlocks `ext-data-control-v1` and
   `color-management-v1` / HDR (Hyprland and Sway 1.12 have it on wlroots
   0.20).
 - **`tearing-control-v1`** — lets fullscreen games/mpv request immediate
