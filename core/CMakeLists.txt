@@ -5,6 +5,8 @@ find_package(PkgConfig REQUIRED)
 pkg_check_modules(GLIB REQUIRED IMPORTED_TARGET glib-2.0)
 # pointer_constraints.cpp calls pixman directly; wlroots only links it privately.
 pkg_check_modules(PIXMAN REQUIRED IMPORTED_TARGET pixman-1)
+# output_color.cpp sets a DRM connector property directly.
+pkg_check_modules(LIBDRM REQUIRED IMPORTED_TARGET libdrm)
 
 add_executable(biome
     main.cpp
@@ -19,6 +21,8 @@ add_executable(biome
     output_management.cpp
     gamma.h
     gamma.cpp
+    output_color.h
+    output_color.cpp
     output_power.h
     output_power.cpp
     config.h
@@ -63,6 +67,7 @@ target_link_libraries(biome PRIVATE
     PkgConfig::XKBCOMMON
     PkgConfig::GLIB
     PkgConfig::PIXMAN
+    PkgConfig::LIBDRM
     Qt6::Core
     Qt6::DBus
 )

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 
 #include "core/output.h"
+#include "core/output_color.h"
 
 #include "core/layers.h"
 #include "core/output_arrange.h"
@@ -409,6 +410,7 @@ static void server_new_output(wl_listener *listener, void *data) {
 
     wlr_output_commit_state(wlr_output, &state);
     wlr_output_state_finish(&state);
+    output_set_full_range(server, wlr_output);
 
     // Second commit to blank: configured off, or an HPD bounce on power-off
     // (some DP monitors/docks do this) that must not re-light the screen.
