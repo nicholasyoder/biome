@@ -40,20 +40,6 @@ session logs or design discussion.
   Forest-specific shortcut needs justification, not just convenience. Full
   reasoning in `docs/history.md`'s "Decoupling goal" section (2026-08-22).
 
-## 0.2.1 — output color range
-
-- **Investigate the washed-out 1080p outputs on Fedora.** `Broadcast RGB` on
-  `Automatic` sent limited range to the 1080p@60 monitors (kernel 7.3.3 /
-  wlroots 0.20) and looked washed out; the same monitors were fine on Debian
-  with Biome on `Automatic`. Interim fix: `core/output_color.cpp` forces
-  `Broadcast RGB = Full` on every DRM output. Find out why Debian differed
-  (kernel/amdgpu behavior change, wlroots 0.18 vs 0.20, commit path) and
-  whether `Automatic` can be made to work; Full-by-default risks TVs that
-  only accept limited range.
-- **Fallback: per-output RGB range setting, like KWin.** If nothing better
-  turns up, add an `rgb_range` key (`full` default, `auto`, `limited`) to
-  `OutputConfig`, as KWin does per output (default `Automatic`).
-
 ## 0.3.0 — touch, tablet & accessibility input (Phase 7)
 
 Currently the single biggest user-visible gap versus sway/Hyprland
@@ -109,6 +95,10 @@ Currently the single biggest user-visible gap versus sway/Hyprland
   since wlroots refuses a modeset on a disabled output. Test the config, apply
   positions now, and defer an off output's mode/scale/transform to its
   power-on. Forest never applies while blanked; this covers other clients.
+- **Displays settings: per-output RGB range.** `rgb_range` is hand-edited in
+  `Biome.conf` only. No standard protocol carries it (wlr-output-management
+  has no such field), so a Forest control needs a Biome-specific mechanism;
+  revisit when there's a concrete need.
 - **Compositor-side window menu.** Restore/maximize/minimize/move/resize/
   always-on-top/move-to-workspace/close, popped up by Biome. Callers: its own
   titlebar (right-click, icon click), CSD clients via xdg `show_window_menu`

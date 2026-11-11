@@ -410,7 +410,7 @@ static void server_new_output(wl_listener *listener, void *data) {
 
     wlr_output_commit_state(wlr_output, &state);
     wlr_output_state_finish(&state);
-    output_set_full_range(server, wlr_output);
+    output_apply_rgb_range(server, wlr_output, cfg.rgb_range);
 
     // Second commit to blank: configured off, or an HPD bounce on power-off
     // (some DP monitors/docks do this) that must not re-light the screen.

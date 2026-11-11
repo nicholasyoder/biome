@@ -44,7 +44,13 @@ bool find_enum_prop(int fd, uint32_t connector_id, const char *name, const char 
 
 } // namespace
 
-void output_set_full_range(BiomeServer *server, wlr_output *output) {
+void output_apply_rgb_range(BiomeServer *server, wlr_output *output, OutputConfig::RgbRange range) {
+    const char *value_name = "Full";
+    switch (range) {
+    case OutputConfig::RgbRange::Automatic: value_name = "Automatic"; break;
+    case OutputConfig::RgbRange::Limited: value_name = "Limited 16:235"; break;
+    default: break;
+    }
     if (server->session == nullptr || !wlr_output_is_drm(output)) {
         return;
     }
@@ -58,13 +64,13 @@ void output_set_full_range(BiomeServer *server, wlr_output *output) {
         }
         uint32_t prop_id;
         uint64_t value;
-        if (!find_enum_prop(dev->fd, connector_id, "Broadcast RGB", "Full", &prop_id, &value)) {
+        if (!find_enum_prop(dev->fd, connector_id, "Broadcast RGB", value_name, &prop_id, &value)) {
             continue;
         }
         if (drmModeObjectSetProperty(dev->fd, connector_id, DRM_MODE_OBJECT_CONNECTOR, prop_id, value) != 0) {
-            wlr_log_errno(WLR_ERROR, "output %s: failed to set Broadcast RGB=Full", output->name);
+            wlr_log_errno(WLR_ERROR, "output %s: failed to set Broadcast RGB=%s", output->name, value_name);
         } else {
-            wlr_log(WLR_INFO, "output %s: Broadcast RGB set to Full", output->name);
+            wlr_log(WLR_INFO, "output %s: Broadcast RGB set to %s", output->name, value_name);
         }
         return;
     }
