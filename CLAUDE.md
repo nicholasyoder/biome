@@ -13,6 +13,14 @@ Build into `build/` (`cmake --build build`). Two binaries, deliberately differen
 
 greetd is started via the `greetd.service.d/50-forest.conf` drop-in with `--config /etc/forest/greetd.toml` (not `/etc/greetd/config.toml`, which is unused); its command is `/usr/local/bin/biome-greeter -s /usr/bin/forest-greeter`.
 
+## Debian Packaging
+
+`debian/` is kept in the repo for a possible return to Debian, but Fedora
+(`packaging/biome.spec`) is the real target. When a change affects packaging
+(new binaries or files, dependencies, man pages), update `debian/` alongside the
+spec, best effort. Don't build or test Debian packages; leave `debian/changelog`
+for release time.
+
 ## Git Workflow
 
 Same model in `biome` and `forest`:
