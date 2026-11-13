@@ -5,7 +5,11 @@
 #include "frame_widget.h" // repolish_tree, show_offscreen, flush_layouts
 
 #include <QAction>
+#include <QIcon>
 #include <QMenu>
+#include <QPainter>
+#include <QPen>
+#include <QPixmap>
 #include <QString>
 #include <QStyle>
 #include <QVBoxLayout>
@@ -39,6 +43,37 @@ public:
 
 MenuRoot *g_roots[2] = {};
 
+// Output outline (4:3) with the zone filled.
+QPixmap zone_pixmap(const MenuEntry::Zone &zone, const QSize &size, qreal dpr, const QColor &color) {
+    QPixmap pm(size * dpr);
+    pm.setDevicePixelRatio(dpr);
+    pm.fill(Qt::transparent);
+    QPainter p(&pm);
+    p.setRenderHint(QPainter::Antialiasing);
+    qreal w = size.width() - 1.0;
+    qreal h = qRound(w * 0.75) - 0.0;
+    QRectF out(0.5, (size.height() - h) / 2.0, w, h);
+    p.setPen(QPen(color, 1.0));
+    p.setBrush(Qt::NoBrush);
+    p.drawRoundedRect(out, 2, 2);
+    QRectF fill(out.x() + zone.x * out.width(), out.y() + zone.y * out.height(), zone.w * out.width(),
+        zone.h * out.height());
+    p.setPen(Qt::NoPen);
+    p.setBrush(color);
+    p.drawRoundedRect(fill.adjusted(1.5, 1.5, -1.5, -1.5), 1, 1);
+    return pm;
+}
+
+QIcon zone_icon(const MenuEntry::Zone &zone, const QMenu *menu, qreal dpr) {
+    int side = menu->style()->pixelMetric(QStyle::PM_SmallIconSize, nullptr, menu) + 4;
+    QSize size(side, side);
+    QIcon icon;
+    QPixmap pm = zone_pixmap(zone, size, dpr, menu->palette().color(QPalette::Text));
+    icon.addPixmap(pm, QIcon::Normal);
+    icon.addPixmap(pm, QIcon::Active); // hover highlight is subtle; keep the text color
+    return icon;
+}
+
 } // namespace
 
 RenderedMenu render_menu(int panel, const std::vector<MenuEntry> &entries, int hovered_id, double scale) {
@@ -71,6 +106,9 @@ RenderedMenu render_menu(int panel, const std::vector<MenuEntry> &entries, int h
         label.replace('&', "&&");
         auto *action = new QAction(label, menu);
         action->setEnabled(entry.enabled);
+        if (entry.zone.w > 0) {
+            action->setIcon(zone_icon(entry.zone, menu, scale));
+        }
         if (entry.checked) {
             action->setCheckable(true);
             action->setChecked(true);

@@ -6,7 +6,7 @@ Changelog
   - Read the theme's [Palette]: it sets the app palette, and the window-snap and Alt-Tab highlight color now follows the theme's highlight color. Theme loading now comes from Forest's forest-theme library (new build dependency: forest-theme-devel)
   - Add a compositor-side window menu (restore/maximize, minimize, move, resize, always on top, move to workspace, close), opened by right-clicking the titlebar, clicking the titlebar icon, or a client-side-decorated app's own titlebar menu; styled by the theme's shared.css, shared with Forest
   - Add always-on-top windows
-  - Add window snapping: drag a titlebar to a screen edge or corner (with a preview) to tile to a half, quarter or maximize, or right-click / press-and-hold the maximize button for a snap menu
+  - Add window snapping: drag a titlebar to a screen edge or corner (with a preview) to tile to a half, quarter or maximize, or right-click / press-and-hold the maximize button for a snap menu with layout icons
   - Add ext-image-copy-capture-v1 with per-window and per-output capture sources; hidden (minimized or other-workspace) windows capture too
 
 * Release 0.2.1 - 2026-11-11

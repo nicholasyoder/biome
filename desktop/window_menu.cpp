@@ -111,12 +111,13 @@ std::vector<MenuEntry> main_entries(const BiomeToplevel *t) {
 std::vector<MenuEntry> snap_entries(const BiomeToplevel *t) {
     std::vector<MenuEntry> entries;
     bool normal = !t->fullscreen;
-    auto add = [&](int id, const char *label, bool checked = false) {
+    auto add = [&](int id, const char *label, bool checked = false, MenuEntry::Zone zone = {0, 0, 1, 1}) {
         MenuEntry e;
         e.id = id;
         e.label = label;
         e.enabled = normal;
         e.checked = checked;
+        e.zone = zone;
         entries.push_back(e);
     };
     auto sep = [&] {
@@ -124,8 +125,8 @@ std::vector<MenuEntry> snap_entries(const BiomeToplevel *t) {
         e.separator = true;
         entries.push_back(e);
     };
-    auto zone = [&](SnapZone z, const char *label) {
-        add(kSnapBase + static_cast<int>(z), label, t->snap_zone == z);
+    auto zone = [&](SnapZone z, const char *label, MenuEntry::Zone rect) {
+        add(kSnapBase + static_cast<int>(z), label, t->snap_zone == z, rect);
     };
     if (t->maximized || t->snap_zone != SnapZone::None) {
         add(kMaximize, "Restore");
@@ -133,15 +134,15 @@ std::vector<MenuEntry> snap_entries(const BiomeToplevel *t) {
         add(kMaximize, "Maximize");
     }
     sep();
-    zone(SnapZone::Left, "Left Half");
-    zone(SnapZone::Right, "Right Half");
-    zone(SnapZone::TopHalf, "Top Half");
-    zone(SnapZone::BottomHalf, "Bottom Half");
+    zone(SnapZone::Left, "Left Half", {0, 0, .5, 1});
+    zone(SnapZone::Right, "Right Half", {.5, 0, .5, 1});
+    zone(SnapZone::TopHalf, "Top Half", {0, 0, 1, .5});
+    zone(SnapZone::BottomHalf, "Bottom Half", {0, .5, 1, .5});
     sep();
-    zone(SnapZone::TopLeft, "Top Left");
-    zone(SnapZone::TopRight, "Top Right");
-    zone(SnapZone::BottomLeft, "Bottom Left");
-    zone(SnapZone::BottomRight, "Bottom Right");
+    zone(SnapZone::TopLeft, "Top Left", {0, 0, .5, .5});
+    zone(SnapZone::TopRight, "Top Right", {.5, 0, .5, .5});
+    zone(SnapZone::BottomLeft, "Bottom Left", {0, .5, .5, .5});
+    zone(SnapZone::BottomRight, "Bottom Right", {.5, .5, .5, .5});
     return entries;
 }
 

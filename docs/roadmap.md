@@ -43,14 +43,6 @@ session logs or design discussion.
   reasoning in `docs/history.md`'s "Decoupling goal" section (2026-08-22).
 
 
-## 0.3.0 — window snapping & menu
-
-Pairs with Forest 0.11.0.
-
-- **Snap menu with layout icons.** The maximize-button snap menu is a plain
-  QMenu of text items; replace it with a macOS-style picker whose icons show
-  which part of the output each zone fills.
-
 ## 0.4.0 — touch & tablet input (Phase 7)
 
 Pairs with Forest 0.12.0. Currently the single biggest user-visible gap versus
