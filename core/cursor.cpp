@@ -351,7 +351,11 @@ static void process_cursor_motion(BiomeServer *server, uint32_t time) {
         biome_decoration::Region region = biome_decoration::Region::None;
         BiomeToplevel *decoration_toplevel =
             decoration_toplevel_at_node(node, sx, sy, &region);
-        wlr_cursor_set_xcursor(server->cursor, server->cursor_mgr, resize_cursor_name(region));
+        // Skip when a non-toplevel surface (layer-shell, popup) is under the
+        // cursor: it owns the cursor image, and resetting it here every motion
+        // would wipe what the client set on enter.
+        if (!surface)
+            wlr_cursor_set_xcursor(server->cursor, server->cursor_mgr, resize_cursor_name(region));
         update_decoration_hover(server, decoration_toplevel, region);
     } else {
         update_decoration_hover(server, nullptr, biome_decoration::Region::None);
