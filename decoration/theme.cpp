@@ -6,7 +6,9 @@
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
-#include <QSettings>
+#include <QPalette>
+#include <QStyle>
+#include <forest-theme/foresttheme.h>
 #include <QStringList>
 #include <QIODevice>
 #include <QString>
@@ -34,38 +36,33 @@ QString read_file(const QString &path) {
     return QString::fromUtf8(file.readAll());
 }
 
-// Same algorithm as Forest's fstyleloader: parent_themes layers, then the theme itself.
+// Applies the theme's [Palette] to the app and returns QSS defaults derived
+// from it, prepended so a layer's biome.css can still override them.
+QString apply_palette(const QString &dir, const QStringList &layers) {
+    bool found = false;
+    const QPalette pal = foresttheme::palette(dir, layers, QApplication::style()->standardPalette(), &found);
+    if (!found) {
+        return {};
+    }
+    QApplication::setPalette(pal);
+    const QColor hl = pal.color(QPalette::Highlight);
+    return QString("QFrame#biomeSwitcherHighlight { background: rgba(%1, %2, %3, 15%); border-color: rgb(%1, %2, %3); }\n")
+        .arg(hl.red()).arg(hl.green()).arg(hl.blue());
+}
+
 QString external_stylesheet(const QString &dir, const QString &name) {
-    const QString theme_dir = QDir(dir).filePath(name);
-    if (!QFileInfo::exists(QDir(theme_dir).filePath("theme.conf"))) {
+    if (!QFileInfo::exists(QDir(dir).filePath(name + "/theme.conf"))) {
         qWarning("biome: theme '%s' not found in %s", qPrintable(name), qPrintable(dir));
         return {};
     }
-    QSettings conf(QDir(theme_dir).filePath("theme.conf"), QSettings::IniFormat);
-    QStringList layers = conf.value("parent_themes").toStringList();
-    layers.append(name);
-
+    const QStringList layers = foresttheme::chain(dir, name);
     // shared.css is shared with Forest's own menus (fstyleloader).
-    QString sheet;
-    for (const QString &layer : layers) {
-        for (const char *file : {"biome.css", "shared.css"}) {
-            const QString path = QDir(dir).filePath(layer + "/" + file);
-            if (!QFileInfo::exists(path)) {
-                continue;
-            }
-            QFile f(path);
-            if (!f.open(QIODevice::ReadOnly | QIODevice::Text)) {
-                qWarning("biome: cannot read %s", qPrintable(path));
-                continue;
-            }
-            sheet += QString::fromUtf8(f.readAll()) + '\n';
-        }
-    }
+    const QString sheet = foresttheme::stylesheet(dir, layers, {"biome", "shared"});
     if (sheet.trimmed().isEmpty()) {
         qWarning("biome: theme '%s' has no biome.css/shared.css layers", qPrintable(name));
         return {};
     }
-    return sheet;
+    return apply_palette(dir, layers) + sheet;
 }
 
 } // namespace
@@ -73,6 +70,7 @@ QString external_stylesheet(const QString &dir, const QString &name) {
 void load_decoration_theme(const QString &dir, const QString &name) {
     ensure_decoration_resources_registered();
 
+    QApplication::setPalette(QApplication::style()->standardPalette()); // drop a previous theme's palette
     QString stylesheet;
     if (!dir.isEmpty() && !name.isEmpty()) {
         stylesheet = external_stylesheet(dir, name);

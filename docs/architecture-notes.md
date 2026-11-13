@@ -414,11 +414,19 @@ closing the window — already moves focus, so there's no dedicated
 ## External decoration themes (`decoration/theme.cpp`, `ipc/theme_watcher.cpp`)
 
 Config `[Theme] dir=` + `name=` selects a layered theme: `<dir>/<name>/theme.conf`
-(`[General] parent_themes`, comma list), then `<dir>/<layer>/biome.css`
-concatenated for parents + the theme itself (same format as Forest's
-`fstyleloader`; don't change one without the other). Layers without `biome.css`
-are skipped; no usable layer, or keys unset → compiled-in `builtin.qss`. An
-external theme replaces the built-in one, it isn't layered over it.
+(`[General] parent_themes`, comma list), then `<dir>/<layer>/biome.css` and
+`shared.css` concatenated for parents + the theme itself. Parsing (layer chain,
+`[Palette]` -> `QPalette`, CSS concatenation) is the header-only `forest-theme`
+library, built from the Forest repo and shared with `fstyleloader` (build
+dependency `forest-theme-devel`, no runtime dependency). Layers without
+`biome.css` are skipped; no usable layer, or keys unset → compiled-in
+`builtin.qss`. An external theme replaces the built-in one, it isn't layered
+over it.
+
+The theme's `[Palette]` is applied to the app palette, and `theme.cpp` prepends
+palette-derived QSS defaults (currently the snap/Alt-Tab highlight, from
+`highlight`) that a layer's `biome.css` can override. The built-in theme keeps
+Qt's default palette and its own hardcoded highlight.
 
 Live reload: `theme_watcher` watches `~/.config/Biome/` (atomic-rename writes),
 re-reads config fresh (`load_biome_config()`), and only on a `Theme/*` change

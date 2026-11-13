@@ -18,6 +18,7 @@ BuildRequires:  pkgconfig(pixman-1)
 BuildRequires:  pkgconfig(glib-2.0)
 BuildRequires:  pkgconfig(xcb-ewmh)
 BuildRequires:  cmake(Qt6Widgets)
+BuildRequires:  cmake(ForestTheme)
 
 Requires:       xorg-x11-server-Xwayland
 Recommends:     xdg-desktop-portal

@@ -23,14 +23,19 @@ Builds default to `BIOME_DEV_BUILD=ON` (ALT+Escape quits the compositor, debug-l
 - `wlroots-0.20` (pkg-config)
 - `wayland-server`, `wayland-protocols`, `xkbcommon`, `pixman`, `glib-2.0`
 - `xcb-ewmh`, Qt 6 Widgets
+- `ForestTheme` CMake package (header-only theme loader from the [Forest](https://github.com/nicholasyoder/forest) repo, `forest-theme-devel` package; build-time only)
 
 On Fedora:
 
 ```bash
 sudo dnf install gcc-c++ cmake pkgconf-pkg-config wlroots-devel wayland-devel \
   wayland-protocols-devel libxkbcommon-devel pixman-devel glib2-devel \
-  qt6-qtbase-devel xcb-util-wm-devel
+  qt6-qtbase-devel xcb-util-wm-devel forest-theme-devel
 ```
+
+If `forest-theme-devel` isn't installed system-wide (e.g. Forest is only staged
+from a build tree), point CMake at it: `cmake -B build -DCMAKE_PREFIX_PATH=<prefix containing share/cmake/ForestTheme>`.
+The path is cached, so later rebuilds don't need it again.
 
 ## Packaging
 

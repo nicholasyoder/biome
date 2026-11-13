@@ -1,4 +1,5 @@
 find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets)
+find_package(ForestTheme REQUIRED)
 
 set(CMAKE_AUTOMOC ON)
 
@@ -26,4 +27,5 @@ target_include_directories(biome_decoration PUBLIC ${CMAKE_SOURCE_DIR})
 target_link_libraries(biome_decoration PUBLIC
     Qt6::Gui
     Qt6::Widgets
+    ForestTheme::ForestTheme
 )
