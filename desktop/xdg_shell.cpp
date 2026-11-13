@@ -6,6 +6,7 @@
 #include "desktop/decoration_bridge.h"
 #include "desktop/foreign_toplevel.h"
 #include "desktop/switcher.h"
+#include "desktop/window_menu.h"
 #include "desktop/toplevel.h"
 #include "desktop/workspace.h"
 
@@ -171,6 +172,7 @@ static void xdg_toplevel_destroy(wl_listener *listener, void *data) {
     wl_list_remove(&toplevel->destroy.link);
     wl_list_remove(&toplevel->request_move.link);
     wl_list_remove(&toplevel->request_resize.link);
+    wl_list_remove(&toplevel->request_show_window_menu.link);
     wl_list_remove(&toplevel->request_maximize.link);
     wl_list_remove(&toplevel->request_fullscreen.link);
     wl_list_remove(&toplevel->request_minimize.link);
@@ -191,6 +193,7 @@ static void xdg_toplevel_destroy(wl_listener *listener, void *data) {
 
     clear_decoration_tracking(toplevel->server, toplevel);
     switcher_remove_toplevel(toplevel->server, toplevel);
+    window_menu_remove_toplevel(toplevel->server, toplevel);
     free(toplevel);
 }
 
@@ -200,6 +203,23 @@ static void xdg_toplevel_request_resize(wl_listener *listener, void *data) {
     auto *event = static_cast<wlr_xdg_toplevel_resize_event *>(data);
     BiomeToplevel *toplevel = wl_container_of(listener, toplevel, request_resize);
     begin_interactive(toplevel, BiomeCursorMode::Resize, event->edges, true);
+}
+
+// CSD client asking for the window menu (e.g. right-click on its titlebar).
+static void xdg_toplevel_request_show_window_menu(wl_listener *listener, void *data) {
+    BiomeToplevel *toplevel = wl_container_of(listener, toplevel, request_show_window_menu);
+    auto *event = static_cast<wlr_xdg_toplevel_show_window_menu_event *>(data);
+    wlr_seat *seat = toplevel->server->seat;
+    // Same spoofing check as begin_interactive's: only from the pointer-focused client.
+    wlr_surface *focused = seat->pointer_state.focused_surface;
+    if (!toplevel->placed || focused == nullptr ||
+            toplevel_surface(toplevel) != wlr_surface_get_root_surface(focused)) {
+        return;
+    }
+    // content_tree's origin is the surface's geometry origin.
+    int x = toplevel->scene_tree->node.x + toplevel->content_tree->node.x + event->x;
+    int y = toplevel->scene_tree->node.y + toplevel->content_tree->node.y + event->y;
+    window_menu_open(toplevel, x, y);
 }
 
 // Pre-map requests go through toplevel_configure_premap instead; one sent
@@ -299,6 +319,8 @@ static void server_new_xdg_toplevel(wl_listener *listener, void *data) {
     wl_signal_add(&xdg_toplevel->events.request_move, &toplevel->request_move);
     toplevel->request_resize.notify = xdg_toplevel_request_resize;
     wl_signal_add(&xdg_toplevel->events.request_resize, &toplevel->request_resize);
+    toplevel->request_show_window_menu.notify = xdg_toplevel_request_show_window_menu;
+    wl_signal_add(&xdg_toplevel->events.request_show_window_menu, &toplevel->request_show_window_menu);
     toplevel->request_maximize.notify = xdg_toplevel_request_maximize;
     wl_signal_add(&xdg_toplevel->events.request_maximize, &toplevel->request_maximize);
     toplevel->request_fullscreen.notify = xdg_toplevel_request_fullscreen;

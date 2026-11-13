@@ -193,3 +193,35 @@ QFrame#biomeSwitcherHighlight {
     border: 2px solid rgb(90, 150, 220);
     border-radius: 4px;
 }
+
+/* Window menu: mirrors Forest's base + base-dark + base-rounded shared.css. */
+QMenu {
+    background: rgb(30, 30, 30);
+    border: 1px solid rgba(0, 0, 0, 40%);
+    border-radius: 5px;
+    margin: 5px;
+    padding: 7px;
+    color: white;
+    icon-size: 22px;
+    font-size: 10pt;
+}
+QMenu::item {
+    min-height: 22px;
+    max-height: 22px;
+    padding: 4px 12px;
+    color: white;
+    border: 1px solid transparent;
+    border-radius: 3px;
+}
+QMenu::item:selected {
+    background: rgba(50, 50, 50, 70%);
+    border: 1px solid rgba(60, 60, 60, 60%);
+}
+QMenu::item:disabled { color: rgb(120, 120, 120); }
+QMenu::icon, QMenu::indicator { left: 8px; }
+QMenu::separator {
+    background: rgba(200, 200, 200, 80%);
+    height: 1px;
+    margin: 4px 2px;
+}
+QMenu::right-arrow { width: 15px; height: 10px; }

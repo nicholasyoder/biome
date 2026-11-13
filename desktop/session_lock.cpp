@@ -2,6 +2,8 @@
 
 #include "desktop/session_lock.h"
 
+#include "desktop/window_menu.h"
+
 #include "core/output.h"
 #include "desktop/workspace.h"
 
@@ -154,6 +156,7 @@ static void handle_new_session_lock(wl_listener *listener, void *data) {
     wl_signal_add(&lock->events.destroy, &server->lock_destroy);
 
     server->session_locked = true;
+    window_menu_close(server);
     wlr_seat_keyboard_notify_clear_focus(server->seat);
     wlr_seat_pointer_notify_clear_focus(server->seat);
 

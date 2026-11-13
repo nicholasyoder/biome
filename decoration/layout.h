@@ -18,6 +18,7 @@ namespace biome_decoration {
 enum class Region {
     None,
     Titlebar,
+    Icon, // titlebar app icon: opens the window menu
     ButtonMinimize,
     ButtonMaximize,
     ButtonClose,

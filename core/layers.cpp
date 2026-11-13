@@ -6,6 +6,7 @@ void scene_layers_init(BiomeServer *server) {
     server->layers.background = wlr_scene_tree_create(&server->scene->tree);
     server->layers.bottom = wlr_scene_tree_create(&server->scene->tree);
     server->layers.toplevels = wlr_scene_tree_create(&server->scene->tree);
+    server->layers.above = wlr_scene_tree_create(&server->scene->tree);
     server->layers.top = wlr_scene_tree_create(&server->scene->tree);
     server->layers.overlay = wlr_scene_tree_create(&server->scene->tree);
     server->layers.fullscreen = wlr_scene_tree_create(&server->scene->tree);

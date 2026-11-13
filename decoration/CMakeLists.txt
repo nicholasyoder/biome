@@ -16,6 +16,8 @@ add_library(biome_decoration STATIC
     switcher.cpp
     switcher_highlight.h
     switcher_highlight.cpp
+    menu.h
+    menu.cpp
     ${BIOME_DECORATION_QRC_SOURCES}
 )
 

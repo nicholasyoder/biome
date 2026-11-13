@@ -19,6 +19,8 @@ add_library(biome_desktop STATIC
     decoration_bridge.cpp
     switcher.h
     switcher.cpp
+    window_menu.h
+    window_menu.cpp
     session_lock.h
     session_lock.cpp
     idle.h

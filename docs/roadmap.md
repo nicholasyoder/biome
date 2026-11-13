@@ -47,17 +47,12 @@ session logs or design discussion.
 
 Pairs with Forest 0.11.0.
 
-- **Compositor-side window menu.** Restore/maximize/minimize/move/resize/
-  always-on-top/move-to-workspace/close, popped up by Biome. Callers: its own
-  titlebar (right-click, icon click), CSD clients via xdg `show_window_menu`
-  (then advertise `WINDOW_MENU` in `wm_capabilities`), and the snapping
-  menu below.
 - **Window snapping / tiling zones.** Snap a window to a half or quarter of
   the output (or maximize) by dragging it to a screen edge/corner, and via a
   menu on right-click or press-and-hold of the decoration's maximize button.
   Biome draws the decorations, so both the drag zones (with a preview
-  overlay) and the button menu are compositor-side. Related: xdg-shell `show_window_menu`
-  is ignored (no WINDOW_MENU capability advertised) until a menu exists.
+  overlay) and the button menu are compositor-side. The button menu can reuse
+  the window menu's renderer (`decoration/menu.h`, `desktop/window_menu.cpp`).
 - **Minor opportunistic protocols** — `single-pixel-buffer-v1`, `content-type-v1`,
   `alpha-modifier-v1`. Toolkits probe for these and fall back gracefully if
   absent — pick up opportunistically rather than as a dedicated push.

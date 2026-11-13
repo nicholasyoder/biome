@@ -57,10 +57,11 @@ struct BiomeServer {
     // server->scene->tree, in this order bottom to top - order is z-order in
     // wlr_scene, so this list *is* the compositor's global stacking policy,
     // not just a naming convenience:
-    //   background -> bottom -> toplevels -> top -> overlay -> fullscreen -> session_lock
+    //   background -> bottom -> toplevels -> above -> top -> overlay -> fullscreen -> session_lock
     // background/bottom/top/overlay correspond 1:1 to wlr-layer-shell's own
     // four zwlr_layer_shell_v1_layer values (desktop/layer_shell.cpp);
-    // toplevels is where every normal window's scene_tree lives. fullscreen
+    // toplevels is where every normal window's scene_tree lives; above holds
+    // always-on-top ones (BiomeToplevel::always_on_top), below the panel. fullscreen
     // is where set_toplevel_fullscreen (desktop/toplevel.h) reparents a
     // toplevel's scene_tree for the duration of being fullscreen, and back
     // to toplevels on restore - above every layer-shell layer (a fullscreen
@@ -77,6 +78,7 @@ struct BiomeServer {
         wlr_scene_tree *background = nullptr;
         wlr_scene_tree *bottom = nullptr;
         wlr_scene_tree *toplevels = nullptr;
+        wlr_scene_tree *above = nullptr;
         wlr_scene_tree *top = nullptr;
         wlr_scene_tree *overlay = nullptr;
         wlr_scene_tree *fullscreen = nullptr;
@@ -214,6 +216,10 @@ struct BiomeServer {
     double grab_x = 0, grab_y = 0;
     wlr_box grab_geobox = {};
     uint32_t resize_edges = 0;
+    // The grab came from the window menu: no button is held, so the next
+    // press ends it (and its release is swallowed).
+    bool grab_from_menu = false;
+    bool swallow_release = false;
 
     // Layout-space origin of the pointer-focused surface's local (0,0),
     // cached on each enter (core/cursor.cpp) so a button-held drag can keep

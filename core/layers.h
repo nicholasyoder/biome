@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 //
-// Creates the six fixed, persistent scene trees making up
+// Creates the seven fixed, persistent scene trees making up
 // BiomeServer::layers - see that field's doc comment in server.h for the
 // stacking order and why it exists.
 

@@ -6,6 +6,7 @@
 #include "core/keybindings.h"
 #include "desktop/idle.h"
 #include "desktop/switcher.h"
+#include "desktop/window_menu.h"
 #include "desktop/xdg_activation.h"
 
 #include <xkbcommon/xkbcommon.h>
@@ -62,6 +63,20 @@ static void keyboard_handle_key(wl_listener *listener, void *data) {
     const xkb_keysym_t *syms;
     int nsyms = xkb_state_key_get_syms(
         keyboard->wlr->xkb_state, keycode, &syms);
+
+    // An open window menu is modal for the keyboard.
+    {
+        bool menu_consumed = false;
+        for (int i = 0; i < nsyms; i++) {
+            menu_consumed |= window_menu_key(server, keycode, syms[i], event->state == WL_KEYBOARD_KEY_STATE_PRESSED);
+        }
+        if (nsyms == 0) {
+            menu_consumed = window_menu_key(server, keycode, XKB_KEY_NoSymbol, event->state == WL_KEYBOARD_KEY_STATE_PRESSED);
+        }
+        if (menu_consumed) {
+            return;
+        }
+    }
 
     // handle_key_press() runs on every press regardless of which modifiers
     // are held - portal-registered shortcuts (core/keybindings.h) aren't

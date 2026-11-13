@@ -2,6 +2,8 @@
 
 #include "desktop/decoration_bridge.h"
 
+#include "desktop/window_menu.h"
+
 #include "core/cursor.h"
 #include "decoration/renderer.h"
 #include "decoration/theme.h"
@@ -401,6 +403,13 @@ static void handle_decoration_click(BiomeToplevel *toplevel, biome_decoration::R
         // on the first real motion instead, in process_cursor_move.
         begin_interactive(toplevel, BiomeCursorMode::Move, 0, false);
         break;
+    case Region::Icon: {
+        wlr_box frame;
+        toplevel_get_frame_box(toplevel, &frame);
+        int titlebar = decoration_titlebar_height(toplevel, toplevel->maximized);
+        window_menu_open(toplevel, frame.x, frame.y + titlebar, titlebar);
+        break;
+    }
     case Region::ResizeN:
         begin_interactive(toplevel, BiomeCursorMode::Resize, WLR_EDGE_TOP, false);
         break;
