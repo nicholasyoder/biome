@@ -6,7 +6,7 @@ design detail, and `docs/history.md` for the original build-out and rationale.
 
 ## Local Install Layout (dev machine)
 
-Build into `build/` (`cmake --build build`). Two binaries, deliberately different:
+Build into `build/` (`cmake --build build`). Needs Forest's `ForestTheme` package: this machine has it only in the staging prefix, so `build/` is configured with `-DCMAKE_PREFIX_PATH=/opt/forest-build/usr` (cached; rerun forest's `install_to_staging.sh` if the library changes). Two binaries, deliberately different:
 
 - **Session:** `/usr/bin/biome` is a symlink to `build/core/biome`, so a rebuild takes effect at the next login. `startforest-wayland` runs it.
 - **Greeter:** `/usr/local/bin/biome-greeter` is a static copy (`sudo install -m755 build/core/biome /usr/local/bin/biome-greeter`), refreshed by hand only when wanted. greetd's user can't exec out of `$HOME`, and `install` gives it the `bin_t` SELinux label (a `cp` from home keeps `user_home_t` and fails).
