@@ -426,6 +426,28 @@ calls `reload_decoration_theme()`: restyle, re-layout every frame, keep each
 window's content origin fixed, re-render, then `toplevels_relocate_for_layout`
 to re-fit maximized/fullscreen windows. Drop-in (`/etc`) changes aren't watched.
 
+### Window menu (`decoration/menu.cpp`, `desktop/window_menu.cpp`)
+
+A real `QMenu` rendered offscreen like the switcher (transparent `MenuRoot`
+parent, `Qt::Widget` flags, hover via `setActiveAction`); the compositor does
+all input. Its QSS comes from each theme layer's `shared.css`, the same file
+Forest's `fstyleloader` appends to every app's stylesheet, so menu styling is
+defined once (anything else both should style identically goes there too). `theme.cpp` loads `shared.css` after `biome.css` per layer; an
+external theme without one gets unstyled menus. `builtin.qss` carries a copy.
+
+- Modal: while open, `cursor.cpp` and `input.cpp` consume pointer/keyboard
+  input before anything else. A release activates only after a press landed
+  inside the menu, so the opening click's release can't trigger an item; that
+  release is still forwarded to the seat if the seat saw the press.
+- Move/Resize from the menu warp the cursor onto the titlebar / bottom-right
+  corner and set `grab_from_menu`: no button is held, so the next press ends
+  the grab.
+- `layers.above` holds always-on-top windows (`toplevel_layer()`); fullscreen
+  still wins while set.
+- Closed on workspace switch, session lock and target unmap/move.
+- xdg `show_window_menu` is honored only from the pointer-focused client
+  (`WINDOW_MENU` is advertised). Xwayland has no equivalent request.
+
 ### Selector contract (renaming any of these breaks shell themes)
 
 | Selector | Widget |
@@ -440,6 +462,7 @@ to re-fit maximized/fullscreen windows. Drop-in (`/etc`) changes aren't watched.
 | `QWidget#biomeSwitcherRoot`, `QFrame#biomeSwitcherPanel` | Switcher |
 | `QToolButton#biomeSwitcherIcon` | Switcher entry; prop `selected` |
 | `QLabel#biomeSwitcherTitleLabel` | Switcher title |
+| `QWidget#biomeMenuRoot`, `QMenu#biomeMenu` | Window menu (styled by plain `QMenu` rules in `shared.css`) |
 | `QWidget#biomeSwitcherHighlightRoot`, `QFrame#biomeSwitcherHighlight` | Switcher highlight |
 
 Icon `url()`s must be absolute paths (Qt resolves relative ones against the

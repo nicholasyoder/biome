@@ -222,7 +222,7 @@ static void restack_fullscreen_for_focus(BiomeToplevel *toplevel) {
         wl_list_for_each(t, &server->toplevels, link) {
             if (t != toplevel && t->scene_tree->node.parent == server->layers.fullscreen
                     && toplevel_content_output(t) == output) {
-                wlr_scene_node_reparent(&t->scene_tree->node, server->layers.toplevels);
+                wlr_scene_node_reparent(&t->scene_tree->node, toplevel_layer(t));
             }
         }
     }
@@ -389,7 +389,7 @@ static bool place_premap_toplevel(BiomeToplevel *toplevel) {
         toplevel->maximized = false;
         if (toplevel->fullscreen) {
             toplevel->fullscreen = false;
-            wlr_scene_node_reparent(&toplevel->scene_tree->node, toplevel->server->layers.toplevels);
+            wlr_scene_node_reparent(&toplevel->scene_tree->node, toplevel_layer(toplevel));
         }
         wlr_scene_node_set_position(&toplevel->content_tree->node,
             decoration_border_width(toplevel, false), decoration_titlebar_height(toplevel, false));
@@ -618,7 +618,7 @@ void set_toplevel_fullscreen(BiomeToplevel *toplevel, bool fullscreen, wlr_outpu
     } else {
         target = toplevel->fullscreen_restore_box;
         toplevel->fullscreen = false;
-        wlr_scene_node_reparent(&toplevel->scene_tree->node, toplevel->server->layers.toplevels);
+        wlr_scene_node_reparent(&toplevel->scene_tree->node, toplevel_layer(toplevel));
         // Fullscreened before map: no pre-fullscreen box was ever captured.
         if (wlr_box_empty(&target) && toplevel->maximized) {
             target = maximize_target_box(toplevel);
@@ -666,15 +666,14 @@ void toplevel_configure_premap(BiomeToplevel *toplevel) {
     toplevel->fullscreen_restore_box = {};
 
     wlr_scene_node_reparent(&toplevel->scene_tree->node,
-        toplevel->fullscreen ? server->layers.fullscreen : server->layers.toplevels);
+        toplevel->fullscreen ? server->layers.fullscreen : toplevel_layer(toplevel));
     wlr_scene_node_set_position(&toplevel->content_tree->node,
         decoration_border_width(toplevel, toplevel->maximized),
         decoration_titlebar_height(toplevel, toplevel->maximized));
 
-    // No WINDOW_MENU: Biome has no window menu, so show_window_menu is ignored.
     wlr_xdg_toplevel_set_wm_capabilities(xdg,
-        WLR_XDG_TOPLEVEL_WM_CAPABILITIES_MAXIMIZE | WLR_XDG_TOPLEVEL_WM_CAPABILITIES_FULLSCREEN |
-            WLR_XDG_TOPLEVEL_WM_CAPABILITIES_MINIMIZE);
+        WLR_XDG_TOPLEVEL_WM_CAPABILITIES_WINDOW_MENU | WLR_XDG_TOPLEVEL_WM_CAPABILITIES_MAXIMIZE |
+            WLR_XDG_TOPLEVEL_WM_CAPABILITIES_FULLSCREEN | WLR_XDG_TOPLEVEL_WM_CAPABILITIES_MINIMIZE);
     wlr_box bounds = maximize_box_on(toplevel, output);
     wlr_xdg_toplevel_set_bounds(xdg, std::max(bounds.width, 0), std::max(bounds.height, 0));
     wlr_xdg_toplevel_set_maximized(xdg, toplevel->maximized);
@@ -780,6 +779,22 @@ void toplevels_relocate_for_layout(BiomeServer *server) {
         }
         // Unmoved windows can still gain/lose an output that moved or toggled.
         foreign_toplevel_update_outputs(toplevel);
+    }
+}
+
+wlr_scene_tree *toplevel_layer(const BiomeToplevel *toplevel) {
+    return toplevel->always_on_top ? toplevel->server->layers.above : toplevel->server->layers.toplevels;
+}
+
+void set_toplevel_always_on_top(BiomeToplevel *toplevel, bool always_on_top) {
+    if (toplevel->always_on_top == always_on_top) {
+        return;
+    }
+    toplevel->always_on_top = always_on_top;
+    // A fullscreen window stays in layers.fullscreen; the flag applies on restore.
+    if (!toplevel->fullscreen) {
+        wlr_scene_node_reparent(&toplevel->scene_tree->node, toplevel_layer(toplevel));
+        unmanaged_update_layers(toplevel->server);
     }
 }
 

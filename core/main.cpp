@@ -23,6 +23,7 @@
 #include "desktop/layer_shell.h"
 #include "desktop/session_lock.h"
 #include "desktop/switcher.h"
+#include "desktop/window_menu.h"
 #include "desktop/xdg_activation.h"
 #include "desktop/xdg_shell.h"
 #include "desktop/xwayland_shell.h"
@@ -197,6 +198,7 @@ int main(int argc, char *argv[]) {
     ext_workspace_init(&server);
     xdg_activation_init(&server);
     switcher_init(&server);
+    window_menu_init(&server);
     xdg_shell_init(&server);
     cursor_init(&server);
     input_init(&server);

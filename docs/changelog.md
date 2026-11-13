@@ -2,6 +2,8 @@ Changelog
 ============
 
 * Unreleased
+  - Add a compositor-side window menu (restore/maximize, minimize, move, resize, always on top, move to workspace, close), opened by right-clicking the titlebar, clicking the titlebar icon, or a client-side-decorated app's own titlebar menu; styled by the theme's shared.css, shared with Forest
+  - Add always-on-top windows
   - Add ext-image-copy-capture-v1 with per-window and per-output capture sources; hidden (minimized or other-workspace) windows capture too
 
 * Release 0.2.1 - 2026-11-11

@@ -86,6 +86,10 @@ struct BiomeToplevel {
     wlr_box premap_target = {};
     uint32_t premap_serial = 0;
 
+    // Set by set_toplevel_always_on_top: lives in layers.above instead of
+    // layers.toplevels (see toplevel_layer()).
+    bool always_on_top = false;
+
     // Set by set_toplevel_minimized. No taskbar exists under Biome yet, so
     // the only way to restore a minimized window is the Alt-Tab switcher.
     bool minimized = false;
@@ -171,6 +175,7 @@ struct BiomeToplevel {
     wl_listener destroy = {};
     wl_listener request_move = {};
     wl_listener request_resize = {};
+    wl_listener request_show_window_menu = {}; // xdg only
     wl_listener request_maximize = {};
     wl_listener request_fullscreen = {};
     wl_listener request_minimize = {};
@@ -372,6 +377,12 @@ void place_new_toplevel(BiomeToplevel *toplevel);
 // Real maximize/restore: no work-area reservation yet (no panel exists
 // under Biome), so this simply fills the current output.
 void set_toplevel_maximized(BiomeToplevel *toplevel, bool maximized);
+
+// The layer a non-fullscreen toplevel's scene_tree belongs in.
+wlr_scene_tree *toplevel_layer(const BiomeToplevel *toplevel);
+
+// Moves the toplevel between layers.toplevels and layers.above (and raises it).
+void set_toplevel_always_on_top(BiomeToplevel *toplevel, bool always_on_top);
 
 // Real fullscreen/restore: fills the *entire* current output (unlike
 // set_toplevel_maximized, not just its usable area - a fullscreen window

@@ -264,9 +264,10 @@ Region DecorationFrame::hitTest(
         }
     }
 
-    if (hit == titlebar_ || hit == title_label_ || hit == icon_button_) {
-        // The icon isn't clickable yet (no context menu) - it's just part of
-        // the draggable titlebar, like the title text.
+    if (hit == icon_button_) {
+        return Region::Icon;
+    }
+    if (hit == titlebar_ || hit == title_label_) {
         return Region::Titlebar;
     }
     return Region::None; // content_spacer_ (the client's surface), or nothing

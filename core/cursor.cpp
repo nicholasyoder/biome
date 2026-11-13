@@ -7,6 +7,7 @@
 #include "desktop/idle.h"
 #include "desktop/toplevel.h"
 #include "desktop/xdg_activation.h"
+#include "desktop/window_menu.h"
 #include "desktop/xdg_shell.h"
 
 #include <algorithm>
@@ -113,6 +114,7 @@ static void cursor_shape_manager_request_set_shape(wl_listener *listener, void *
 void reset_cursor_mode(BiomeServer *server) {
     server->cursor_mode = BiomeCursorMode::Passthrough;
     server->grabbed_toplevel = nullptr;
+    server->grab_from_menu = false;
 }
 
 static void drag_icon_tree_handle_destroy(wl_listener *listener, void *data) {
@@ -313,6 +315,11 @@ static void process_cursor_motion(BiomeServer *server, uint32_t time) {
         wlr_scene_node_set_position(&server->drag_icon_tree->node, server->cursor->x, server->cursor->y);
     }
 
+    if (window_menu_active()) {
+        window_menu_motion(server, server->cursor->x, server->cursor->y);
+        return;
+    }
+
     if (server->cursor_mode == BiomeCursorMode::Move) {
         process_cursor_move(server, time);
         return;
@@ -421,6 +428,22 @@ void cursor_rebase(BiomeServer *server) {
 void server_cursor_button(wl_listener *listener, void *data) {
     BiomeServer *server = wl_container_of(listener, server, cursor_button);
     auto *event = static_cast<wlr_pointer_button_event *>(data);
+    const bool pressed = event->state == WL_POINTER_BUTTON_STATE_PRESSED;
+    if (window_menu_active()) {
+        window_menu_button(server, event->time_msec, event->button, pressed);
+        return;
+    }
+    if (server->grab_from_menu) {
+        if (pressed) {
+            reset_cursor_mode(server);
+            server->swallow_release = true;
+        }
+        return;
+    }
+    if (server->swallow_release && !pressed) {
+        server->swallow_release = false;
+        return;
+    }
     wlr_seat_pointer_notify_button(server->seat,
         event->time_msec, event->button, event->state);
 
@@ -460,6 +483,12 @@ void server_cursor_button(wl_listener *listener, void *data) {
             wlr_surface *decorated = toplevel_surface(decoration_toplevel);
             xdg_activation_note_press(server, decorated != nullptr ? wl_resource_get_client(decorated->resource) : nullptr);
             focus_toplevel(decoration_toplevel);
+            if (event->button == BTN_RIGHT && (region == biome_decoration::Region::Titlebar ||
+                    region == biome_decoration::Region::Icon)) {
+                window_menu_open(decoration_toplevel, static_cast<int>(server->cursor->x),
+                    static_cast<int>(server->cursor->y));
+                return;
+            }
             if (event->button == BTN_LEFT) {
                 set_decoration_pressed(server, decoration_toplevel, region);
                 constexpr uint32_t kDoubleClickMs = 400;
@@ -530,6 +559,9 @@ void server_cursor_axis(wl_listener *listener, void *data) {
     // Forwarded by the cursor for an axis event, e.g. a scroll wheel.
     BiomeServer *server = wl_container_of(listener, server, cursor_axis);
     auto *event = static_cast<wlr_pointer_axis_event *>(data);
+    if (window_menu_active()) {
+        return;
+    }
     wlr_seat_pointer_notify_axis(server->seat,
         event->time_msec, event->orientation, event->delta,
         event->delta_discrete, event->source, event->relative_direction);

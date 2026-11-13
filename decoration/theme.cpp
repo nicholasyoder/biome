@@ -45,21 +45,24 @@ QString external_stylesheet(const QString &dir, const QString &name) {
     QStringList layers = conf.value("parent_themes").toStringList();
     layers.append(name);
 
+    // shared.css is shared with Forest's own menus (fstyleloader).
     QString sheet;
     for (const QString &layer : layers) {
-        const QString path = QDir(dir).filePath(layer + "/biome.css");
-        if (!QFileInfo::exists(path)) {
-            continue;
+        for (const char *file : {"biome.css", "shared.css"}) {
+            const QString path = QDir(dir).filePath(layer + "/" + file);
+            if (!QFileInfo::exists(path)) {
+                continue;
+            }
+            QFile f(path);
+            if (!f.open(QIODevice::ReadOnly | QIODevice::Text)) {
+                qWarning("biome: cannot read %s", qPrintable(path));
+                continue;
+            }
+            sheet += QString::fromUtf8(f.readAll()) + '\n';
         }
-        QFile file(path);
-        if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
-            qWarning("biome: cannot read %s", qPrintable(path));
-            continue;
-        }
-        sheet += QString::fromUtf8(file.readAll()) + '\n';
     }
     if (sheet.trimmed().isEmpty()) {
-        qWarning("biome: theme '%s' has no biome.css layers", qPrintable(name));
+        qWarning("biome: theme '%s' has no biome.css/shared.css layers", qPrintable(name));
         return {};
     }
     return sheet;

@@ -6,6 +6,7 @@
 #include "desktop/decoration_bridge.h"
 #include "desktop/foreign_toplevel.h"
 #include "desktop/switcher.h"
+#include "desktop/window_menu.h"
 #include "desktop/toplevel.h"
 #include "desktop/workspace.h"
 
@@ -107,6 +108,7 @@ static void destroy_xwayland_toplevel(BiomeToplevel *toplevel) {
 
     clear_decoration_tracking(server, toplevel);
     switcher_remove_toplevel(server, toplevel);
+    window_menu_remove_toplevel(server, toplevel);
     if (server->last_left_click_toplevel == toplevel) {
         server->last_left_click_toplevel = nullptr;
     }
@@ -221,7 +223,7 @@ static wlr_scene_tree *unmanaged_target_layer(BiomeUnmanaged *s) {
         if (!x->override_redirect) {
             if (BiomeToplevel *owner = toplevel_from_xwayland(x)) {
                 return owner->scene_tree->node.parent == server->layers.fullscreen
-                    ? server->layers.fullscreen : server->layers.toplevels;
+                    ? server->layers.fullscreen : toplevel_layer(owner);
             }
         }
     }
