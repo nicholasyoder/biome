@@ -29,6 +29,7 @@ enum ItemId {
     kWorkspace,
     kClose,
     kWorkspaceBase = 100, // + workspace index
+    kSnapBase = 1000,     // + SnapZone
 };
 
 struct Panel {
@@ -104,6 +105,43 @@ std::vector<MenuEntry> main_entries(const BiomeToplevel *t) {
     entries.push_back(ws);
     entries.push_back(sep);
     entries.push_back(item(kClose, "Close"));
+    return entries;
+}
+
+std::vector<MenuEntry> snap_entries(const BiomeToplevel *t) {
+    std::vector<MenuEntry> entries;
+    bool normal = !t->fullscreen;
+    auto add = [&](int id, const char *label, bool checked = false) {
+        MenuEntry e;
+        e.id = id;
+        e.label = label;
+        e.enabled = normal;
+        e.checked = checked;
+        entries.push_back(e);
+    };
+    auto sep = [&] {
+        MenuEntry e;
+        e.separator = true;
+        entries.push_back(e);
+    };
+    auto zone = [&](SnapZone z, const char *label) {
+        add(kSnapBase + static_cast<int>(z), label, t->snap_zone == z);
+    };
+    if (t->maximized || t->snap_zone != SnapZone::None) {
+        add(kMaximize, "Restore");
+    } else {
+        add(kMaximize, "Maximize");
+    }
+    sep();
+    zone(SnapZone::Left, "Left Half");
+    zone(SnapZone::Right, "Right Half");
+    zone(SnapZone::TopHalf, "Top Half");
+    zone(SnapZone::BottomHalf, "Bottom Half");
+    sep();
+    zone(SnapZone::TopLeft, "Top Left");
+    zone(SnapZone::TopRight, "Top Right");
+    zone(SnapZone::BottomLeft, "Bottom Left");
+    zone(SnapZone::BottomRight, "Bottom Right");
     return entries;
 }
 
@@ -246,6 +284,11 @@ void activate(int id) {
     if (t == nullptr) {
         return;
     }
+    if (id >= kSnapBase) {
+        window_menu_close(server);
+        set_toplevel_snapped(t, static_cast<SnapZone>(id - kSnapBase));
+        return;
+    }
     if (id >= kWorkspaceBase) {
         window_menu_close(server);
         move_toplevel_to_workspace(t, id - kWorkspaceBase);
@@ -254,7 +297,11 @@ void activate(int id) {
     window_menu_close(server);
     switch (id) {
     case kMaximize:
-        set_toplevel_maximized(t, !t->maximized);
+        if (t->snap_zone != SnapZone::None) {
+            set_toplevel_snapped(t, SnapZone::None);
+        } else {
+            set_toplevel_maximized(t, !t->maximized);
+        }
         break;
     case kMinimize:
         set_toplevel_minimized(t, true);
@@ -339,7 +386,7 @@ void window_menu_close(BiomeServer *server) {
     g.armed = false;
 }
 
-void window_menu_open(BiomeToplevel *toplevel, int x, int y, int anchor_height) {
+static void open_menu(BiomeToplevel *toplevel, int x, int y, int anchor_height, bool snap, bool armed) {
     BiomeServer *server = toplevel->server;
     if (server->session_locked || g.server == nullptr) {
         return;
@@ -349,7 +396,7 @@ void window_menu_open(BiomeToplevel *toplevel, int x, int y, int anchor_height) 
     wlr_output *output = output_at(x, y);
     Panel &main = g.panels[0];
     g.target = toplevel;
-    main.entries = main_entries(toplevel);
+    main.entries = snap ? snap_entries(toplevel) : main_entries(toplevel);
     main.hovered = -1;
     main.scale = output != nullptr ? output->scale : 1.0;
     biome_decoration::RenderedMenu measured = biome_decoration::render_menu(0, main.entries, -1, main.scale);
@@ -374,6 +421,15 @@ void window_menu_open(BiomeToplevel *toplevel, int x, int y, int anchor_height) 
     // Nothing under the pointer is a client's any more.
     wlr_seat_pointer_notify_clear_focus(server->seat);
     window_menu_motion(server, server->cursor->x, server->cursor->y);
+    g.armed = armed;
+}
+
+void window_menu_open(BiomeToplevel *toplevel, int x, int y, int anchor_height) {
+    open_menu(toplevel, x, y, anchor_height, false, false);
+}
+
+void window_menu_open_snap(BiomeToplevel *toplevel, int x, int y, int anchor_height, bool armed) {
+    open_menu(toplevel, x, y, anchor_height, true, armed);
 }
 
 void window_menu_remove_toplevel(BiomeServer *server, BiomeToplevel *toplevel) {

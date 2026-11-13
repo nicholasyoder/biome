@@ -189,8 +189,8 @@ QWidget#biomeSwitcherHighlightRoot {
 }
 
 QFrame#biomeSwitcherHighlight {
-    background: rgba(90, 150, 220, 15%);
-    border: 2px solid rgb(90, 150, 220);
+    background: rgba(120, 200, 120, 15%);
+    border: 2px solid rgb(120, 200, 120);
     border-radius: 4px;
 }
 

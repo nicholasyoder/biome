@@ -18,6 +18,10 @@ void window_menu_init(BiomeServer *server);
 // lands flush against it.
 void window_menu_open(BiomeToplevel *toplevel, int x, int y, int anchor_height = 0);
 
+// Same, but the snap-layout menu (maximize/restore, halves, quarters). armed:
+// the opening button is still held, so releasing over an item activates it.
+void window_menu_open_snap(BiomeToplevel *toplevel, int x, int y, int anchor_height, bool armed);
+
 void window_menu_close(BiomeServer *server);
 bool window_menu_active();
 

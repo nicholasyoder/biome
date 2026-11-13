@@ -42,6 +42,10 @@ struct BiomeToplevel {
     bool maximized = false;
     wlr_box restore_box = {};
 
+    // Snapped to a half/quarter of the output (set_toplevel_snapped). Shares
+    // restore_box with maximize; never set together with maximized.
+    SnapZone snap_zone = SnapZone::None;
+
     // Set by set_toplevel_fullscreen. fullscreen_restore_box is the
     // pre-fullscreen visible content box (position + size), in
     // output-layout coordinates - reapplied on un-fullscreen. Independent of
@@ -376,7 +380,26 @@ void place_new_toplevel(BiomeToplevel *toplevel);
 
 // Real maximize/restore: no work-area reservation yet (no panel exists
 // under Biome), so this simply fills the current output.
-void set_toplevel_maximized(BiomeToplevel *toplevel, bool maximized);
+void set_toplevel_maximized(BiomeToplevel *toplevel, bool maximized, wlr_output *output = nullptr);
+
+// Snaps to zone on output's usable area (default: the output it mostly
+// overlaps; Top = maximize);
+// SnapZone::None restores the pre-snap/maximize box.
+void set_toplevel_snapped(BiomeToplevel *toplevel, SnapZone zone, wlr_output *output = nullptr);
+
+// Drops the snapped state without moving or resizing (the user is resizing it).
+void toplevel_clear_snap(BiomeToplevel *toplevel);
+
+// Call on each pointer motion of a titlebar drag: shows the snap preview once
+// the pointer has dwelled in an edge/corner zone for a moment.
+void snap_drag_motion(BiomeServer *server, double lx, double ly);
+
+// Hides the preview and cancels any pending dwell.
+void snap_preview_hide(BiomeServer *server);
+
+// Applies the pending preview zone to the grabbed toplevel and hides the
+// preview. Call on button release before reset_cursor_mode.
+void snap_drag_finish(BiomeServer *server);
 
 // The layer a non-fullscreen toplevel's scene_tree belongs in.
 wlr_scene_tree *toplevel_layer(const BiomeToplevel *toplevel);

@@ -8,6 +8,7 @@
 #include "desktop/decoration_bridge.h"
 #include "desktop/ext_workspace.h"
 #include "desktop/foreign_toplevel.h"
+#include "decoration/switcher_highlight.h"
 #include "desktop/layer_shell.h"
 #include "desktop/workspace.h"
 #include "desktop/xwayland_shell.h"
@@ -498,8 +499,8 @@ static wlr_box maximize_box_on(BiomeToplevel *toplevel, wlr_output *output) {
 
 // Called before toplevel->maximized flips to true, so it still reflects the
 // window's current on-screen frame.
-static wlr_box maximize_target_box(BiomeToplevel *toplevel) {
-    return maximize_box_on(toplevel, toplevel_content_output(toplevel));
+static wlr_box maximize_target_box(BiomeToplevel *toplevel, wlr_output *output = nullptr) {
+    return maximize_box_on(toplevel, output != nullptr ? output : toplevel_content_output(toplevel));
 }
 
 // Moves/resizes to `target` (visible content box) under the toplevel's
@@ -523,7 +524,7 @@ static void apply_target_box(BiomeToplevel *toplevel, const wlr_box &target) {
     toplevel_sync_position(toplevel, target.x, target.y);
 }
 
-void set_toplevel_maximized(BiomeToplevel *toplevel, bool maximized) {
+void set_toplevel_maximized(BiomeToplevel *toplevel, bool maximized, wlr_output *output) {
     if (toplevel->maximized == maximized) {
         return;
     }
@@ -533,18 +534,22 @@ void set_toplevel_maximized(BiomeToplevel *toplevel, bool maximized) {
 
     wlr_box target;
     if (maximized) {
-        toplevel->restore_box.x =
-            static_cast<int>(toplevel->scene_tree->node.x) + decoration_border_width(toplevel, toplevel->maximized);
-        toplevel->restore_box.y =
-            static_cast<int>(toplevel->scene_tree->node.y) + decoration_titlebar_height(toplevel, toplevel->maximized);
-        toplevel->restore_box.width = old_geo.width;
-        toplevel->restore_box.height = old_geo.height;
+        // A snapped window's restore_box already holds the floating box.
+        if (toplevel->snap_zone == SnapZone::None) {
+            toplevel->restore_box.x = static_cast<int>(toplevel->scene_tree->node.x) +
+                decoration_border_width(toplevel, toplevel->maximized);
+            toplevel->restore_box.y = static_cast<int>(toplevel->scene_tree->node.y) +
+                decoration_titlebar_height(toplevel, toplevel->maximized);
+            toplevel->restore_box.width = old_geo.width;
+            toplevel->restore_box.height = old_geo.height;
+        }
 
-        target = maximize_target_box(toplevel);
+        target = maximize_target_box(toplevel, output);
         if (wlr_box_empty(&target)) {
             return;
         }
         toplevel->maximized = true;
+        toplevel->snap_zone = SnapZone::None;
     } else {
         target = toplevel->restore_box;
         toplevel->maximized = false;
@@ -553,6 +558,7 @@ void set_toplevel_maximized(BiomeToplevel *toplevel, bool maximized) {
     apply_target_box(toplevel, target);
 
     if (toplevel->type == BiomeToplevelType::Xdg) {
+        wlr_xdg_toplevel_set_tiled(toplevel->xdg_toplevel, 0);
         // wlr_xdg_toplevel_set_maximized schedules (or joins an
         // already-scheduled) configure and returns its serial - the size
         // set above, if any, coalesces into the same configure, so this is
@@ -563,6 +569,232 @@ void set_toplevel_maximized(BiomeToplevel *toplevel, bool maximized) {
     }
     render_toplevel_decoration(toplevel);
     foreign_toplevel_sync_state(toplevel);
+}
+
+static uint32_t snap_tiled_edges(SnapZone zone) {
+    switch (zone) {
+    case SnapZone::Left: return WLR_EDGE_LEFT | WLR_EDGE_TOP | WLR_EDGE_BOTTOM;
+    case SnapZone::Right: return WLR_EDGE_RIGHT | WLR_EDGE_TOP | WLR_EDGE_BOTTOM;
+    case SnapZone::TopHalf: return WLR_EDGE_TOP | WLR_EDGE_LEFT | WLR_EDGE_RIGHT;
+    case SnapZone::BottomHalf: return WLR_EDGE_BOTTOM | WLR_EDGE_LEFT | WLR_EDGE_RIGHT;
+    case SnapZone::TopLeft: return WLR_EDGE_TOP | WLR_EDGE_LEFT;
+    case SnapZone::TopRight: return WLR_EDGE_TOP | WLR_EDGE_RIGHT;
+    case SnapZone::BottomLeft: return WLR_EDGE_BOTTOM | WLR_EDGE_LEFT;
+    case SnapZone::BottomRight: return WLR_EDGE_BOTTOM | WLR_EDGE_RIGHT;
+    default: return 0;
+    }
+}
+
+// Outer frame box of zone within area (the output's usable area).
+static wlr_box snap_frame_box(const wlr_box &area, SnapZone zone) {
+    int w1 = area.width / 2, w2 = area.width - w1;
+    int h1 = area.height / 2, h2 = area.height - h1;
+    switch (zone) {
+    case SnapZone::Left: return {area.x, area.y, w1, area.height};
+    case SnapZone::Right: return {area.x + w1, area.y, w2, area.height};
+    case SnapZone::TopHalf: return {area.x, area.y, area.width, h1};
+    case SnapZone::BottomHalf: return {area.x, area.y + h1, area.width, h2};
+    case SnapZone::TopLeft: return {area.x, area.y, w1, h1};
+    case SnapZone::TopRight: return {area.x + w1, area.y, w2, h1};
+    case SnapZone::BottomLeft: return {area.x, area.y + h1, w1, h2};
+    case SnapZone::BottomRight: return {area.x + w1, area.y + h1, w2, h2};
+    default: return area;
+    }
+}
+
+// Visible content box for a snapped (non-maximized) frame in zone; empty if
+// the output is unknown or too small to hold the decoration.
+static wlr_box snap_target_box(BiomeToplevel *toplevel, SnapZone zone, wlr_output *output) {
+    wlr_box area = output_target_box(toplevel->server, output);
+    if (wlr_box_empty(&area)) {
+        return area;
+    }
+    wlr_box frame = snap_frame_box(area, zone);
+    int left = decoration_border_width(toplevel, false);
+    int top = decoration_titlebar_height(toplevel, false);
+    wlr_box content = {frame.x + left, frame.y + top,
+        frame.width - left - decoration_border_right_width(toplevel, false),
+        frame.height - top - decoration_border_bottom_height(toplevel, false)};
+    if (content.width <= 0 || content.height <= 0) {
+        return {};
+    }
+    return content;
+}
+
+void toplevel_clear_snap(BiomeToplevel *toplevel) {
+    if (toplevel->snap_zone == SnapZone::None) {
+        return;
+    }
+    toplevel->snap_zone = SnapZone::None;
+    if (toplevel->type == BiomeToplevelType::Xdg) {
+        wlr_xdg_toplevel_set_tiled(toplevel->xdg_toplevel, 0);
+    }
+}
+
+void set_toplevel_snapped(BiomeToplevel *toplevel, SnapZone zone, wlr_output *output) {
+    if (toplevel->fullscreen) {
+        return;
+    }
+    if (zone == SnapZone::Top) {
+        set_toplevel_maximized(toplevel, true, output);
+        return;
+    }
+    if (zone == SnapZone::None) {
+        if (toplevel->snap_zone == SnapZone::None) {
+            return;
+        }
+        toplevel->snap_zone = SnapZone::None;
+        apply_target_box(toplevel, toplevel->restore_box);
+        if (toplevel->type == BiomeToplevelType::Xdg) {
+            toplevel->reposition_pending_serial = wlr_xdg_toplevel_set_tiled(toplevel->xdg_toplevel, 0);
+        }
+        render_toplevel_decoration(toplevel);
+        return;
+    }
+
+    bool was_maximized = toplevel->maximized;
+    if (toplevel->snap_zone == SnapZone::None && !was_maximized) {
+        wlr_box geo;
+        toplevel_get_geometry(toplevel, &geo);
+        toplevel->restore_box = {
+            static_cast<int>(toplevel->scene_tree->node.x) + decoration_border_width(toplevel, false),
+            static_cast<int>(toplevel->scene_tree->node.y) + decoration_titlebar_height(toplevel, false),
+            geo.width, geo.height};
+    }
+    // Un-maximize first so the target uses the normal border metrics.
+    toplevel->maximized = false;
+    wlr_box target = snap_target_box(toplevel, zone, output != nullptr ? output : toplevel_content_output(toplevel));
+    if (wlr_box_empty(&target)) {
+        toplevel->maximized = was_maximized;
+        return;
+    }
+    toplevel->snap_zone = zone;
+    apply_target_box(toplevel, target);
+    if (toplevel->type == BiomeToplevelType::Xdg) {
+        if (was_maximized) {
+            wlr_xdg_toplevel_set_maximized(toplevel->xdg_toplevel, false);
+        }
+        toplevel->reposition_pending_serial =
+            wlr_xdg_toplevel_set_tiled(toplevel->xdg_toplevel, snap_tiled_edges(zone));
+    } else if (was_maximized) {
+        wlr_xwayland_surface_set_maximized(toplevel->xwayland_surface, false, false);
+    }
+    render_toplevel_decoration(toplevel);
+    foreign_toplevel_sync_state(toplevel);
+}
+
+// Zone for the pointer position, or None. Zones are generous so the pointer
+// needn't reach the very edge (it crosses freely between outputs).
+static SnapZone snap_zone_at_point(BiomeServer *server, double lx, double ly) {
+    constexpr int kEdge = 24;
+    constexpr int kCorner = 96; // corner zone length along an edge
+    wlr_output *output = wlr_output_layout_output_at(server->output_layout, lx, ly);
+    if (output == nullptr) {
+        return SnapZone::None;
+    }
+    wlr_box b;
+    wlr_output_layout_get_box(server->output_layout, output, &b);
+    bool left = lx < b.x + kEdge, right = lx >= b.x + b.width - kEdge;
+    bool top = ly < b.y + kEdge, bottom = ly >= b.y + b.height - kEdge;
+    bool near_top = ly < b.y + kCorner, near_bottom = ly >= b.y + b.height - kCorner;
+    bool near_left = lx < b.x + kCorner, near_right = lx >= b.x + b.width - kCorner;
+
+    if ((left && near_top) || (top && near_left)) return SnapZone::TopLeft;
+    if ((right && near_top) || (top && near_right)) return SnapZone::TopRight;
+    if ((left && near_bottom) || (bottom && near_left)) return SnapZone::BottomLeft;
+    if ((right && near_bottom) || (bottom && near_right)) return SnapZone::BottomRight;
+    if (top) return SnapZone::Top;
+    if (bottom) return SnapZone::BottomHalf;
+    if (left) return SnapZone::Left;
+    if (right) return SnapZone::Right;
+    return SnapZone::None;
+}
+
+static wlr_output *g_snap_output = nullptr; // output the active/pending zone is on
+
+static void snap_preview_show(BiomeServer *server, SnapZone zone, double lx, double ly) {
+    wlr_output *output = wlr_output_layout_output_at(server->output_layout, lx, ly);
+    wlr_box area = output_target_box(server, output);
+    if (wlr_box_empty(&area)) {
+        return;
+    }
+    wlr_box box = snap_frame_box(area, zone);
+    g_snap_output = output;
+    if (server->snap_preview == nullptr) {
+        server->snap_preview = wlr_scene_buffer_create(server->layers.above, nullptr);
+    }
+    // Shares the Alt-Tab highlight's widget and theme rule.
+    if (!set_decoration_buffer(server->snap_preview,
+            biome_decoration::render_switcher_highlight(box.width, box.height, output->scale))) {
+        return;
+    }
+    server->snap_preview_zone = zone;
+    wlr_scene_node_set_position(&server->snap_preview->node, box.x, box.y);
+    wlr_scene_node_set_enabled(&server->snap_preview->node, true);
+    wlr_scene_node_raise_to_top(&server->snap_preview->node);
+}
+
+// Dwell tracking: a zone only activates after the pointer rests in it.
+static wl_event_source *g_snap_timer = nullptr;
+static SnapZone g_snap_pending = SnapZone::None;
+static double g_snap_anchor_x = 0, g_snap_anchor_y = 0;
+static double g_snap_pending_x = 0, g_snap_pending_y = 0;
+
+static int snap_dwell_fired(void *data) {
+    auto *server = static_cast<BiomeServer *>(data);
+    if (g_snap_pending != SnapZone::None) {
+        snap_preview_show(server, g_snap_pending, g_snap_pending_x, g_snap_pending_y);
+    }
+    return 0;
+}
+
+void snap_preview_hide(BiomeServer *server) {
+    g_snap_pending = SnapZone::None;
+    if (g_snap_timer != nullptr) {
+        wl_event_source_timer_update(g_snap_timer, 0);
+    }
+    server->snap_preview_zone = SnapZone::None;
+    if (server->snap_preview != nullptr) {
+        wlr_scene_node_set_enabled(&server->snap_preview->node, false);
+    }
+}
+
+void snap_drag_motion(BiomeServer *server, double lx, double ly) {
+    constexpr int kDwellMs = 350;
+    constexpr double kJitter = 6; // pointer movement that restarts the dwell
+    SnapZone zone = snap_zone_at_point(server, lx, ly);
+    wlr_output *output = wlr_output_layout_output_at(server->output_layout, lx, ly);
+    if (zone == server->snap_preview_zone && zone != SnapZone::None && output == g_snap_output) {
+        return;
+    }
+    double dx = lx - g_snap_anchor_x, dy = ly - g_snap_anchor_y;
+    if (zone == g_snap_pending && zone != SnapZone::None && dx * dx + dy * dy <= kJitter * kJitter) {
+        return;
+    }
+    snap_preview_hide(server);
+    if (zone == SnapZone::None) {
+        return;
+    }
+    g_snap_pending = zone;
+    g_snap_anchor_x = g_snap_pending_x = lx;
+    g_snap_anchor_y = g_snap_pending_y = ly;
+    if (g_snap_timer == nullptr) {
+        g_snap_timer = wl_event_loop_add_timer(wl_display_get_event_loop(server->display), snap_dwell_fired, server);
+    }
+    if (g_snap_timer != nullptr) {
+        wl_event_source_timer_update(g_snap_timer, kDwellMs);
+    }
+}
+
+void snap_drag_finish(BiomeServer *server) {
+    SnapZone zone = server->snap_preview_zone;
+    wlr_output *output = g_snap_output;
+    snap_preview_hide(server);
+    BiomeToplevel *toplevel = server->grabbed_toplevel;
+    if (zone != SnapZone::None && toplevel != nullptr && server->cursor_mode == BiomeCursorMode::Move &&
+            !server->grab_from_menu) {
+        set_toplevel_snapped(toplevel, zone, output);
+    }
 }
 
 // Unlike maximize_box_on, the output's full box with no inset (a fullscreen
@@ -747,7 +979,7 @@ void toplevels_relocate_for_layout(BiomeServer *server) {
             toplevel_set_position(toplevel, content.x - left, content.y - top);
             toplevel_sync_position(toplevel, content.x, content.y);
         }
-        if (toplevel->maximized) {
+        if (toplevel->maximized || toplevel->snap_zone != SnapZone::None) {
             rescue_content_box(toplevel, &toplevel->restore_box, false);
         }
         if (toplevel->fullscreen) {
@@ -760,15 +992,23 @@ void toplevels_relocate_for_layout(BiomeServer *server) {
             target = fullscreen_target_box(toplevel);
         } else if (toplevel->maximized) {
             target = maximize_target_box(toplevel);
+        } else if (toplevel->snap_zone != SnapZone::None) {
+            target = snap_target_box(toplevel, toplevel->snap_zone, toplevel_content_output(toplevel));
         }
         if (!wlr_box_empty(&target) &&
             (target.x != content.x || target.y != content.y || target.width != geo.width ||
              target.height != geo.height)) {
             apply_target_box(toplevel, target);
             if (toplevel->type == BiomeToplevelType::Xdg) {
-                toplevel->reposition_pending_serial = toplevel->fullscreen
-                    ? wlr_xdg_toplevel_set_fullscreen(toplevel->xdg_toplevel, true)
-                    : wlr_xdg_toplevel_set_maximized(toplevel->xdg_toplevel, true);
+                if (toplevel->fullscreen) {
+                    toplevel->reposition_pending_serial = wlr_xdg_toplevel_set_fullscreen(toplevel->xdg_toplevel, true);
+                } else if (toplevel->maximized) {
+                    toplevel->reposition_pending_serial = wlr_xdg_toplevel_set_maximized(toplevel->xdg_toplevel, true);
+                } else {
+                    // Re-sends the same tiled state; the configure carries the new size.
+                    toplevel->reposition_pending_serial = wlr_xdg_toplevel_set_tiled(
+                        toplevel->xdg_toplevel, snap_tiled_edges(toplevel->snap_zone));
+                }
             }
             render_toplevel_decoration(toplevel);
             changed = true;

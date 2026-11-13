@@ -102,6 +102,10 @@ void refresh_decoration_hover(BiomeServer *server);
 // pressed_decoration_toplevel ever arrives.
 void clear_decoration_tracking(BiomeServer *server, BiomeToplevel *toplevel);
 
+// Opens the snap-layout menu (window_menu_open_snap) under the pointer, hanging
+// off the titlebar. armed: the button is still held, so releasing over an item picks it.
+void open_snap_menu(BiomeToplevel *toplevel, bool armed);
+
 const char *resize_cursor_name(biome_decoration::Region region);
 
 // Handles a left-button *press* over a decoration region (see core/
