@@ -448,8 +448,43 @@ static void handle_decoration_click(BiomeToplevel *toplevel, biome_decoration::R
     }
 }
 
+void open_snap_menu(BiomeToplevel *toplevel, bool armed) {
+    BiomeServer *server = toplevel->server;
+    wlr_box frame;
+    toplevel_get_frame_box(toplevel, &frame);
+    int titlebar = decoration_titlebar_height(toplevel, toplevel->maximized);
+    window_menu_open_snap(toplevel, static_cast<int>(server->cursor->x), frame.y + titlebar, titlebar, armed);
+}
+
+// Press-and-hold on the maximize button opens the snap menu.
+static wl_event_source *g_hold_timer = nullptr;
+
+static int snap_hold_fired(void *data) {
+    auto *server = static_cast<BiomeServer *>(data);
+    BiomeToplevel *pressed = server->pressed_decoration_toplevel;
+    if (pressed == nullptr || pressed->pressed_region != biome_decoration::Region::ButtonMaximize) {
+        return 0;
+    }
+    set_decoration_pressed(server, nullptr, biome_decoration::Region::None);
+    open_snap_menu(pressed, true);
+    return 0;
+}
+
+static void snap_hold_arm(BiomeServer *server) {
+    constexpr int kHoldMs = 500;
+    if (g_hold_timer == nullptr) {
+        g_hold_timer = wl_event_loop_add_timer(wl_display_get_event_loop(server->display), snap_hold_fired, server);
+    }
+    if (g_hold_timer != nullptr) {
+        wl_event_source_timer_update(g_hold_timer, kHoldMs);
+    }
+}
+
 void handle_decoration_press(BiomeToplevel *toplevel, biome_decoration::Region region) {
     if (is_button_region(region)) {
+        if (region == biome_decoration::Region::ButtonMaximize) {
+            snap_hold_arm(toplevel->server);
+        }
         // Armed via set_decoration_pressed (called by the caller before
         // this); the actual action fires on a matching release instead, see
         // handle_decoration_release.
@@ -459,6 +494,9 @@ void handle_decoration_press(BiomeToplevel *toplevel, biome_decoration::Region r
 }
 
 void handle_decoration_release(BiomeServer *server) {
+    if (g_hold_timer != nullptr) {
+        wl_event_source_timer_update(g_hold_timer, 0);
+    }
     BiomeToplevel *pressed = server->pressed_decoration_toplevel;
     if (pressed == nullptr) {
         return;

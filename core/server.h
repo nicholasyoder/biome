@@ -38,6 +38,21 @@ enum class BiomeCursorMode {
     Resize,
 };
 
+// Window snap targets. Top is "maximize" (drag to the top edge); the *Half
+// zones are menu-only.
+enum class SnapZone {
+    None,
+    Left,
+    Right,
+    TopHalf,
+    BottomHalf,
+    TopLeft,
+    TopRight,
+    BottomLeft,
+    BottomRight,
+    Top,
+};
+
 struct BiomeServer {
     wl_display *display = nullptr;
     wlr_backend *backend = nullptr;
@@ -216,6 +231,9 @@ struct BiomeServer {
     double grab_x = 0, grab_y = 0;
     wlr_box grab_geobox = {};
     uint32_t resize_edges = 0;
+    // Drag-to-edge snap preview (desktop/toplevel.cpp); zone None = hidden.
+    wlr_scene_buffer *snap_preview = nullptr;
+    SnapZone snap_preview_zone = SnapZone::None;
     // The grab came from the window menu: no button is held, so the next
     // press ends it (and its release is swallowed).
     bool grab_from_menu = false;

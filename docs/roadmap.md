@@ -47,12 +47,13 @@ session logs or design discussion.
 
 Pairs with Forest 0.11.0.
 
-- **Window snapping / tiling zones.** Snap a window to a half or quarter of
-  the output (or maximize) by dragging it to a screen edge/corner, and via a
-  menu on right-click or press-and-hold of the decoration's maximize button.
-  Biome draws the decorations, so both the drag zones (with a preview
-  overlay) and the button menu are compositor-side. The button menu can reuse
-  the window menu's renderer (`decoration/menu.h`, `desktop/window_menu.cpp`).
+- **Snap menu with layout icons.** The maximize-button snap menu is a plain
+  QMenu of text items; replace it with a macOS-style picker whose icons show
+  which part of the output each zone fills.
+- **Read the theme palette.** Biome doesn't load the theme's `theme.conf`
+  `[Palette]`, so the snap/Alt-Tab highlight color is hardcoded in each
+  theme's `biome.css`. Load the palette so decorations, the highlight and
+  menus can use it.
 - **Minor opportunistic protocols** — `single-pixel-buffer-v1`, `content-type-v1`,
   `alpha-modifier-v1`. Toolkits probe for these and fall back gracefully if
   absent — pick up opportunistically rather than as a dedicated push.

@@ -115,6 +115,7 @@ void reset_cursor_mode(BiomeServer *server) {
     server->cursor_mode = BiomeCursorMode::Passthrough;
     server->grabbed_toplevel = nullptr;
     server->grab_from_menu = false;
+    snap_preview_hide(server);
 }
 
 static void drag_icon_tree_handle_destroy(wl_listener *listener, void *data) {
@@ -151,6 +152,9 @@ void begin_interactive(BiomeToplevel *toplevel, BiomeCursorMode mode, uint32_t e
     }
     server->grabbed_toplevel = toplevel;
     server->cursor_mode = mode;
+    if (mode == BiomeCursorMode::Resize) {
+        toplevel_clear_snap(toplevel);
+    }
 
     if (mode == BiomeCursorMode::Move) {
         server->grab_x = server->cursor->x - toplevel->scene_tree->node.x;
@@ -179,7 +183,7 @@ void begin_interactive(BiomeToplevel *toplevel, BiomeCursorMode mode, uint32_t e
 static void process_cursor_move(BiomeServer *server, uint32_t time) {
     (void)time;
     BiomeToplevel *toplevel = server->grabbed_toplevel;
-    if (toplevel->maximized) {
+    if (toplevel->maximized || toplevel->snap_zone != SnapZone::None) {
         // A titlebar press left the maximized state untouched (see
         // handle_decoration_click) so a plain click-and-release doesn't
         // unmaximize. Now that the pointer has actually moved, restore the
@@ -189,10 +193,11 @@ static void process_cursor_move(BiomeServer *server, uint32_t time) {
         // restore" WM convention.
         wlr_box old_geo;
         toplevel_get_geometry(toplevel, &old_geo);
-        double old_frame_w =
-            old_geo.width + decoration_border_width(toplevel, true) + decoration_border_right_width(toplevel, true);
-        double old_frame_h =
-            old_geo.height + decoration_titlebar_height(toplevel, true) + decoration_border_bottom_height(toplevel, true);
+        bool was_maximized = toplevel->maximized;
+        double old_frame_w = old_geo.width + decoration_border_width(toplevel, was_maximized) +
+            decoration_border_right_width(toplevel, was_maximized);
+        double old_frame_h = old_geo.height + decoration_titlebar_height(toplevel, was_maximized) +
+            decoration_border_bottom_height(toplevel, was_maximized);
         double fraction_x = (server->cursor->x - toplevel->scene_tree->node.x) / old_frame_w;
         double fraction_y = (server->cursor->y - toplevel->scene_tree->node.y) / old_frame_h;
 
@@ -203,7 +208,11 @@ static void process_cursor_move(BiomeServer *server, uint32_t time) {
         // reflect the restored size yet once set_toplevel_maximized() returns.
         wlr_box restore_box = toplevel->restore_box;
 
-        set_toplevel_maximized(toplevel, false);
+        if (was_maximized) {
+            set_toplevel_maximized(toplevel, false);
+        } else {
+            set_toplevel_snapped(toplevel, SnapZone::None);
+        }
 
         double new_frame_w =
             restore_box.width + decoration_border_width(toplevel, false) + decoration_border_right_width(toplevel, false);
@@ -211,6 +220,9 @@ static void process_cursor_move(BiomeServer *server, uint32_t time) {
             restore_box.height + decoration_titlebar_height(toplevel, false) + decoration_border_bottom_height(toplevel, false);
         server->grab_x = fraction_x * new_frame_w;
         server->grab_y = fraction_y * new_frame_h;
+    }
+    if (!server->grab_from_menu) {
+        snap_drag_motion(server, server->cursor->x, server->cursor->y);
     }
     int x = static_cast<int>(server->cursor->x - server->grab_x);
     int y = static_cast<int>(server->cursor->y - server->grab_y);
@@ -454,6 +466,7 @@ void server_cursor_button(wl_listener *listener, void *data) {
         // some other button while BTN_LEFT is still held shouldn't commit.
         if (event->button == BTN_LEFT) {
             handle_decoration_release(server);
+            snap_drag_finish(server);
         }
         set_decoration_pressed(server, nullptr, biome_decoration::Region::None);
         reset_cursor_mode(server);
@@ -483,6 +496,10 @@ void server_cursor_button(wl_listener *listener, void *data) {
             wlr_surface *decorated = toplevel_surface(decoration_toplevel);
             xdg_activation_note_press(server, decorated != nullptr ? wl_resource_get_client(decorated->resource) : nullptr);
             focus_toplevel(decoration_toplevel);
+            if (event->button == BTN_RIGHT && region == biome_decoration::Region::ButtonMaximize) {
+                open_snap_menu(decoration_toplevel, false);
+                return;
+            }
             if (event->button == BTN_RIGHT && (region == biome_decoration::Region::Titlebar ||
                     region == biome_decoration::Region::Icon)) {
                 window_menu_open(decoration_toplevel, static_cast<int>(server->cursor->x),
