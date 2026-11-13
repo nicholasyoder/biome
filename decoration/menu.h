@@ -20,6 +20,10 @@ struct MenuEntry {
     bool checked = false; // shows the theme's indicator
     bool separator = false;
     bool submenu = false; // shows the submenu arrow
+    // Layout icon: the filled region as fractions of the output (w > 0 to show).
+    struct Zone {
+        double x = 0, y = 0, w = 0, h = 0;
+    } zone;
 };
 
 // Logical pixels, relative to the rendered frame's top-left.
