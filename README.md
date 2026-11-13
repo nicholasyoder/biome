@@ -44,7 +44,7 @@ The path is cached, so later rebuilds don't need it again.
 ```bash
 sudo dnf install rpm-build rpmdevtools           # once; plus the build deps above
 mkdir -p rpmbuild/SOURCES
-git archive --prefix=biome-0.2.1/ -o rpmbuild/SOURCES/biome-0.2.1.tar.gz HEAD   # stands in for the release tarball the spec expects
+git archive --prefix=biome-0.3.0/ -o rpmbuild/SOURCES/biome-0.3.0.tar.gz HEAD   # stands in for the release tarball the spec expects
 rpmbuild -ba --define "_topdir $PWD/rpmbuild" packaging/biome.spec
 ```
 
