@@ -50,9 +50,6 @@ Pairs with Forest 0.11.0.
 - **Snap menu with layout icons.** The maximize-button snap menu is a plain
   QMenu of text items; replace it with a macOS-style picker whose icons show
   which part of the output each zone fills.
-- **Minor opportunistic protocols** — `single-pixel-buffer-v1`, `content-type-v1`,
-  `alpha-modifier-v1`. Toolkits probe for these and fall back gracefully if
-  absent — pick up opportunistically rather than as a dedicated push.
 
 ## 0.4.0 — touch & tablet input (Phase 7)
 
