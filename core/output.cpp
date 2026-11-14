@@ -269,17 +269,18 @@ static void output_destroy(wl_listener *listener, void *data) {
 // The single place output-position-dependent state is updated; idempotent.
 static void output_sync_geometry(BiomeOutput *output) {
     wlr_output_layout_output *l_output = wlr_output_layout_get(output->server->output_layout, output->wlr);
-    int x = l_output != nullptr ? l_output->x : 0;
-    int y = l_output != nullptr ? l_output->y : 0;
     if (l_output != nullptr) {
-        output->layout_x = x;
-        output->layout_y = y;
+        output->layout_x = l_output->x;
+        output->layout_y = l_output->y;
     }
-    wlr_scene_node_set_position(&output->layer_background->node, x, y);
-    wlr_scene_node_set_position(&output->layer_bottom->node, x, y);
-    wlr_scene_node_set_position(&output->layer_top->node, x, y);
-    wlr_scene_node_set_position(&output->layer_overlay->node, x, y);
-    wlr_scene_node_set_position(&output->lock_tree->node, x, y);
+    // Out of the layout, hide rather than park at 0,0: the opaque lock_rect would cover another
+    // output's lock surface there.
+    wlr_scene_tree *trees[] = {output->layer_background, output->layer_bottom, output->layer_top,
+                               output->layer_overlay, output->lock_tree};
+    for (wlr_scene_tree *tree : trees) {
+        wlr_scene_node_set_enabled(&tree->node, l_output != nullptr);
+        wlr_scene_node_set_position(&tree->node, output->layout_x, output->layout_y);
+    }
 
     // A stale-sized blank rect would expose desktop content around its edges
     // while locked.
@@ -311,12 +312,13 @@ void output_set_enabled(BiomeOutput *output, bool enabled, std::optional<std::pa
         }
         output->disabled = false;
     } else {
-        layer_shell_close_output_surfaces(output);
-        wlr_output_layout_remove(server->output_layout, output->wlr);
-        // Not guaranteed to have been destroyed along with the layout entry.
+        // Scene output and layout entry go first, so nothing below (layer close, relocation,
+        // hiding the lock rect) can enter a surface into an output mid-destroy (wlroots asserts).
         if (wlr_scene_output *scene_output = wlr_scene_get_scene_output(server->scene, output->wlr)) {
             wlr_scene_output_destroy(scene_output);
         }
+        wlr_output_layout_remove(server->output_layout, output->wlr);
+        layer_shell_close_output_surfaces(output);
         output->disabled = true;
         // A disabled output will never present the locked frame it's waiting on.
         output->pending_lock_frame = false;
