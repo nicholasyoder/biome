@@ -4,6 +4,7 @@
 
 #include "desktop/ext_workspace.h"
 #include "desktop/layer_shell.h"
+#include "desktop/session_lock.h"
 #include "desktop/switcher.h"
 #include "desktop/window_menu.h"
 
@@ -30,6 +31,10 @@ void update_toplevel_visibility(BiomeToplevel *toplevel) {
 }
 
 void focus_topmost_on_active_workspace(BiomeServer *server) {
+    if (server->session_locked) {
+        session_lock_refocus(server);
+        return;
+    }
     if (wlr_surface *exclusive = layer_shell_exclusive_focus(server)) {
         if (server->seat->keyboard_state.focused_surface != exclusive) {
             grant_keyboard_focus_to_non_toplevel(server, exclusive);

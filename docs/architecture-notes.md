@@ -173,6 +173,12 @@ and `focus_topmost_on_active_workspace()` (every focus-restore path) hands
 focus back to it. Only that surface takes focus on map; `on_demand` takes it
 on click, `none` never.
 
+While locked, the chokepoint refuses everything but lock surfaces, and
+`focus_topmost_on_active_workspace()` hands focus to a mapped lock surface
+(`session_lock_refocus()`) instead. Lock start ends any seat grab first: an
+`xdg_popup` grab's keyboard enter/clear_focus are no-ops, so it would
+otherwise keep the keys.
+
 ## `GlobalShortcuts` portal architecture (Workstream C)
 
 `org.freedesktop.portal.GlobalShortcuts` is a *frontend* interface that the
