@@ -193,6 +193,10 @@ static bool exclusive_layer_blocks(BiomeServer *server, wlr_surface *surface) {
 }
 
 void grant_keyboard_focus_to_non_toplevel(BiomeServer *server, wlr_surface *surface) {
+    // While locked only lock surfaces may take focus (e.g. a popup's unmap handing it to the panel).
+    if (server->session_locked && wlr_session_lock_surface_v1_try_from_wlr_surface(surface) == nullptr) {
+        return;
+    }
     if (exclusive_layer_blocks(server, surface)) {
         return;
     }

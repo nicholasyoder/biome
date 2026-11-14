@@ -5,6 +5,7 @@
 #include "desktop/window_menu.h"
 
 #include "core/output.h"
+#include "desktop/switcher.h"
 #include "desktop/workspace.h"
 
 // Per-BiomeOutput wlr_session_lock_surface_v1 wrapper - not exposed outside
@@ -23,21 +24,38 @@ struct BiomeLockSurface {
     wl_listener surface_map = {};
 };
 
+static bool is_mapped_lock_surface(wlr_surface *surface) {
+    return surface != nullptr && surface->mapped && wlr_session_lock_surface_v1_try_from_wlr_surface(surface) != nullptr;
+}
+
+// Raw enter, not notify_enter: a client's xdg_popup grab (wlroots doesn't check its
+// serial) has a no-op enter and would keep focus.
+static void enter_lock_surface(BiomeServer *server, wlr_surface *surface) {
+    wlr_keyboard *keyboard = wlr_seat_get_keyboard(server->seat);
+    wlr_seat_keyboard_enter(server->seat, surface, keyboard ? keyboard->keycodes : nullptr,
+        keyboard ? keyboard->num_keycodes : 0, keyboard ? &keyboard->modifiers : nullptr);
+}
+
+void session_lock_refocus(BiomeServer *server) {
+    if (!server->session_locked || is_mapped_lock_surface(server->seat->keyboard_state.focused_surface)) {
+        return;
+    }
+    BiomeOutput *output;
+    wl_list_for_each(output, &server->outputs, link) {
+        if (output->lock_surface != nullptr && output->lock_surface->surface->mapped) {
+            enter_lock_surface(server, output->lock_surface->surface);
+            return;
+        }
+    }
+    wlr_seat_keyboard_clear_focus(server->seat);
+}
+
 static void handle_lock_surface_map(wl_listener *listener, void *data) {
     (void)data;
     BiomeLockSurface *wrapper = wl_container_of(listener, wrapper, surface_map);
-    wlr_seat *seat = wrapper->server->seat;
-    if (seat->keyboard_state.focused_surface != nullptr) {
-        // Some other lock surface already claimed keyboard focus - per spec
-        // this is compositor policy; matching the suggested convention of
-        // "the first lock surface created gets focus" but keyed on actual
-        // map order rather than creation-request order.
-        return;
-    }
-    wlr_keyboard *keyboard = wlr_seat_get_keyboard(seat);
-    if (keyboard != nullptr) {
-        wlr_seat_keyboard_notify_enter(seat, wrapper->lock_surface->surface,
-            keyboard->keycodes, keyboard->num_keycodes, &keyboard->modifiers);
+    // First mapped lock surface keeps focus (the spec leaves this to the compositor).
+    if (!is_mapped_lock_surface(wrapper->server->seat->keyboard_state.focused_surface)) {
+        enter_lock_surface(wrapper->server, wrapper->lock_surface->surface);
     }
 }
 
@@ -54,7 +72,10 @@ static void handle_lock_surface_destroy(wl_listener *listener, void *data) {
             break;
         }
     }
+    BiomeServer *server = wrapper->server;
     free(wrapper);
+    // Its output went away mid-lock: hand focus to another lock surface.
+    session_lock_refocus(server);
 }
 
 static void handle_lock_new_surface(wl_listener *listener, void *data) {
@@ -157,6 +178,12 @@ static void handle_new_session_lock(wl_listener *listener, void *data) {
 
     server->session_locked = true;
     window_menu_close(server);
+    switcher_cancel(server);
+    // An xdg_popup grab's keyboard enter/clear_focus are no-ops, so it would keep
+    // focus (and get the password) while locked. Ending it sends popup_done.
+    wlr_seat_pointer_end_grab(server->seat);
+    wlr_seat_keyboard_end_grab(server->seat);
+    wlr_seat_touch_end_grab(server->seat);
     wlr_seat_keyboard_notify_clear_focus(server->seat);
     wlr_seat_pointer_notify_clear_focus(server->seat);
 
@@ -192,6 +219,8 @@ static void handle_new_session_lock(wl_listener *listener, void *data) {
             output->pending_lock_frame = true;
         }
     }
+    // No enabled output (all powered off or unplugged): nothing to wait for.
+    session_lock_maybe_send_locked(server);
 }
 
 void session_lock_maybe_send_locked(BiomeServer *server) {
