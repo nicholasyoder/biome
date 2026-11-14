@@ -7,6 +7,7 @@ Changelog
   - Fix a crash when a monitor was unplugged (or dropped out on wake) while the screen was locked, and a black lock screen when a disabled monitor's blank lock rect landed over another monitor
   - Fix the screen staying locked after a correct password when the lock started with every monitor off (Forest's lock-on-display-off): the `locked` event was never sent
   - Fix keystrokes typed on the lock screen going to a background app when one of its menus was open as the lock started, or to the panel once that menu closed; the lock screen now always gets the keyboard, including when its monitor is unplugged. The Alt-Tab switcher closes on lock
+  - Fix a crash when an app bound a global shortcut without a description through the GlobalShortcuts portal
 
 * Release 0.3.0 - 2026-11-13
   - Add content-type-v1 and alpha-modifier-v1 (clients can now set per-surface opacity)
