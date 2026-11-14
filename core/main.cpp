@@ -39,6 +39,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <getopt.h>
+#include <initializer_list>
 #include <sys/syscall.h>
 #include <sys/wait.h>
 #include <unistd.h>
@@ -62,6 +63,46 @@ int handle_startup_exit(int, uint32_t, void *data) {
     startup_pid = -1;
     wl_display_terminate(display);
     return 0;
+}
+
+void remove_listeners(std::initializer_list<wl_listener *> listeners) {
+    for (wl_listener *listener : listeners) {
+        wl_list_remove(&listener->link);
+    }
+}
+
+// wlroots asserts that nothing still listens on an object's signals when it is
+// destroyed, so each object's listeners go just before it does.
+void teardown(BiomeServer &server) {
+    wl_display_destroy_clients(server.display);
+    if (server.ewmh_ready) {
+        xcb_ewmh_connection_wipe(&server.ewmh);
+    }
+    if (server.xwayland) {
+        remove_listeners({&server.new_xwayland_surface, &server.xwayland_ready});
+        wlr_xwayland_destroy(server.xwayland);
+    }
+    // First: output_destroy() still touches the scene, cursor and renderer.
+    remove_listeners({&server.new_input, &server.new_output});
+    wlr_backend_destroy(server.backend);
+    wlr_scene_node_destroy(&server.scene->tree.node);
+    wlr_xcursor_manager_destroy(server.cursor_mgr);
+    remove_listeners({&server.cursor_motion, &server.cursor_motion_absolute, &server.cursor_button,
+        &server.cursor_axis, &server.cursor_frame, &server.cursor_swipe_begin, &server.cursor_swipe_update,
+        &server.cursor_swipe_end, &server.cursor_pinch_begin, &server.cursor_pinch_update,
+        &server.cursor_pinch_end, &server.cursor_hold_begin, &server.cursor_hold_end});
+    wlr_cursor_destroy(server.cursor);
+    wlr_allocator_destroy(server.allocator);
+    wlr_renderer_destroy(server.renderer);
+    // Globals destroyed by wl_display_destroy().
+    remove_listeners({&server.new_xdg_toplevel, &server.new_xdg_popup, &server.new_xdg_toplevel_decoration,
+        &server.new_kde_decoration, &server.new_layer_surface, &server.request_set_shape,
+        &server.new_pointer_constraint, &server.keyboard_focus_change, &server.request_cursor,
+        &server.request_set_selection, &server.request_set_primary_selection, &server.request_start_drag,
+        &server.start_drag, &server.output_layout_change, &server.output_apply, &server.output_test,
+        &server.new_session_lock, &server.xdg_activation_new_token, &server.xdg_activation_request_activate,
+        &server.new_idle_inhibitor, &server.gamma_set_gamma, &server.output_power_set_mode});
+    wl_display_destroy(server.display);
 }
 
 } // namespace
@@ -217,13 +258,12 @@ int main(int argc, char *argv[]) {
 
     const char *socket = wl_display_add_socket_auto(server.display);
     if (!socket) {
-        wlr_backend_destroy(server.backend);
+        teardown(server);
         return 1;
     }
 
     if (!wlr_backend_start(server.backend)) {
-        wlr_backend_destroy(server.backend);
-        wl_display_destroy(server.display);
+        teardown(server);
         return 1;
     }
 
@@ -258,31 +298,7 @@ int main(int argc, char *argv[]) {
         close(startup_pidfd);
     }
 
-    wl_display_destroy_clients(server.display);
-    if (server.ewmh_ready) {
-        xcb_ewmh_connection_wipe(&server.ewmh);
-    }
-    if (server.xwayland) {
-        wlr_xwayland_destroy(server.xwayland);
-    }
-    // First: output_destroy() still touches the scene, cursor and renderer.
-    wlr_backend_destroy(server.backend);
-    wlr_scene_node_destroy(&server.scene->tree.node);
-    wlr_xcursor_manager_destroy(server.cursor_mgr);
-    wlr_cursor_destroy(server.cursor);
-    wlr_allocator_destroy(server.allocator);
-    wlr_renderer_destroy(server.renderer);
-    // wlr_session_lock_v1's own display-destroy handler asserts that
-    // nothing is still listening on its new_lock signal - session_lock_init()
-    // (desktop/session_lock.cpp) registers server.new_session_lock on it for
-    // the whole process lifetime with no matching teardown, so it has to be
-    // removed explicitly here before wl_display_destroy() runs.
-    wl_list_remove(&server.new_session_lock.link);
-    wl_list_remove(&server.new_idle_inhibitor.link);
-    wl_list_remove(&server.output_layout_change.link);
-    wl_list_remove(&server.output_apply.link);
-    wl_list_remove(&server.output_test.link);
-    wl_display_destroy(server.display);
+    teardown(server);
     if (WIFEXITED(startup_status)) {
         return WEXITSTATUS(startup_status);
     }

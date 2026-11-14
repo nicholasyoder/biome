@@ -1,6 +1,9 @@
 Changelog
 ============
 
+* Unreleased
+  - Fix an abort on exit (every time the greeter's biome hands off to the session): wlroots' listener asserts on teardown
+
 * Release 0.3.0 - 2026-11-13
   - Add content-type-v1 and alpha-modifier-v1 (clients can now set per-surface opacity)
   - Read the theme's [Palette]: it sets the app palette, and the window-snap and Alt-Tab highlight color now follows the theme's highlight color. Theme loading now comes from Forest's forest-theme library (new build dependency: forest-theme-devel)

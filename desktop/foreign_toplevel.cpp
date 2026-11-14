@@ -88,6 +88,13 @@ static void handle_capture_request(wl_listener *listener, void *data) {
 }
 
 static wl_listener capture_request_listener = {};
+static wl_listener capture_manager_destroy_listener = {};
+
+// wlroots asserts new_request has no listeners when the manager goes.
+static void handle_capture_manager_destroy(wl_listener *, void *) {
+    wl_list_remove(&capture_request_listener.link);
+    wl_list_remove(&capture_manager_destroy_listener.link);
+}
 
 void foreign_toplevel_init(BiomeServer *server) {
     server->foreign_toplevel_manager = wlr_foreign_toplevel_manager_v1_create(server->display);
@@ -96,6 +103,8 @@ void foreign_toplevel_init(BiomeServer *server) {
     auto *capture_manager = wlr_ext_foreign_toplevel_image_capture_source_manager_v1_create(server->display, 1);
     capture_request_listener.notify = handle_capture_request;
     wl_signal_add(&capture_manager->events.new_request, &capture_request_listener);
+    capture_manager_destroy_listener.notify = handle_capture_manager_destroy;
+    wl_signal_add(&capture_manager->events.destroy, &capture_manager_destroy_listener);
 }
 
 void foreign_toplevel_create(BiomeToplevel *toplevel) {
