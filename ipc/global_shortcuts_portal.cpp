@@ -147,8 +147,9 @@ uint GlobalShortcutsPortal::BindShortcuts(const QDBusObjectPath &handle,
 
         GlobalShortcutSpec out;
         out.id = spec.id;
+        // toString(): description is optional on the wire, and an invalid QVariant in an a{sv} aborts in libdbus.
         out.options.insert(QStringLiteral("description"),
-            spec.options.value(QStringLiteral("description")));
+            spec.options.value(QStringLiteral("description")).toString());
         // A real backend renders a localized, human-readable string here
         // (e.g. "Ctrl+Alt+Return"); echoing the raw trigger string back is a
         // stand-in good enough to confirm round-tripping for this
