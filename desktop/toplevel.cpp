@@ -10,6 +10,8 @@
 #include "desktop/foreign_toplevel.h"
 #include "decoration/switcher_highlight.h"
 #include "desktop/layer_shell.h"
+#include "desktop/switcher.h"
+#include "desktop/window_menu.h"
 #include "desktop/workspace.h"
 #include "desktop/xwayland_shell.h"
 
@@ -1086,6 +1088,7 @@ void toplevel_map(wl_listener *listener, void *data) {
     }
 
     place_new_toplevel(toplevel);
+    update_toplevel_visibility(toplevel); // unmap disabled it; placement can bail with no outputs
 
     // Normally a no-op: toplevel_configure_premap already applied these. Only
     // acts if the client mapped without acking that configure, or its
@@ -1128,6 +1131,13 @@ void toplevel_unmap(wl_listener *listener, void *data) {
     // against its workspace until some unrelated later event recomputed a
     // fresh (correct) snapshot.
     wl_list_remove(&toplevel->link);
+    // The surface may map again (xdg null-buffer unmap, X11 withdraw). Until then:
+    // hide the frame, take it out of the switcher/menu, and (xdg, now uninitialized)
+    // send no configures.
+    toplevel->placed = false;
+    wlr_scene_node_set_enabled(&toplevel->scene_tree->node, false);
+    switcher_remove_toplevel(server, toplevel);
+    window_menu_remove_toplevel(server, toplevel);
     foreign_toplevel_destroy(toplevel);
     if (toplevel->urgent) {
         toplevel->urgent = false;

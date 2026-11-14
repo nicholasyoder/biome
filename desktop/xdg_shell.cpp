@@ -274,6 +274,9 @@ static void xdg_toplevel_request_fullscreen(wl_listener *listener, void *data) {
 static void xdg_toplevel_request_minimize(wl_listener *listener, void *data) {
     (void)data;
     BiomeToplevel *toplevel = wl_container_of(listener, toplevel, request_minimize);
+    if (!toplevel->placed) {
+        return;
+    }
     set_toplevel_minimized(toplevel, toplevel->xdg_toplevel->requested.minimized);
 }
 
