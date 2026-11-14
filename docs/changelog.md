@@ -4,6 +4,7 @@ Changelog
 * Unreleased
   - Fix an abort on exit (every time the greeter's biome hands off to the session): wlroots' listener asserts on teardown
   - Fix a crash when a window that hid itself without closing (unmapped) then asked to be minimized or maximized, and stop such hidden windows leaving their title bar on screen or staying in Alt-Tab
+  - Fix a crash when a monitor was unplugged (or dropped out on wake) while the screen was locked, and a black lock screen when a disabled monitor's blank lock rect landed over another monitor
 
 * Release 0.3.0 - 2026-11-13
   - Add content-type-v1 and alpha-modifier-v1 (clients can now set per-surface opacity)
