@@ -441,7 +441,7 @@ void window_menu_remove_toplevel(BiomeServer *server, BiomeToplevel *toplevel) {
 
 void window_menu_motion(BiomeServer *server, double lx, double ly) {
     wlr_seat_pointer_notify_clear_focus(server->seat);
-    wlr_cursor_set_xcursor(server->cursor, server->cursor_mgr, "default");
+    cursor_set_xcursor(server, "default");
     Panel &main = g.panels[0];
     Panel &sub = g.panels[1];
 

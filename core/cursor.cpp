@@ -83,11 +83,22 @@ void cursor_init(BiomeServer *server) {
     wl_signal_add(&server->cursor_shape_manager->events.request_set_shape, &server->request_set_shape);
 }
 
+void cursor_set_xcursor(BiomeServer *server, const char *name) {
+    snprintf(server->cursor_xcursor_name, sizeof(server->cursor_xcursor_name), "%s", name);
+    wlr_cursor_set_xcursor(server->cursor, server->cursor_mgr, name);
+}
+
 void cursor_reload_theme(BiomeServer *server, const char *theme, uint32_t size) {
     wlr_xcursor_manager *new_mgr = wlr_xcursor_manager_create(theme, size);
     wlr_xcursor_manager_load(new_mgr, 1);
-    wlr_xcursor_manager_destroy(server->cursor_mgr);
+    // wlr_cursor keeps the manager pointer; re-point it before freeing the old one.
+    // Empty name = a client surface is showing, which doesn't reference the manager.
+    wlr_xcursor_manager *old_mgr = server->cursor_mgr;
     server->cursor_mgr = new_mgr;
+    if (server->cursor_xcursor_name[0] != '\0') {
+        wlr_cursor_set_xcursor(server->cursor, new_mgr, server->cursor_xcursor_name);
+    }
+    wlr_xcursor_manager_destroy(old_mgr);
     // The pointer's on-screen image only repaints on the next motion event -
     // matches sway's own historical behavior for its `xcursor_theme`
     // command (a live compositor-side reload with no forced immediate
@@ -108,7 +119,7 @@ static void cursor_shape_manager_request_set_shape(wl_listener *listener, void *
     if (server->seat->pointer_state.focused_client != event->seat_client) {
         return;
     }
-    wlr_cursor_set_xcursor(server->cursor, server->cursor_mgr, wlr_cursor_shape_v1_name(event->shape));
+    cursor_set_xcursor(server, wlr_cursor_shape_v1_name(event->shape));
 }
 
 void reset_cursor_mode(BiomeServer *server) {
@@ -374,7 +385,7 @@ static void process_cursor_motion(BiomeServer *server, uint32_t time) {
         // cursor: it owns the cursor image, and resetting it here every motion
         // would wipe what the client set on enter.
         if (!surface)
-            wlr_cursor_set_xcursor(server->cursor, server->cursor_mgr, resize_cursor_name(region));
+            cursor_set_xcursor(server, resize_cursor_name(region));
         update_decoration_hover(server, decoration_toplevel, region);
     } else {
         update_decoration_hover(server, nullptr, biome_decoration::Region::None);

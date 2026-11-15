@@ -211,6 +211,7 @@ static void seat_request_cursor(wl_listener *listener, void *data) {
     // Any client can send this, so only honor it from the one that actually
     // has pointer focus.
     if (focused_client == event->seat_client) {
+        server->cursor_xcursor_name[0] = '\0';
         wlr_cursor_set_surface(server->cursor, event->surface,
             event->hotspot_x, event->hotspot_y);
     }

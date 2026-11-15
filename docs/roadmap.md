@@ -48,8 +48,6 @@ session logs or design discussion.
 Review fixes (details in [`docs/review-2026-11.md`](review-2026-11.md)).
 Ships with/before Forest 0.11.1, which requires it.
 
-- **Cursor-theme reload use-after-free** ([detail](review-2026-11.md#cursor-reload)).
-  A theme change frees the xcursor manager `wlr_cursor` still uses.
 - **Focus clearing and window-state fixes** ([detail](review-2026-11.md#focus-and-state)).
   No more two "active" windows; maximize while fullscreen.
 - **Xwayland window state and decoration cache** ([detail](review-2026-11.md#xwayland-state)).

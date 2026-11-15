@@ -178,6 +178,8 @@ struct BiomeServer {
 
     wlr_cursor *cursor = nullptr;
     wlr_xcursor_manager *cursor_mgr = nullptr;
+    // Last named cursor set on wlr_cursor; empty when a client surface is shown.
+    char cursor_xcursor_name[64] = {};
     wl_listener cursor_motion = {};
     wl_listener cursor_motion_absolute = {};
     wl_listener cursor_button = {};

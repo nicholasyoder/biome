@@ -15,6 +15,9 @@ struct BiomeToplevel;
 
 void cursor_init(BiomeServer *server);
 
+// Sets a named cursor and remembers it so cursor_reload_theme can re-apply it.
+void cursor_set_xcursor(BiomeServer *server, const char *name);
+
 // Destroys and recreates server->cursor_mgr from the given theme/size (a
 // NULL theme falls back to the literal name "default", resolved via
 // ~/.icons/default/index.theme's Inherits= line - see wlroots'
