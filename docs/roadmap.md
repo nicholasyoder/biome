@@ -43,7 +43,7 @@ session logs or design discussion.
   reasoning in `docs/history.md`'s "Decoupling goal" section (2026-08-22).
 
 
-## 0.3.1 — review fixes: hotkeys, window lifecycle & state
+## 0.3.1 — review fixes
 
 Review fixes (details in [`docs/review-2026-11.md`](review-2026-11.md)).
 Ships with/before Forest 0.11.1, which requires it.
@@ -52,9 +52,6 @@ Ships with/before Forest 0.11.1, which requires it.
   No more two "active" windows; maximize while fullscreen.
 - **Xwayland window state and decoration cache** ([detail](review-2026-11.md#xwayland-state)).
   X11 windows lose their frame after leaving fullscreen.
-
-## 0.3.2 — review fixes: conformance, outputs & lock
-
 - **Standard-protocol gaps for other shells' clients** ([detail](review-2026-11.md#client-conformance)).
   Layer-surface remap hang, empty ext-list titles, double reconfigures.
 - **Output failure paths** ([detail](review-2026-11.md#output-failures)). Failed modeset
