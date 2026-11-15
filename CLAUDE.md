@@ -13,6 +13,16 @@ Build into `build/` (`cmake --build build`). Needs Forest's `ForestTheme` packag
 
 greetd is started via the `greetd.service.d/50-forest.conf` drop-in with `--config /etc/forest/greetd.toml` (not `/etc/greetd/config.toml`, which is unused); its command is `/usr/local/bin/biome-greeter -s /usr/bin/forest-greeter`.
 
+## Code conventions
+
+- Module-private compositor state goes in a per-subsystem struct embedded in
+  `BiomeServer`, with its own listeners and an `X_finish()` teardown (decided
+  2026-11-14). File-scope statics and loose `BiomeServer` fields are legacy,
+  migrating in the server-split refactor (`docs/review-2026-11.md`).
+- `calloc`'d structs (`BiomeOutput`, `BiomeLayerSurface`, …) must stay POD plus
+  `wl_listener`s: no `std::string`/`std::vector` members (`free()` skips
+  destructors).
+
 ## Debian Packaging
 
 `debian/` is kept in the repo for a possible return to Debian, but Fedora

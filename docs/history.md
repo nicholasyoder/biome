@@ -135,6 +135,9 @@ biome/
 
 ## Protocols needed, mapped to Forest components
 
+Planning-time table, kept as history; current protocol behaviour and the
+accepted non-standard pieces are in `docs/architecture-notes.md`.
+
 | Forest component | Wayland protocol |
 |---|---|
 | App windows generally | `xdg-shell` (core) |

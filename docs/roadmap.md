@@ -43,15 +43,53 @@ session logs or design discussion.
   reasoning in `docs/history.md`'s "Decoupling goal" section (2026-08-22).
 
 
-## 0.4.0 — touch & tablet input (Phase 7)
+## 0.3.1 — review fixes: hotkeys, window lifecycle & state
+
+Review fixes (details in [`docs/review-2026-11.md`](review-2026-11.md)).
+Ships with/before Forest 0.11.1, which requires it.
+
+- **Hotkey trigger contract** ([detail](review-2026-11.md#hotkey-triggers)). Match level-0
+  and translated keysyms (Caps Lock, Shift+letter), portal signature fixes,
+  refuse bare-key bindings.
+- **Toplevel unmap/destroy chokepoint** ([detail](review-2026-11.md#toplevel-lifecycle)).
+  Fixes an assert crash via the snap-hold menu, a snap-dwell NULL crash, an
+  icon leak per window, and invisible dialogs stealing focus.
+- **Cursor-theme reload use-after-free** ([detail](review-2026-11.md#cursor-reload)).
+  A theme change frees the xcursor manager `wlr_cursor` still uses.
+- **Focus clearing and window-state fixes** ([detail](review-2026-11.md#focus-and-state)).
+  No more two "active" windows; maximize while fullscreen.
+- **Xwayland window state and decoration cache** ([detail](review-2026-11.md#xwayland-state)).
+  X11 windows lose their frame after leaving fullscreen.
+
+## 0.3.2 — review fixes: conformance, outputs & lock
+
+- **Standard-protocol gaps for other shells' clients** ([detail](review-2026-11.md#client-conformance)).
+  Layer-surface remap hang, empty ext-list titles, double reconfigures.
+- **Output failure paths** ([detail](review-2026-11.md#output-failures)). Failed modeset
+  treated as a live output.
+- **Session-lock follow-ups** ([detail](review-2026-11.md#lock-followups)). OSD layer
+  below the lock, blank window captures while locked.
+- **Shutdown and event-loop robustness** ([detail](review-2026-11.md#robustness)). SIGTERM
+  teardown, fd-reuse in the Qt/GLib bridge.
+
+## 0.4.0 — server structure & touch input (Phase 7)
 
 Pairs with Forest 0.12.0. Currently the single biggest user-visible gap versus
 sway/Hyprland (`core/input.cpp`/`cursor.cpp` have zero touch/tablet handling).
 
+- **Per-subsystem server state** ([detail](review-2026-11.md#server-split)). Split
+  `BiomeServer` into owned sub-structs with their own teardown; port
+  ext-workspace to the wlroots helper (sends ids); headless integration
+  tests first.
+- **Theme/cursor/icon watchers** ([detail](review-2026-11.md#watchers)). One watch helper;
+  qt6ct.conf reload; app-icon caches.
+- **Edge-strip decoration buffers** ([detail](review-2026-11.md#decoration-strips)). A
+  hover or title change re-renders a whole-window buffer (~30 ms at 4K).
+- **Theme-format version coupling** ([detail](review-2026-11.md#theme-coupling)). Versioned
+  `ForestTheme` dependency; regenerate `builtin.qss` after Forest 0.12.0's
+  CSS consolidation.
 - **Touch** — no `wlr_touch` handling at all; touchscreens/tablet-PC hardware
   unusable.
-- **Tablet input** (`tablet-v2`) — no pen/stylus support (`cursor.cpp` notes
-  this explicitly). Affects Krita/GIMP and 2-in-1 hardware.
 - **`tearing-control-v1`** — lets fullscreen games/mpv request immediate
   presentation for lower latency. Supported by sway, Hyprland, gamescope.
 - **`wp_presentation`** (presentation-time) — frame-timing feedback for
@@ -61,20 +99,22 @@ sway/Hyprland (`core/input.cpp`/`cursor.cpp` have zero touch/tablet handling).
 
 Pairs with Forest 0.13.0.
 
-- **Screen sharing (portal `ScreenCast`)** — add
-  `org.freedesktop.impl.portal.ScreenCast` to biome's portal (currently
-  `data/xdg-desktop-portal/portals/biome.portal` only declares
-  `GlobalShortcuts`), implemented via the existing screencopy support + PipeWire. Until
-  then Zoom-style screen share has no path under biome (no `-wlr` portal
-  backend installed either).
+- **Screen sharing (portal `ScreenCast`)** — first check whether
+  xdg-desktop-portal-wlr (via the portal config item below) is enough; only
+  add an in-Biome `ScreenCast` backend if it isn't.
 - **Virtual input** (`virtual-keyboard-unstable-v1`,
   `virtual-pointer-unstable-v1`) — on-screen keyboards, remote-desktop/
   screen-share input injection (wayvnc-style), accessibility input tools.
 - **`ext-data-control-v1`** (from the wlroots 0.20 bump) — unlocks Forest's
-  clipboard manager.
+  clipboard manager. Keep the wlr global too.
+- **Portal config ownership** ([detail](review-2026-11.md#portal-config)). Trim
+  `biome-portals.conf` to what Biome implements; capture via
+  xdg-desktop-portal-wlr. Pairs with Forest 0.13.0.
 
-## 0.6.0 — input methods & sandboxing (Phase 7/8)
+## 0.6.0 — input methods, tablets & sandboxing (Phase 7/8)
 
+- **Tablet input** (`tablet-v2`) — no pen/stylus support (`cursor.cpp` notes
+  this explicitly). Affects Krita/GIMP and 2-in-1 hardware.
 - **IME / text input** (`text-input-v3`, `input-method-unstable-v1`) — no
   CJK input method support, no on-screen-keyboard text injection path.
 - **`security-context-v1`** — lets a compositor apply sandbox-aware policy to
@@ -84,6 +124,8 @@ Pairs with Forest 0.13.0.
 
 ## Later (unscheduled) — rendering & wlroots bump (Phase 8)
 
+- **Explicit window state and backend ops** ([detail](review-2026-11.md#toplevel-state)).
+  One state-apply path instead of four; xdg/Xwayland ops table.
 - **Adopt wlroots 0.20 features** (Biome now builds on 0.20.2). Remaining
   after `ext-data-control-v1` (0.5.0): `color-management-v1` / HDR (Hyprland
   and Sway 1.12 have it on wlroots 0.20).

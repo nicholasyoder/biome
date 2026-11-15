@@ -17,25 +17,28 @@ how a shell package supplies defaults (Forest ships `50-forest.conf`) without
 Biome hardcoding shell names. The `/etc/xdg` QSettings fallback is disabled
 so conf.d is the only system location.
 Biome only ever writes the user file, and only `[Outputs]` (see "Live output
-management"); `QSettings` rewrites it whole, so comments are lost.
+management"). A shell may write `[Theme]` there (Forest's theme page sets
+`name`); both sides use `QSettings`, which rewrites the whole file keeping
+the other's keys, so comments are lost.
 
 ## Session lock (`desktop/session_lock.{h,cpp}`, Phase 3.5)
 
-Wraps `wlr_session_lock_manager_v1`. The whole implementation leans on one
-invariant: a single `server->lock_tree` scene node, raised to the top of
-`server->scene->tree` and enabled for the duration of a lock, occludes
-everything else. `desktop_toplevel_at`/`decoration_toplevel_at` already stop
-their scene-graph hit-test at the first node under the cursor, so an opaque
-full-output `wlr_scene_rect` per output (created unconditionally at
-output-add time, so a hotplugged monitor is blanked from its first frame
-even mid-lock) makes every normal window and Biome's own decoration
-unreachable to click/hover with no bespoke lock-aware hit-testing needed.
-The only place a normal toplevel's scene node ever gets raised is
-`focus_toplevel()` — gating that one function on `server->session_locked` is
-what stops a window from being raised above, or stealing keyboard focus
-from, the lock surfaces. `handle_keybinding()` swallows nothing while locked
-except VT-switch (kernel-level session handoff, matches sway) — every other
-compositor keybind falls through as an ordinary key event to the lock client.
+Wraps `wlr_session_lock_manager_v1`. Occlusion comes from the fixed layer
+stack (`core/layers.cpp`): `layers.session_lock` is the last of the eight
+trees `scene_layers_init()` creates and is enabled only while locked. Each
+output has its lock tree there with an opaque full-output rect (created at
+output-add, so a hotplugged monitor is covered from its first frame) and
+the client's lock surface. Toplevels (including fullscreen ones and
+Xwayland override-redirect surfaces) and layer surfaces live in lower
+trees, so they're hidden and unhittable while locked without any
+per-surface lock check. Exception: the switcher, window-menu and drag-icon
+nodes are created later directly under `scene->tree`, so they sit *above*
+the lock; lock start cancels the switcher and ends seat grabs (destroying a
+drag), and the menu refuses to open while locked.
+
+Keyboard: see "Keyboard-focus chokepoint". Keybindings, the switcher and
+modifier taps are gated while locked except VT switch (matches sway); every
+other key goes to the lock client.
 
 `session_locked` (survives a lock client crash) and `active_lock` (nulled
 the moment that lock's `wl_resource` is gone, crash or not) are deliberately
@@ -44,48 +47,17 @@ two separate fields: per spec, a client dying without calling
 only ever cleared by a real `unlock` event. The reject-a-second-lock check
 in `new_session_lock` tests `active_lock`, not `session_locked`, so a
 replacement client can `lock()` and take over recovery after a crash — the
-compositor-policy recovery path the spec names — with no extra code needed.
+compositor-policy recovery path the spec names. Any client can do this
+(no allowlist), so a crashed lockscreen plus a hostile local client could
+unlock; the same holds in sway. An abandoned lock tints the rects red
+(sway's polish) so a stuck-locked screen is distinguishable.
 
-`wlr_session_lock_v1_send_locked()` is deferred until every currently
-enabled output has actually committed a frame since the lock began (the
-spec's timing rule exists to prevent a suspend-races-resume race); the
-compositor's own blanking already satisfies it without waiting on the
-client's own surface to render.
-
-Compared against sway's real `sway/lock.c` and Hyprland's session-lock
-source: the core strategy (an opaque occluding layer gated on a locked
-flag) matches both — not a "hacky" approach, just missing (at the time)
-the persistent per-output layer stack that Workstream A later added, which
-made `lock_tree`'s position permanent-by-construction instead of something
-raised at lock time. One polish borrowed from sway: an abandoned lock
-(crashed without `unlock_and_destroy`) tints the blank rect red instead of
-staying the same black as a normal lock, so a stuck-locked screen is
-visually distinguishable.
-
-**Two real leaks found and fixed post-implementation**, both from the same
-root cause: keeping `lock_tree` raised to the top only protects scene
-content that *already existed* when the lock began — `wlr_scene_tree_create()`
-always appends a new node as the topmost sibling regardless of history, so
-anything mapped after the lock started re-topped itself automatically.
-1. `update_toplevel_visibility()` (`desktop/workspace.cpp`) didn't factor in
-   `session_locked` at all — fixed by adding it to the visibility formula,
-   plus re-running it over every existing toplevel on both lock and unlock.
-2. Xwayland override-redirect surfaces (X11 popups/menus/tooltips,
-   `desktop/xwayland_shell.cpp`'s `BiomeUnmanaged`) are a completely
-   separate path with no `BiomeToplevel` at all, invisible to fix (1) — and
-   its map handler unconditionally raised to top *and grabbed keyboard
-   focus* with no lock check at all, worse than the window-leak this was
-   chasing. Fixed by disabling the surface's scene node outright (not just
-   skipping the raise) when `session_locked`, which also skips the focus
-   grab. xdg-shell popups don't have this problem — they're parented under
-   their own toplevel's content tree, not the scene root, so they're
-   transitively hidden whenever their parent toplevel is.
+`wlr_session_lock_v1_send_locked()` is deferred until every enabled output
+has committed a frame since the lock began; with no enabled output it's
+sent at once (unlit outputs show nothing and come back covered).
 
 Deliberately out of scope: restricting the session-lock global to a
-privileged client (Biome has no client-allowlist mechanism anywhere yet),
-cancelling an in-flight drag if a lock starts mid-drag, and
-`idle-notify`/auto-lock-on-idle (Phase 6 — this only makes a
-manually-triggered lock actually secure).
+privileged client (no client-allowlist mechanism yet).
 
 ## Qt/GLib event loop bridge (`core/qt_glib_bridge.{h,cpp}`)
 
@@ -198,23 +170,16 @@ it's the compositor and is always already running by the time a portal
 call could make sense; a D-Bus-activation `Exec=` here would risk launching
 a second `biome` process as a side effect of a stray portal call.
 
-**Integration gap that isn't obvious from the code:** `main.cpp`'s
-`QApplication` is offscreen and its event loop is deliberately never run
-(`decoration/` drives Qt synchronously off Biome's own loop instead).
-Without pumping Qt's event loop at all, `QDBusConnection` setup calls
-succeed but no incoming method call or outgoing signal ever dispatches. A
-`wl_event_loop` timer calling `QCoreApplication::processEvents()` every
-10ms is what actually makes the D-Bus object live — still Biome's own loop
-driving it, just polling rather than being woken by Qt's own dispatch fd.
-Any future Qt/D-Bus-backed `ipc/` module needs the same pump, not a second
-one.
+D-Bus dispatch inside Biome rides on the Qt/GLib event loop bridge (see
+that section); any future Qt/D-Bus `ipc/` module needs nothing extra.
 
 ## Workspace protocol (Workstream D)
 
-`ext-workspace-v1` has no wlroots server-side helper (unlike layer-shell or
-foreign-toplevel-management) — it's hand-rolled from the raw XML
-(manager/group/handle), the highest from-scratch effort of any Phase 4
-protocol. It covers switching/listing but has **no toplevel↔workspace
+`ext-workspace-v1` is hand-rolled from the raw XML (manager/group/handle);
+it predates the server helper wlroots 0.20 added (`wlr_ext_workspace_v1.h`).
+It sends no workspace `id`, so Forest maps `org.biome.Workspaces` indices to
+ext-workspace handles by arrival order (Biome announces them in index order
+and never removes one). It covers switching/listing but has **no toplevel↔workspace
 linkage at all** (checked against both its own XML and
 `wlr-foreign-toplevel-management-unstable-v1.xml`) — that's why the final
 design is a hybrid: `ext-workspace-v1` for switching/listing/active-highlight,
@@ -238,9 +203,11 @@ same approach other wlr-ecosystem clients use for this exact gap.
   hotplug repair and startup never write; unmentioned connectors keep their
   entries. Identity-based (make/model/serial) profiles are the shell's job.
 
-- **One geometry path.** `output_sync_geometry()` is the only place that
-  positions per-output scene state (layer trees, lock tree/rect) and re-runs
-  `arrange_layers`; `output_set_enabled()` owns layout/scene-output membership.
+- **One geometry path.** `output_sync_geometry()` (layout `change` signal) is
+  the only place that positions per-output scene state (layer trees, lock
+  tree/rect) and re-runs `arrange_layers`; an output out of the layout has
+  its trees hidden, not moved. `output_set_enabled()` owns layout/scene-output
+  membership and destroys the scene output before leaving the layout.
   A disabled output is out of `output_layout` entirely (it keeps a
   `current_mode`, so membership would give it hit-testable space).
 - **Gap validation is compositor policy.** `wlr_cursor` clamps to the closest
@@ -254,9 +221,9 @@ same approach other wlr-ecosystem clients use for this exact gap.
   (`core/output_arrange.cpp`: drop empty bands, then attach leftover groups).
   The repair is never written back, so replug restores the last live layout.
 - **`output_layout_settled()`** runs once after a change settles (not from the
-  layout `change` signal, which fires per head mid-apply): layer surfaces
-  first (their exclusive zones feed maximize targets), then windows, then the
-  cursor. Windows still overlapping an output keep absolute coordinates;
+  layout `change` signal, which fires per head mid-apply): window relocation,
+  then the cursor (layer surfaces were already arranged from the `change`
+  signal, so exclusive zones are current). Windows still overlapping an output keep absolute coordinates;
   only off-screen windows and their restore boxes are pulled to the nearest
   output, and maximized/fullscreen ones re-fit.
 - **Disabling an output closes its layer surfaces** (protocol `closed`), same
@@ -272,14 +239,15 @@ same approach other wlr-ecosystem clients use for this exact gap.
 
 Deliberate deviations from protocol or common compositor practice that
 Forest depends on. Open ones (bugs, spec gaps slated for removal) live in
-`docs/roadmap.md`. Audited 2026-10-04.
+`docs/roadmap.md`. Audited 2026-11-15.
 
 - **`org.biome.Workspaces` D-Bus** for toplevel↔workspace linkage (see
   "Workspace protocol" above). Forest's windowlist/deskswitch check
   `isAvailable()` and degrade without it.
 - **ext-foreign-toplevel-list ↔ wlr-foreign-toplevel paired by creation
   order.** Forest's windowlist relies on Biome creating both handles
-  back-to-back; neither protocol guarantees it.
+  back-to-back (and on binding both globals in one dispatch); neither
+  protocol guarantees it.
 - **Bare-modifier triggers in the GlobalShortcuts backend.** A lone
   `LOGO` (etc.) fires on an uninterrupted tap; not in the shortcuts-spec
   grammar, so Forest's Meta menu hotkey won't bind on other backends.
@@ -289,7 +257,13 @@ Forest depends on. Open ones (bugs, spec gaps slated for removal) live in
   supplies its namespaces via a conf.d drop-in (see "Config sources").
 - **Every newly mapped toplevel takes focus**, with no xdg-activation token
   check. Common floating-WM convention (sway does the same); xdg-activation
-  is planned for 0.2.0 in the roadmap.
+  only governs raising already-mapped windows.
+- **An honored xdg-activation token gives an `xdg_popup` keyboard focus**
+  (see "xdg-activation"). Forest's hotkey-opened menus rely on it; elsewhere
+  they open without keyboard focus.
+- **Reconnected outputs get their last layout back** (`[Outputs]`, "Live
+  output management"). Forest's displays service skips re-applying a
+  profile when a monitor drops and returns within its debounce.
 - **ext-workspace: one global group, no `output_enter`.** Workspaces are
   global, not per-output; per-output-filtering clients may show none.
 
@@ -345,6 +319,8 @@ screencopy.
   (minimized/other-workspace) windows and would include windows stacked above.
 - One source per toplevel, created on first request, freed with the scene.
 - Frames are only sent on damage, so a static window yields one frame.
+- Unlike output sources, toplevel sources keep producing window contents
+  while locked.
 
 ## Data control (`core/main.cpp`)
 
@@ -466,7 +442,7 @@ external theme without one gets unstyled menus. `builtin.qss` carries a copy.
 
 | Selector | Widget |
 |---|---|
-| `biome_decoration--DecorationFrame#biomeFrame` | Whole frame; props `focused`, `biomeMaximized` |
+| `biome_decoration--DecorationFrame#biomeFrame` | Whole frame; props `focused`, `urgent`, `biomeMaximized` |
 | `QWidget#biomeTitlebar` | Titlebar |
 | `QLabel#biomeTitle` | Title text |
 | `QToolButton#biomeTitleIcon` | App icon |
@@ -474,7 +450,7 @@ external theme without one gets unstyled menus. `builtin.qss` carries a copy.
 | `biome_decoration--DecorationButton#biomeButtonMinimize/Maximize/Close` | Buttons (`qproperty-icon`, `:hover`, `:pressed`) |
 | `#biomeContent` | Client-area spacer |
 | `QWidget#biomeSwitcherRoot`, `QFrame#biomeSwitcherPanel` | Switcher |
-| `QToolButton#biomeSwitcherIcon` | Switcher entry; prop `selected` |
+| `QToolButton#biomeSwitcherIcon` | Switcher entry; props `selected`, `urgent` |
 | `QLabel#biomeSwitcherTitleLabel` | Switcher title |
 | `QWidget#biomeMenuRoot`, `QMenu#biomeMenu` | Window menu (styled by plain `QMenu` rules in `shared.css`) |
 | `QWidget#biomeSwitcherHighlightRoot`, `QFrame#biomeSwitcherHighlight` | Switcher highlight |
