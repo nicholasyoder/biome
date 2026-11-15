@@ -48,7 +48,7 @@ void focus_topmost_on_active_workspace(BiomeServer *server) {
             return;
         }
     }
-    wlr_seat_keyboard_notify_clear_focus(server->seat);
+    clear_keyboard_focus(server);
 }
 
 static int wrap_workspace(BiomeServer *server, int index) {

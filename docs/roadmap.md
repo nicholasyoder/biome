@@ -48,8 +48,6 @@ session logs or design discussion.
 Review fixes (details in [`docs/review-2026-11.md`](review-2026-11.md)).
 Ships with/before Forest 0.11.1, which requires it.
 
-- **Focus clearing and window-state fixes** ([detail](review-2026-11.md#focus-and-state)).
-  No more two "active" windows; maximize while fullscreen.
 - **Xwayland window state and decoration cache** ([detail](review-2026-11.md#xwayland-state)).
   X11 windows lose their frame after leaving fullscreen.
 - **Standard-protocol gaps for other shells' clients** ([detail](review-2026-11.md#client-conformance)).

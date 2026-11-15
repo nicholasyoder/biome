@@ -2,6 +2,7 @@ Changelog
 ============
 
 * Unreleased
+  - Fix two windows showing as active in the taskbar after the last window was minimized or the screen locked; maximizing a fullscreen window no longer shrinks it while fullscreen; dragging a window that mapped maximized no longer jumps; Ctrl-Alt-Shift-arrow moves the active window, not an unseen one; `MoveToplevelToWorkspace` ignores out-of-range workspaces
   - Fix a crash opening the snap menu on a window that had just closed or hidden itself, a crash when the pointer left every monitor while dwelling at a snap zone, a ~36 KB icon leak per closed window, and a window mapped onto another workspace stealing keyboard focus while invisible (it is marked urgent instead); a window that hides and reappears now comes back as a fresh one (not maximized/fullscreen/snapped/minimized)
   - Fix global shortcuts with Shift+letter never firing and letter shortcuts dying under Caps Lock; `SHIFT+1` and `SHIFT+exclam` both match now
   - GlobalShortcuts portal: refuse bare-key shortcuts (no non-Shift modifier, other than F-keys, XF86 keys, Print/Pause) and triggers with empty parts like `CTRL+`; fix the `ListShortcuts`/`ConfigureShortcuts` signatures and export the interface `version`

@@ -184,7 +184,7 @@ static void handle_new_session_lock(wl_listener *listener, void *data) {
     wlr_seat_pointer_end_grab(server->seat);
     wlr_seat_keyboard_end_grab(server->seat);
     wlr_seat_touch_end_grab(server->seat);
-    wlr_seat_keyboard_notify_clear_focus(server->seat);
+    clear_keyboard_focus(server);
     wlr_seat_pointer_notify_clear_focus(server->seat);
 
     // No raise_to_top needed: server->layers.session_lock is structurally

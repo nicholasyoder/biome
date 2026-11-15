@@ -145,6 +145,11 @@ and `focus_topmost_on_active_workspace()` (every focus-restore path) hands
 focus back to it. Only that surface takes focus on map; `on_demand` takes it
 on click, `none` never.
 
+`BiomeServer::activated_toplevel` tracks the one xdg-activated toplevel
+(set in `set_toplevel_focused`, nulled on unmap). Clearing focus entirely goes
+through `clear_keyboard_focus()`, never a bare
+`wlr_seat_keyboard_notify_clear_focus()`, or the old window stays activated.
+
 While locked, the chokepoint refuses everything but lock surfaces, and
 `focus_topmost_on_active_workspace()` hands focus to a mapped lock surface
 (`session_lock_refocus()`) instead. Lock start ends any seat grab first: an

@@ -333,6 +333,10 @@ void set_toplevel_urgent(BiomeToplevel *toplevel, bool urgent);
 // directly by anything granting focus itself; see that function instead.
 void clear_focused_toplevel(BiomeServer *server);
 
+// Deactivates the activated toplevel and clears seat keyboard focus. Use this,
+// never wlr_seat_keyboard_notify_clear_focus() directly.
+void clear_keyboard_focus(BiomeServer *server);
+
 // The single chokepoint for handing keyboard focus to any surface that
 // *isn't* a BiomeToplevel: a keyboard-interactive layer-shell surface (the
 // panel; refused while another client's `exclusive` layer surface is up), an xdg_popup (any of Forest's panel/panel-library popup/popupmenu

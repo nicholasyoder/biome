@@ -360,6 +360,8 @@ struct BiomeServer {
     wl_client *last_press_recipient = nullptr;
     // Honored activation for a popup not mapped yet; xdg_popup_map focuses it.
     wlr_surface *activated_unmapped_popup = nullptr;
+    // The one toplevel with xdg "activated" set; survives keyboard focus moving to a popup/nowhere.
+    BiomeToplevel *activated_toplevel = nullptr;
 
     // ext-idle-notify-v1 + idle-inhibit-unstable-v1 (desktop/idle.cpp).
     wlr_idle_notifier_v1 *idle_notifier = nullptr;

@@ -44,7 +44,7 @@ QVariantMap WorkspaceBridge::GetWindowWorkspaces() {
 void WorkspaceBridge::MoveToplevelToWorkspace(const QString &identifier, int workspace) {
     BiomeToplevel *toplevel =
         foreign_toplevel_find_by_identifier(m_server, identifier.toUtf8().constData());
-    if (toplevel == nullptr) {
+    if (toplevel == nullptr || workspace < 0 || workspace >= m_server->workspace_count) {
         return;
     }
     move_toplevel_to_workspace(toplevel, workspace);

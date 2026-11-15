@@ -149,6 +149,9 @@ void drag_icon_create(BiomeServer *server, wlr_drag_icon *drag_icon) {
 void begin_interactive(BiomeToplevel *toplevel, BiomeCursorMode mode, uint32_t edges,
         bool check_pointer_focus) {
     BiomeServer *server = toplevel->server;
+    if (toplevel->fullscreen) {
+        return;
+    }
     if (check_pointer_focus) {
         wlr_surface *focused_surface = server->seat->pointer_state.focused_surface;
         // wlr_surface_get_root_surface() dereferences its argument
@@ -237,6 +240,7 @@ static void process_cursor_move(BiomeServer *server, uint32_t time) {
     }
     int x = static_cast<int>(server->cursor->x - server->grab_x);
     int y = static_cast<int>(server->cursor->y - server->grab_y);
+    toplevel->reposition_center = false; // else a window mapped maximized snaps to center on ack
     if (toplevel->reposition_pending) {
         // set_toplevel_maximized() above requested the restore but (xdg-shell)
         // hasn't heard back yet - moving the frame now would show its
