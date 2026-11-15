@@ -48,9 +48,6 @@ session logs or design discussion.
 Review fixes (details in [`docs/review-2026-11.md`](review-2026-11.md)).
 Ships with/before Forest 0.11.1, which requires it.
 
-- **Toplevel unmap/destroy chokepoint** ([detail](review-2026-11.md#toplevel-lifecycle)).
-  Fixes an assert crash via the snap-hold menu, a snap-dwell NULL crash, an
-  icon leak per window, and invisible dialogs stealing focus.
 - **Cursor-theme reload use-after-free** ([detail](review-2026-11.md#cursor-reload)).
   A theme change frees the xcursor manager `wlr_cursor` still uses.
 - **Focus clearing and window-state fixes** ([detail](review-2026-11.md#focus-and-state)).

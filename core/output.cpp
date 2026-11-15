@@ -32,6 +32,7 @@ static void rescue_cursor(BiomeServer *server) {
 }
 
 void output_layout_settled(BiomeServer *server) {
+    snap_preview_hide(server); // its dwell output may be gone
     toplevels_relocate_for_layout(server);
     rescue_cursor(server);
 }

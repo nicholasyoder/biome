@@ -192,15 +192,10 @@ void foreign_toplevel_update_title_app_id(BiomeToplevel *toplevel) {
         return;
     }
 
-    const char *title = "";
-    const char *app_id = "";
-    if (toplevel->type == BiomeToplevelType::Xdg) {
-        title = toplevel->xdg_toplevel->title != nullptr ? toplevel->xdg_toplevel->title : "";
-        app_id = toplevel->xdg_toplevel->app_id != nullptr ? toplevel->xdg_toplevel->app_id : "";
-    } else {
-        title = toplevel->xwayland_surface->title != nullptr ? toplevel->xwayland_surface->title : "";
-        app_id = toplevel->xwayland_surface->class_ != nullptr ? toplevel->xwayland_surface->class_ : "";
-    }
+    const char *title = toplevel_title(toplevel);
+    const char *app_id = toplevel_app_id(toplevel);
+    title = title != nullptr ? title : "";
+    app_id = app_id != nullptr ? app_id : "";
     wlr_foreign_toplevel_handle_v1_set_title(wrapper->handle, title);
     wlr_foreign_toplevel_handle_v1_set_app_id(wrapper->handle, app_id);
 

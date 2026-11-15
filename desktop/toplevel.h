@@ -139,7 +139,7 @@ struct BiomeToplevel {
     // State last handed to render_toplevel_decoration(), so it can skip its
     // expensive full-window QImage render when nothing changed (e.g. a
     // plain content-only commit during scrolling). last_decoration_title is
-    // a borrowed pointer, not owned: BiomeToplevel is calloc()'d/free()'d,
+    // a borrowed pointer, not owned: BiomeToplevel is a plain struct,
     // so a std::string member would never construct. Pointer identity is
     // enough since a real title change always re-renders directly.
     bool decoration_rendered_once = false;
@@ -437,6 +437,19 @@ void set_toplevel_minimized(BiomeToplevel *toplevel, bool minimized);
 // event data so the handler is identical either way.
 void toplevel_map(wl_listener *listener, void *data);
 void toplevel_unmap(wl_listener *listener, void *data);
+
+// Shared create/destroy pair. toplevel_create allocates with new (IconImage needs its ctor);
+// the caller then builds scene_tree/decoration and listeners. toplevel_destroy_common runs
+// after the caller removed its listeners and deletes the toplevel.
+BiomeToplevel *toplevel_create(BiomeServer *server, BiomeToplevelType type);
+void toplevel_destroy_common(BiomeToplevel *toplevel);
+// Drops every weak server-side reference to the toplevel (grab, hover/press, menu, switcher, last click).
+void toplevel_forget(BiomeToplevel *toplevel);
+
+// Nullable; xdg title/app_id, X11 title/WM_CLASS.
+const char *toplevel_title(const BiomeToplevel *toplevel);
+const char *toplevel_app_id(const BiomeToplevel *toplevel);
+BiomeToplevel *toplevel_parent(BiomeToplevel *toplevel);
 void toplevel_request_move(wl_listener *listener, void *data);
 
 // Raw scene-graph hit test, shared by desktop_toplevel_at and

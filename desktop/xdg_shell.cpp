@@ -185,16 +185,7 @@ static void xdg_toplevel_destroy(wl_listener *listener, void *data) {
         wl_list_remove(&toplevel->kde_decoration_mode.link);
     }
 
-    destroy_toplevel_decoration(toplevel); // before scene_tree: unhooks a decoration_buffer signal
-    // scene_tree isn't tied to the xdg_surface's own lifecycle, so it has to
-    // be destroyed explicitly - recursively destroys content_tree and the
-    // decoration buffer too.
-    wlr_scene_node_destroy(&toplevel->scene_tree->node);
-
-    clear_decoration_tracking(toplevel->server, toplevel);
-    switcher_remove_toplevel(toplevel->server, toplevel);
-    window_menu_remove_toplevel(toplevel->server, toplevel);
-    free(toplevel);
+    toplevel_destroy_common(toplevel);
 }
 
 // A client requests this to begin an interactive resize, typically from its
@@ -284,9 +275,7 @@ static void server_new_xdg_toplevel(wl_listener *listener, void *data) {
     BiomeServer *server = wl_container_of(listener, server, new_xdg_toplevel);
     auto *xdg_toplevel = static_cast<wlr_xdg_toplevel *>(data);
 
-    auto *toplevel = static_cast<BiomeToplevel *>(calloc(1, sizeof(BiomeToplevel)));
-    toplevel->server = server;
-    toplevel->type = BiomeToplevelType::Xdg;
+    BiomeToplevel *toplevel = toplevel_create(server, BiomeToplevelType::Xdg);
     toplevel->xdg_toplevel = xdg_toplevel;
     // Before anything below reads toplevel_decorated()/xdg_client_side_decorated
     // (border-width lookups just a few lines down), pick up a KDE decoration
