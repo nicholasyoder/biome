@@ -353,7 +353,7 @@ static void clamp_content_into_box(BiomeToplevel *toplevel, const wlr_box &targe
     *vis_y = std::clamp(*vis_y, min_y, std::max(min_y, target.y + target.height - height - border_bottom));
 }
 
-static BiomeToplevel *toplevel_parent(BiomeToplevel *toplevel) {
+BiomeToplevel *toplevel_parent(BiomeToplevel *toplevel) {
     return toplevel->type == BiomeToplevelType::Xdg
         ? toplevel_from_xdg(toplevel->xdg_toplevel->parent)
         : toplevel_from_xwayland(toplevel->xwayland_surface->parent);
@@ -720,6 +720,9 @@ static wlr_output *g_snap_output = nullptr; // output the active/pending zone is
 
 static void snap_preview_show(BiomeServer *server, SnapZone zone, double lx, double ly) {
     wlr_output *output = wlr_output_layout_output_at(server->output_layout, lx, ly);
+    if (output == nullptr) { // pointer left every output while dwelling
+        return;
+    }
     wlr_box area = output_target_box(server, output);
     if (wlr_box_empty(&area)) {
         return;
@@ -1112,7 +1115,12 @@ void toplevel_map(wl_listener *listener, void *data) {
     }
     foreign_toplevel_create(toplevel);
     if (!toplevel_is_splash(toplevel)) {
-        focus_toplevel(toplevel);
+        // A dialog placed on another workspace is invisible; don't hand it the keyboard.
+        if (toplevel->workspace == toplevel->server->active_workspace && !toplevel->minimized) {
+            focus_toplevel(toplevel);
+        } else {
+            set_toplevel_urgent(toplevel, true);
+        }
     }
 }
 
@@ -1121,9 +1129,7 @@ void toplevel_unmap(wl_listener *listener, void *data) {
     BiomeToplevel *toplevel = wl_container_of(listener, toplevel, unmap);
     BiomeServer *server = toplevel->server;
 
-    if (toplevel == server->grabbed_toplevel) {
-        reset_cursor_mode(server);
-    }
+    toplevel_forget(toplevel);
 
     bool was_focused = server->seat->keyboard_state.focused_surface == toplevel_surface(toplevel);
 
@@ -1140,9 +1146,23 @@ void toplevel_unmap(wl_listener *listener, void *data) {
     // send no configures.
     toplevel->placed = false;
     wlr_scene_node_set_enabled(&toplevel->scene_tree->node, false);
-    switcher_remove_toplevel(server, toplevel);
-    window_menu_remove_toplevel(server, toplevel);
     foreign_toplevel_destroy(toplevel);
+    // A remap is a fresh window.
+    if (toplevel->fullscreen) {
+        toplevel->fullscreen = false;
+        wlr_scene_node_reparent(&toplevel->scene_tree->node, toplevel_layer(toplevel));
+        unmanaged_update_layers(server);
+    }
+    toplevel->maximized = false;
+    toplevel->snap_zone = SnapZone::None;
+    toplevel->minimized = false;
+    toplevel->reposition_pending = false;
+    toplevel->reposition_center = false;
+    toplevel->premap_pending = false;
+    if (toplevel->content_tree != nullptr) {
+        wlr_scene_node_set_position(&toplevel->content_tree->node,
+            decoration_border_width(toplevel, false), decoration_titlebar_height(toplevel, false));
+    }
     if (toplevel->urgent) {
         toplevel->urgent = false;
         ext_workspace_sync_state(server);
@@ -1152,6 +1172,41 @@ void toplevel_unmap(wl_listener *listener, void *data) {
         wlr_seat_pointer_clear_focus(server->seat);
         focus_topmost_on_active_workspace(server);
     }
+}
+
+void toplevel_forget(BiomeToplevel *toplevel) {
+    BiomeServer *server = toplevel->server;
+    if (toplevel == server->grabbed_toplevel) {
+        reset_cursor_mode(server);
+    }
+    if (server->last_left_click_toplevel == toplevel) {
+        server->last_left_click_toplevel = nullptr;
+    }
+    clear_decoration_tracking(server, toplevel); // the maximize-hold timer bails on a null pressed
+    switcher_remove_toplevel(server, toplevel);
+    window_menu_remove_toplevel(server, toplevel);
+}
+
+BiomeToplevel *toplevel_create(BiomeServer *server, BiomeToplevelType type) {
+    auto *toplevel = new BiomeToplevel;
+    toplevel->server = server;
+    toplevel->type = type;
+    return toplevel;
+}
+
+void toplevel_destroy_common(BiomeToplevel *toplevel) {
+    toplevel_forget(toplevel);
+    destroy_toplevel_decoration(toplevel); // before scene_tree: unhooks a decoration_buffer signal
+    wlr_scene_node_destroy(&toplevel->scene_tree->node); // also frees content_tree and the decoration buffer
+    delete toplevel;
+}
+
+const char *toplevel_title(const BiomeToplevel *toplevel) {
+    return toplevel->type == BiomeToplevelType::Xdg ? toplevel->xdg_toplevel->title : toplevel->xwayland_surface->title;
+}
+
+const char *toplevel_app_id(const BiomeToplevel *toplevel) {
+    return toplevel->type == BiomeToplevelType::Xdg ? toplevel->xdg_toplevel->app_id : toplevel->xwayland_surface->class_;
 }
 
 // Shared between xdg-shell and Xwayland: both signal this with irrelevant

@@ -85,7 +85,6 @@ static void xwayland_toplevel_set_parent(wl_listener *listener, void *data) {
 }
 
 static void destroy_xwayland_toplevel(BiomeToplevel *toplevel) {
-    BiomeServer *server = toplevel->server;
     wl_list_remove(&toplevel->associate.link);
     wl_list_remove(&toplevel->dissociate.link);
     wl_list_remove(&toplevel->set_title.link);
@@ -101,18 +100,7 @@ static void destroy_xwayland_toplevel(BiomeToplevel *toplevel) {
     wl_list_remove(&toplevel->request_activate.link);
     wl_list_remove(&toplevel->set_hints.link);
 
-    destroy_toplevel_decoration(toplevel); // before scene_tree: unhooks a decoration_buffer signal
-    // scene_tree was created up front in server_new_xwayland_surface and
-    // outlives any single associate/dissociate cycle, so it's destroyed here.
-    wlr_scene_node_destroy(&toplevel->scene_tree->node);
-
-    clear_decoration_tracking(server, toplevel);
-    switcher_remove_toplevel(server, toplevel);
-    window_menu_remove_toplevel(server, toplevel);
-    if (server->last_left_click_toplevel == toplevel) {
-        server->last_left_click_toplevel = nullptr;
-    }
-    free(toplevel);
+    toplevel_destroy_common(toplevel);
 }
 
 static void xwayland_toplevel_destroy(wl_listener *listener, void *data) {
@@ -379,9 +367,7 @@ static BiomeUnmanaged *create_unmanaged(BiomeServer *server, wlr_xwayland_surfac
 }
 
 static BiomeToplevel *create_xwayland_toplevel(BiomeServer *server, wlr_xwayland_surface *xsurface) {
-    auto *toplevel = static_cast<BiomeToplevel *>(calloc(1, sizeof(BiomeToplevel)));
-    toplevel->server = server;
-    toplevel->type = BiomeToplevelType::Xwayland;
+    BiomeToplevel *toplevel = toplevel_create(server, BiomeToplevelType::Xwayland);
     toplevel->xwayland_surface = xsurface;
 
     // scene_tree is created up front (unlike content_tree, which comes and

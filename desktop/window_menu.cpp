@@ -389,7 +389,7 @@ void window_menu_close(BiomeServer *server) {
 
 static void open_menu(BiomeToplevel *toplevel, int x, int y, int anchor_height, bool snap, bool armed) {
     BiomeServer *server = toplevel->server;
-    if (server->session_locked || g.server == nullptr) {
+    if (server->session_locked || g.server == nullptr || !toplevel->placed) {
         return;
     }
     window_menu_close(server);

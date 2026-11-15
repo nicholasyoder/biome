@@ -14,12 +14,8 @@
 namespace {
 
 biome_decoration::SwitcherEntry switcher_entry_for(BiomeToplevel *pos) {
-    const char *title = pos->type == BiomeToplevelType::Xdg
-        ? pos->xdg_toplevel->title
-        : pos->xwayland_surface->title;
-    const char *app_id = pos->type == BiomeToplevelType::Xdg
-        ? pos->xdg_toplevel->app_id
-        : pos->xwayland_surface->class_;
+    const char *title = toplevel_title(pos);
+    const char *app_id = toplevel_app_id(pos);
     std::string label;
     if (title != nullptr && title[0] != '\0') {
         label = title;

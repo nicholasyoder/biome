@@ -182,9 +182,7 @@ void render_toplevel_decoration(BiomeToplevel *toplevel) {
         ? !toplevel->maximized
         : toplevel->maximized;
 
-    const char *title = toplevel->type == BiomeToplevelType::Xdg
-        ? toplevel->xdg_toplevel->title
-        : toplevel->xwayland_surface->title;
+    const char *title = toplevel_title(toplevel);
 
     if (!toplevel->decoration_rendered_once) {
         // No buffer yet, so no outputs_update to take the scale from.
