@@ -114,6 +114,13 @@ uint GlobalShortcutsPortal::BindShortcuts(const QDBusObjectPath &handle,
         // Auto-accept with no confirmation dialog - see this file's header
         // comment. shortcut_id is captured by value since spec.id is a
         // QString living in the caller's temporary shortcuts list.
+        if (!trigger_allowed(*parsed)) {
+            wlr_log(WLR_INFO,
+                "GlobalShortcuts: trigger \"%s\" for shortcut \"%s\" has no non-Shift modifier - skipping",
+                qPrintable(preferred_trigger), qPrintable(spec.id));
+            continue;
+        }
+
         if (trigger_in_use(*parsed)) {
             wlr_log(WLR_INFO,
                 "GlobalShortcuts: trigger \"%s\" for shortcut \"%s\" is already in use - skipping",
@@ -165,10 +172,8 @@ uint GlobalShortcutsPortal::BindShortcuts(const QDBusObjectPath &handle,
 }
 
 uint GlobalShortcutsPortal::ListShortcuts(const QDBusObjectPath &handle,
-        const QDBusObjectPath &session_handle, const QVariantMap &options,
-        QVariantMap &results) {
+        const QDBusObjectPath &session_handle, QVariantMap &results) {
     (void)handle;
-    (void)options;
 
     const QString owner = session_handle.path();
     const auto it = m_sessions.constFind(owner);
@@ -183,15 +188,11 @@ uint GlobalShortcutsPortal::ListShortcuts(const QDBusObjectPath &handle,
     return 0;
 }
 
-uint GlobalShortcutsPortal::ConfigureShortcuts(const QDBusObjectPath &handle,
-        const QDBusObjectPath &session_handle, const QString &parent_window,
-        const QVariantMap &options, QVariantMap &results) {
-    (void)handle;
+void GlobalShortcutsPortal::ConfigureShortcuts(const QDBusObjectPath &session_handle,
+        const QString &parent_window, const QVariantMap &options) {
     (void)session_handle;
     (void)parent_window;
     (void)options;
-    results.clear();
-    return 2; // not supported - Biome has no shortcut-configuration UI
 }
 
 void GlobalShortcutsPortal::closeSession(const QString &owner) {
@@ -230,7 +231,8 @@ void global_shortcuts_portal_init(BiomeServer *server) {
         return;
     }
     if (!bus.registerObject(QStringLiteral("/org/freedesktop/portal/desktop"), portal,
-            QDBusConnection::ExportAllSlots | QDBusConnection::ExportAllSignals)) {
+            QDBusConnection::ExportAllSlots | QDBusConnection::ExportAllSignals
+                | QDBusConnection::ExportAllProperties)) {
         wlr_log(WLR_ERROR, "Biome: failed to register GlobalShortcuts portal object: %s",
             qPrintable(bus.lastError().message()));
         return;

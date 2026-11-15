@@ -37,7 +37,25 @@ struct ParsedTrigger {
     xkb_keysym_t keysym = XKB_KEY_NoSymbol;
 };
 
+// Key names are lowercased at parse ("CTRL+A" == "CTRL+a"); empty parts
+// ("CTRL+", "A++b") are rejected.
 std::optional<ParsedTrigger> parse_trigger(const QString &trigger);
+
+// Modifiers a trigger can require. Caps Lock/Mod3/Mod5 are always ignored;
+// NUM parses but isn't matched, so NumLock can't silently unbind shortcuts.
+constexpr uint32_t kMatchableModifierMask =
+    WLR_MODIFIER_SHIFT | WLR_MODIFIER_CTRL | WLR_MODIFIER_ALT | WLR_MODIFIER_LOGO;
+
+// `translated` is the key's keysym under the current modifiers, `level0` its
+// unshifted one. The trigger's keysym may match either (lowercased), so
+// SHIFT+exclam and SHIFT+1 both fire, and Caps Lock doesn't break letters.
+bool trigger_matches(const ParsedTrigger &trigger, xkb_keysym_t translated, xkb_keysym_t level0,
+    uint32_t modifiers);
+
+// Bare-key policy for portal binds: a keyed trigger needs a non-Shift
+// modifier unless it is an F-key, XF86* or Print/Pause/Break/Sys_Req.
+// Bare-modifier taps are always allowed.
+bool trigger_allowed(const ParsedTrigger &trigger);
 
 // Human-readable form for the portal's `trigger_description`, e.g.
 // "Ctrl+Alt+Return"; a bare-modifier trigger reads "Meta (tap)".

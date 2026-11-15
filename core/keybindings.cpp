@@ -15,23 +15,6 @@
 
 namespace {
 
-// CapsLock (WLR_MODIFIER_CAPS) and the two rarely-used extra modifiers
-// (MOD3/MOD5) are never part of the shortcuts-spec grammar and are masked
-// out unconditionally - a shortcut shouldn't stop working just because
-// CapsLock happens to be on. WLR_MODIFIER_MOD2 (the spec's "NUM") parses
-// successfully in parse_trigger() but is masked out here too, deliberately:
-// nothing needs a NumLock-conditioned shortcut yet, and honoring it by
-// default would mean every existing binding (built-in or portal) silently
-// stops matching whenever NumLock is toggled on - a worse default than
-// just not supporting NUM-sensitive triggers yet. Revisit if something
-// actually needs one.
-constexpr uint32_t kMatchableModifierMask =
-    WLR_MODIFIER_SHIFT | WLR_MODIFIER_CTRL | WLR_MODIFIER_ALT | WLR_MODIFIER_LOGO;
-
-bool trigger_matches(const ParsedTrigger &trigger, xkb_keysym_t sym, uint32_t modifiers) {
-    return trigger.keysym == sym && trigger.modmask == (modifiers & kMatchableModifierMask);
-}
-
 // 0 for a non-modifier keysym; otherwise the single kMatchableModifierMask
 // bit that keysym corresponds to.
 uint32_t modifier_bit_for_keysym(xkb_keysym_t sym) {
@@ -164,7 +147,7 @@ const std::vector<BiomeKeybinding> &builtin_keybindings() {
 } // namespace
 
 bool handle_key_press(BiomeServer *server, wlr_keyboard *keyboard, uint32_t keycode,
-        xkb_keysym_t sym, uint32_t modifiers) {
+        xkb_keysym_t sym, xkb_keysym_t level0, uint32_t modifiers) {
     // Ctrl-Alt-F1..F12: hand VT switching back to the session/kernel. Taking
     // over a KMS/DRM session puts the console in graphics mode, so the
     // compositor has to notice these and call wlr_session_change_vt() itself.
@@ -198,13 +181,13 @@ bool handle_key_press(BiomeServer *server, wlr_keyboard *keyboard, uint32_t keyc
     // once there's an actual Forest-side
     // config entry that wants to do this, rather than guessed at now.
     for (const BiomeKeybinding &entry : builtin_keybindings()) {
-        if (trigger_matches(entry.trigger, sym, modifiers)) {
+        if (trigger_matches(entry.trigger, sym, level0, modifiers)) {
             return entry.invoke(server, modifiers);
         }
     }
 
     for (const PortalBinding &entry : portal_bindings()) {
-        if (trigger_matches(entry.binding.trigger, sym, modifiers)) {
+        if (trigger_matches(entry.binding.trigger, sym, level0, modifiers)) {
             if (!entry.binding.invoke(server, modifiers)) {
                 return false;
             }
@@ -312,6 +295,24 @@ bool handle_modifier_tap(BiomeServer *server, xkb_keysym_t sym, uint32_t modifie
 
 bool handle_switcher_key_release(BiomeServer *server, xkb_keysym_t sym) {
     return server->switcher.active && (sym == XKB_KEY_Tab || sym == XKB_KEY_ISO_Left_Tab);
+}
+
+void release_keyboard_bindings(wlr_keyboard *keyboard) {
+    std::vector<HeldBinding> released;
+    std::vector<HeldBinding> &held = held_bindings();
+    for (auto it = held.begin(); it != held.end();) {
+        if (it->keyboard == keyboard) {
+            released.push_back(std::move(*it));
+            it = held.erase(it);
+        } else {
+            ++it;
+        }
+    }
+    for (const HeldBinding &entry : released) {
+        if (entry.release) {
+            entry.release();
+        }
+    }
 }
 
 void add_portal_keybinding(const QString &owner, ParsedTrigger trigger,
