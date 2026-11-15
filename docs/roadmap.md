@@ -48,9 +48,6 @@ session logs or design discussion.
 Review fixes (details in [`docs/review-2026-11.md`](review-2026-11.md)).
 Ships with/before Forest 0.11.1, which requires it.
 
-- **Hotkey trigger contract** ([detail](review-2026-11.md#hotkey-triggers)). Match level-0
-  and translated keysyms (Caps Lock, Shift+letter), portal signature fixes,
-  refuse bare-key bindings.
 - **Toplevel unmap/destroy chokepoint** ([detail](review-2026-11.md#toplevel-lifecycle)).
   Fixes an assert crash via the snap-hold menu, a snap-dwell NULL crash, an
   icon leak per window, and invisible dialogs stealing focus.

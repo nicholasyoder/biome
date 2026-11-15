@@ -15,7 +15,7 @@
 // trigger is unparseable or already used by a built-in or another binding,
 // in which case it's omitted from the reply. A repeat BindShortcuts adds new
 // ids and leaves already-bound ids untouched (no rebinding).
-// ConfigureShortcuts replies "not supported". System wiring
+// ConfigureShortcuts is a no-op. System wiring
 // (data/xdg-desktop-portal/biome-portals.conf and portals/biome.portal,
 // installed by the top-level CMakeLists.txt) is done - see
 // docs/architecture-notes.md's Workstream C section. Trigger parsing and the
@@ -60,9 +60,12 @@ const QDBusArgument &operator>>(const QDBusArgument &arg, GlobalShortcutSpec &sp
 class GlobalShortcutsPortal : public QObject, protected QDBusContext {
     Q_OBJECT
     Q_CLASSINFO("D-Bus Interface", "org.freedesktop.impl.portal.GlobalShortcuts")
+    Q_PROPERTY(uint version READ version)
 
 public:
     explicit GlobalShortcutsPortal(QObject *parent = nullptr);
+
+    uint version() const { return 1; }
 
 public slots:
     // Real impl.portal.* backend methods reply synchronously with
@@ -80,10 +83,11 @@ public slots:
         const QVariantMap &options, QVariantMap &results);
 
     uint ListShortcuts(const QDBusObjectPath &handle, const QDBusObjectPath &session_handle,
-        const QVariantMap &options, QVariantMap &results);
+        QVariantMap &results);
 
-    uint ConfigureShortcuts(const QDBusObjectPath &handle, const QDBusObjectPath &session_handle,
-        const QString &parent_window, const QVariantMap &options, QVariantMap &results);
+    // No reply arguments in the impl spec; there is no configuration UI, so a no-op.
+    void ConfigureShortcuts(const QDBusObjectPath &session_handle, const QString &parent_window,
+        const QVariantMap &options);
 
 signals:
     void Activated(const QDBusObjectPath &session_handle, const QString &shortcut_id,

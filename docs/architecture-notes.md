@@ -173,6 +173,18 @@ a second `biome` process as a side effect of a stray portal call.
 D-Bus dispatch inside Biome rides on the Qt/GLib event loop bridge (see
 that section); any future Qt/D-Bus `ipc/` module needs nothing extra.
 
+### Shortcut triggers (`core/trigger.cpp`)
+
+- Key names are lowercased at parse. A trigger matches if its keysym equals
+  the lowercased translated keysym **or** the key's level-0 keysym, so
+  `SHIFT+exclam` and `SHIFT+1` both fire, and Caps Lock doesn't break letters.
+  Caps Lock/Mod3/Mod5/NUM are ignored when matching.
+- Empty parts (`CTRL+`, `a++b`) are rejected.
+- Bare-key policy: a keyed trigger needs a non-Shift modifier unless it is an
+  F-key, `XF86*`, Print/Pause/Break/Sys_Req. Bare-modifier taps are allowed,
+  first-come per modifier.
+- A keyboard removed mid-hold fires `Deactivated` for its held bindings.
+
 ## Workspace protocol (Workstream D)
 
 `ext-workspace-v1` is hand-rolled from the raw XML (manager/group/handle);

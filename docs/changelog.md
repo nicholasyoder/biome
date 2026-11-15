@@ -2,6 +2,9 @@ Changelog
 ============
 
 * Unreleased
+  - Fix global shortcuts with Shift+letter never firing and letter shortcuts dying under Caps Lock; `SHIFT+1` and `SHIFT+exclam` both match now
+  - GlobalShortcuts portal: refuse bare-key shortcuts (no non-Shift modifier, other than F-keys, XF86 keys, Print/Pause) and triggers with empty parts like `CTRL+`; fix the `ListShortcuts`/`ConfigureShortcuts` signatures and export the interface `version`
+  - Fix a shortcut staying "held" when its keyboard was unplugged mid-press, and the seat still advertising a keyboard after the last one was removed
   - Fix an abort on exit (every time the greeter's biome hands off to the session): wlroots' listener asserts on teardown
   - Fix a crash when a window that hid itself without closing (unmapped) then asked to be minimized or maximized, and stop such hidden windows leaving their title bar on screen or staying in Alt-Tab
   - Fix a crash when a monitor was unplugged (or dropped out on wake) while the screen was locked, and a black lock screen when a disabled monitor's blank lock rect landed over another monitor

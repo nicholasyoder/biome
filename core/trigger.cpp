@@ -6,9 +6,11 @@
 #include <QStringList>
 
 std::optional<ParsedTrigger> parse_trigger(const QString &trigger) {
-    const QStringList parts = trigger.split('+', Qt::SkipEmptyParts);
-    if (parts.isEmpty()) {
-        return std::nullopt;
+    const QStringList parts = trigger.split('+');
+    for (const QString &part : parts) {
+        if (part.isEmpty()) {
+            return std::nullopt;
+        }
     }
 
     // A trigger that's just a single recognized modifier name on its own
@@ -54,7 +56,28 @@ std::optional<ParsedTrigger> parse_trigger(const QString &trigger) {
         return std::nullopt;
     }
 
-    return ParsedTrigger{modmask, keysym};
+    return ParsedTrigger{modmask, xkb_keysym_to_lower(keysym)};
+}
+
+bool trigger_matches(const ParsedTrigger &trigger, xkb_keysym_t translated, xkb_keysym_t level0,
+        uint32_t modifiers) {
+    if (trigger.keysym == XKB_KEY_NoSymbol
+        || trigger.modmask != (modifiers & kMatchableModifierMask)) {
+        return false;
+    }
+    return trigger.keysym == xkb_keysym_to_lower(translated)
+        || trigger.keysym == xkb_keysym_to_lower(level0);
+}
+
+bool trigger_allowed(const ParsedTrigger &trigger) {
+    if (trigger.keysym == XKB_KEY_NoSymbol
+        || (trigger.modmask & (WLR_MODIFIER_CTRL | WLR_MODIFIER_ALT | WLR_MODIFIER_LOGO))) {
+        return true;
+    }
+    const xkb_keysym_t sym = trigger.keysym;
+    return (sym >= XKB_KEY_F1 && sym <= XKB_KEY_F35) || (sym >= 0x1008FF00 && sym <= 0x1008FFFF)
+        || sym == XKB_KEY_Print || sym == XKB_KEY_Pause || sym == XKB_KEY_Break
+        || sym == XKB_KEY_Sys_Req;
 }
 
 QString describe_trigger(const ParsedTrigger &trigger) {

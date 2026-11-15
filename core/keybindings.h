@@ -38,8 +38,12 @@ struct BiomeKeybinding {
 // for every key press, regardless of which modifiers are held - portal-
 // registered shortcuts aren't restricted to Alt-chords. `keyboard`/`keycode`
 // identify the physical key, so a portal binding's release can be matched.
+// `sym` is the translated keysym, `level0` the key's unshifted one.
 bool handle_key_press(BiomeServer *server, wlr_keyboard *keyboard, uint32_t keycode,
-    xkb_keysym_t sym, uint32_t modifiers);
+    xkb_keysym_t sym, xkb_keysym_t level0, uint32_t modifiers);
+
+// Fires the release of every binding still held on a keyboard being removed.
+void release_keyboard_bindings(wlr_keyboard *keyboard);
 
 // Called from keyboard_handle_key() for every key release. Runs the release
 // callback of a portal binding this key triggered (modifiers don't matter,

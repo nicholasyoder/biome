@@ -64,6 +64,15 @@ static void keyboard_handle_key(wl_listener *listener, void *data) {
     int nsyms = xkb_state_key_get_syms(
         keyboard->wlr->xkb_state, keycode, &syms);
 
+    xkb_keysym_t level0 = XKB_KEY_NoSymbol;
+    {
+        const xkb_keysym_t *base;
+        const xkb_layout_index_t layout = xkb_state_key_get_layout(keyboard->wlr->xkb_state, keycode);
+        if (xkb_keymap_key_get_syms_by_level(keyboard->wlr->keymap, keycode, layout, 0, &base) > 0) {
+            level0 = base[0];
+        }
+    }
+
     // An open window menu is modal for the keyboard.
     {
         bool menu_consumed = false;
@@ -86,7 +95,7 @@ static void keyboard_handle_key(wl_listener *listener, void *data) {
     const bool pressed = event->state == WL_KEYBOARD_KEY_STATE_PRESSED;
     if (pressed) {
         for (int i = 0; i < nsyms; i++) {
-            handled = handle_key_press(server, keyboard->wlr, event->keycode, syms[i], modifiers);
+            handled |= handle_key_press(server, keyboard->wlr, event->keycode, syms[i], level0, modifiers);
         }
     } else if (handle_key_release(keyboard->wlr, event->keycode)) {
         handled = true;
@@ -125,6 +134,16 @@ static void keyboard_handle_key(wl_listener *listener, void *data) {
     }
 }
 
+static void update_seat_capabilities(BiomeServer *server) {
+    // Biome always has a cursor, even with no pointer devices, so the
+    // pointer capability is always advertised.
+    uint32_t caps = WL_SEAT_CAPABILITY_POINTER;
+    if (!wl_list_empty(&server->keyboards)) {
+        caps |= WL_SEAT_CAPABILITY_KEYBOARD;
+    }
+    wlr_seat_set_capabilities(server->seat, caps);
+}
+
 static void keyboard_handle_destroy(wl_listener *listener, void *data) {
     (void)data;
     BiomeKeyboard *keyboard = wl_container_of(listener, keyboard, destroy);
@@ -132,6 +151,8 @@ static void keyboard_handle_destroy(wl_listener *listener, void *data) {
     wl_list_remove(&keyboard->key.link);
     wl_list_remove(&keyboard->destroy.link);
     wl_list_remove(&keyboard->link);
+    release_keyboard_bindings(keyboard->wlr);
+    update_seat_capabilities(keyboard->server);
     free(keyboard);
 }
 
@@ -180,13 +201,7 @@ static void server_new_input(wl_listener *listener, void *data) {
     default:
         break;
     }
-    // Biome always has a cursor, even with no pointer devices, so the
-    // pointer capability is always advertised.
-    uint32_t caps = WL_SEAT_CAPABILITY_POINTER;
-    if (!wl_list_empty(&server->keyboards)) {
-        caps |= WL_SEAT_CAPABILITY_KEYBOARD;
-    }
-    wlr_seat_set_capabilities(server->seat, caps);
+    update_seat_capabilities(server);
 }
 
 static void seat_request_cursor(wl_listener *listener, void *data) {
