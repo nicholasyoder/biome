@@ -122,6 +122,11 @@ void set_toplevel_focused(BiomeToplevel *toplevel, bool focused) {
     }
     toplevel->focused = focused;
     if (focused) {
+        toplevel->server->activated_toplevel = toplevel;
+    } else if (toplevel->server->activated_toplevel == toplevel) {
+        toplevel->server->activated_toplevel = nullptr;
+    }
+    if (focused) {
         set_toplevel_urgent(toplevel, false);
     }
     render_toplevel_decoration(toplevel);
@@ -172,8 +177,7 @@ static BiomeToplevel *toplevel_owning_surface(wlr_surface *surface) {
 }
 
 void clear_focused_toplevel(BiomeServer *server) {
-    BiomeToplevel *prev =
-        toplevel_owning_surface(server->seat->keyboard_state.focused_surface);
+    BiomeToplevel *prev = server->activated_toplevel;
     if (prev == nullptr) {
         return;
     }
@@ -183,6 +187,11 @@ void clear_focused_toplevel(BiomeServer *server) {
         wlr_xwayland_surface_activate(prev->xwayland_surface, false);
     }
     set_toplevel_focused(prev, false);
+}
+
+void clear_keyboard_focus(BiomeServer *server) {
+    clear_focused_toplevel(server);
+    wlr_seat_keyboard_notify_clear_focus(server->seat);
 }
 
 // A top/overlay `exclusive` layer surface keeps focus from every other client.
@@ -532,6 +541,32 @@ static void apply_target_box(BiomeToplevel *toplevel, const wlr_box &target) {
 
 void set_toplevel_maximized(BiomeToplevel *toplevel, bool maximized, wlr_output *output) {
     if (toplevel->maximized == maximized) {
+        return;
+    }
+
+    // Fullscreen keeps its geometry; only the flag and the box restored on exit change.
+    if (toplevel->fullscreen) {
+        if (maximized) {
+            wlr_box max_box = maximize_target_box(toplevel, output);
+            if (wlr_box_empty(&max_box)) {
+                return;
+            }
+            if (toplevel->snap_zone == SnapZone::None) {
+                toplevel->restore_box = toplevel->fullscreen_restore_box;
+            }
+            toplevel->fullscreen_restore_box = max_box;
+            toplevel->maximized = true;
+            toplevel->snap_zone = SnapZone::None;
+        } else {
+            toplevel->fullscreen_restore_box = toplevel->restore_box;
+            toplevel->maximized = false;
+        }
+        if (toplevel->type == BiomeToplevelType::Xdg) {
+            wlr_xdg_toplevel_set_maximized(toplevel->xdg_toplevel, maximized);
+        } else {
+            wlr_xwayland_surface_set_maximized(toplevel->xwayland_surface, maximized, maximized);
+        }
+        foreign_toplevel_sync_state(toplevel);
         return;
     }
 
@@ -1181,6 +1216,9 @@ void toplevel_forget(BiomeToplevel *toplevel) {
     }
     if (server->last_left_click_toplevel == toplevel) {
         server->last_left_click_toplevel = nullptr;
+    }
+    if (server->activated_toplevel == toplevel) {
+        server->activated_toplevel = nullptr;
     }
     clear_decoration_tracking(server, toplevel); // the maximize-hold timer bails on a null pressed
     switcher_remove_toplevel(server, toplevel);

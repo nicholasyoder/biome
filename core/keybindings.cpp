@@ -122,9 +122,9 @@ const std::vector<BiomeKeybinding> &builtin_keybindings() {
             });
             add(with_shift, [dir](BiomeServer *server, uint32_t) {
                 int target = server->active_workspace + dir;
-                if (!wl_list_empty(&server->toplevels)) {
-                    BiomeToplevel *focused = wl_container_of(server->toplevels.next, focused, link);
-                    move_toplevel_to_workspace(focused, target);
+                BiomeToplevel *activated = server->activated_toplevel;
+                if (activated != nullptr && activated->workspace == server->active_workspace) {
+                    move_toplevel_to_workspace(activated, target);
                 }
                 switch_workspace(server, target);
                 return true;
