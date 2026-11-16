@@ -6,6 +6,7 @@ Changelog
   - Fix a crash opening the snap menu on a window that had just closed or hidden itself, a crash when the pointer left every monitor while dwelling at a snap zone, a ~36 KB icon leak per closed window, and a window mapped onto another workspace stealing keyboard focus while invisible (it is marked urgent instead); a window that hides and reappears now comes back as a fresh one (not maximized/fullscreen/snapped/minimized)
   - Fix global shortcuts with Shift+letter never firing and letter shortcuts dying under Caps Lock; `SHIFT+1` and `SHIFT+exclam` both match now
   - GlobalShortcuts portal: refuse bare-key shortcuts (no non-Shift modifier, other than F-keys, XF86 keys, Print/Pause) and triggers with empty parts like `CTRL+`; fix the `ListShortcuts`/`ConfigureShortcuts` signatures and export the interface `version`
+  - Match global-shortcut key names case-insensitively, so lowercase triggers like `CTRL+escape` and `xf86audiomute` bind (only exact-case keysym names did before)
   - Fix a shortcut staying "held" when its keyboard was unplugged mid-press, and the seat still advertising a keyboard after the last one was removed
   - Fix an abort on exit (every time the greeter's biome hands off to the session): wlroots' listener asserts on teardown
   - Fix a crash when a window that hid itself without closing (unmapped) then asked to be minimized or maximized, and stop such hidden windows leaving their title bar on screen or staying in Alt-Tab

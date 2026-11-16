@@ -51,7 +51,7 @@ std::optional<ParsedTrigger> parse_trigger(const QString &trigger) {
     }
 
     const QByteArray key_name = parts.last().toUtf8();
-    xkb_keysym_t keysym = xkb_keysym_from_name(key_name.constData(), XKB_KEYSYM_NO_FLAGS);
+    xkb_keysym_t keysym = xkb_keysym_from_name(key_name.constData(), XKB_KEYSYM_CASE_INSENSITIVE);
     if (keysym == XKB_KEY_NoSymbol) {
         return std::nullopt;
     }
