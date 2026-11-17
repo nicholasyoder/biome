@@ -145,18 +145,18 @@ struct BiomeToplevel {
 
     // State last handed to render_toplevel_decoration(), so it can skip its
     // expensive full-window QImage render when nothing changed (e.g. a
-    // plain content-only commit during scrolling). last_decoration_title is
-    // a borrowed pointer, not owned: BiomeToplevel is a plain struct,
-    // so a std::string member would never construct. Pointer identity is
-    // enough since a real title change always re-renders directly.
+    // plain content-only commit during scrolling). Title/icon are keyed on
+    // serials (bumped on change), not pointers, which can be reused (ABA).
     bool decoration_rendered_once = false;
     int last_decoration_width = -1;
     int last_decoration_height = -1;
     bool last_decoration_focused = false;
     bool last_decoration_urgent = false;
     bool last_decoration_maximized = false;
-    const char *last_decoration_title = nullptr;
-    const uint8_t *last_decoration_icon_data = nullptr;
+    uint32_t title_serial = 0;
+    uint32_t icon_serial = 0;
+    uint32_t last_decoration_title_serial = 0;
+    uint32_t last_decoration_icon_serial = 0;
     biome_decoration::Region last_decoration_hovered = biome_decoration::Region::None;
     biome_decoration::Region last_decoration_pressed = biome_decoration::Region::None;
     float last_decoration_scale = 0.0f;
@@ -190,6 +190,7 @@ struct BiomeToplevel {
     wl_listener request_maximize = {};
     wl_listener request_fullscreen = {};
     wl_listener request_minimize = {};
+    wl_listener set_decorations = {}; // xwayland only
 
     // xdg only: true once decoration negotiation (either protocol) has
     // settled on client-side - see toplevel_decorated. Explicitly set to

@@ -2,6 +2,7 @@ Changelog
 ============
 
 * Unreleased
+  - Fix X11 windows losing their frame (and shifting content) after leaving fullscreen; X11 windows no longer move or resize themselves while maximized, fullscreen or snapped, interactive resize respects their min/max size hints, and a title change that reused the old text's memory no longer skips the title-bar redraw; X11 clients changing their decoration hints now update live
   - Fix windows staying on the other monitor after a monitor dropped out and returned (e.g. a DPMS blank bounce): they now go back to it, unless you moved them meanwhile. Fix maximized windows staying a panel-height short when the usable area briefly shrank and recovered before the client acked the resize
   - Fix two windows showing as active in the taskbar after the last window was minimized or the screen locked; maximizing a fullscreen window no longer shrinks it while fullscreen; dragging a window that mapped maximized no longer jumps; Ctrl-Alt-Shift-arrow moves the active window, not an unseen one; `MoveToplevelToWorkspace` ignores out-of-range workspaces
   - Fix a crash opening the snap menu on a window that had just closed or hidden itself, a crash when the pointer left every monitor while dwelling at a snap zone, a ~36 KB icon leak per closed window, and a window mapped onto another workspace stealing keyboard focus while invisible (it is marked urgent instead); a window that hides and reappears now comes back as a fresh one (not maximized/fullscreen/snapped/minimized)

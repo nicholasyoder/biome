@@ -48,8 +48,6 @@ session logs or design discussion.
 Review fixes (details in [`docs/review-2026-11.md`](review-2026-11.md)).
 Ships with/before Forest 0.11.1, which requires it.
 
-- **Xwayland window state and decoration cache** ([detail](review-2026-11.md#xwayland-state)).
-  X11 windows lose their frame after leaving fullscreen.
 - **Standard-protocol gaps for other shells' clients** ([detail](review-2026-11.md#client-conformance)).
   Layer-surface remap hang, empty ext-list titles, double reconfigures.
 - **Output failure paths** ([detail](review-2026-11.md#output-failures)). Failed modeset

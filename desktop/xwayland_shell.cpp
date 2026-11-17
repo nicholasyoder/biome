@@ -74,6 +74,7 @@ static void xwayland_toplevel_dissociate(wl_listener *listener, void *data) {
 static void xwayland_toplevel_set_title(wl_listener *listener, void *data) {
     (void)data;
     BiomeToplevel *toplevel = wl_container_of(listener, toplevel, set_title);
+    toplevel->title_serial++;
     render_toplevel_decoration(toplevel);
     foreign_toplevel_update_title_app_id(toplevel);
 }
@@ -95,6 +96,7 @@ static void destroy_xwayland_toplevel(BiomeToplevel *toplevel) {
     wl_list_remove(&toplevel->request_maximize.link);
     wl_list_remove(&toplevel->request_fullscreen.link);
     wl_list_remove(&toplevel->request_minimize.link);
+    wl_list_remove(&toplevel->set_decorations.link);
     wl_list_remove(&toplevel->request_configure.link);
     wl_list_remove(&toplevel->set_override_redirect.link);
     wl_list_remove(&toplevel->request_activate.link);
@@ -184,12 +186,32 @@ static void xwayland_toplevel_set_hints(wl_listener *listener, void *data) {
     set_toplevel_urgent(toplevel, hints != nullptr && (hints->flags & XCB_ICCCM_WM_HINT_X_URGENCY) != 0);
 }
 
+// _MOTIF_WM_HINTS changed: re-fit content and frame like the xdg decoration path.
+static void xwayland_toplevel_set_decorations(wl_listener *listener, void *data) {
+    (void)data;
+    BiomeToplevel *toplevel = wl_container_of(listener, toplevel, set_decorations);
+    if (!toplevel->placed || toplevel->content_tree == nullptr) {
+        return;
+    }
+    wlr_scene_node_set_position(&toplevel->content_tree->node,
+        decoration_border_width(toplevel, toplevel->maximized),
+        decoration_titlebar_height(toplevel, toplevel->maximized));
+    render_toplevel_decoration(toplevel);
+}
+
 // X11 clients can ask to move/resize themselves outside of an interactive
 // grab (e.g. a terminal resizing to fit its font) - honored as-is, keeping
-// the scene node in sync.
+// the scene node in sync. Ignored (current geometry re-sent, per ICCCM) while
+// the compositor owns the geometry.
 static void xwayland_toplevel_request_configure(wl_listener *listener, void *data) {
     BiomeToplevel *toplevel = wl_container_of(listener, toplevel, request_configure);
     auto *event = static_cast<wlr_xwayland_surface_configure_event *>(data);
+
+    if (toplevel->maximized || toplevel->fullscreen || toplevel->snap_zone != SnapZone::None) {
+        wlr_xwayland_surface *xs = toplevel->xwayland_surface;
+        wlr_xwayland_surface_configure(xs, xs->x, xs->y, xs->width, xs->height);
+        return;
+    }
 
     wlr_xwayland_surface_configure(toplevel->xwayland_surface,
         event->x, event->y, event->width, event->height);
@@ -397,6 +419,8 @@ static BiomeToplevel *create_xwayland_toplevel(BiomeServer *server, wlr_xwayland
     wl_signal_add(&xsurface->events.request_fullscreen, &toplevel->request_fullscreen);
     toplevel->request_minimize.notify = xwayland_toplevel_request_minimize;
     wl_signal_add(&xsurface->events.request_minimize, &toplevel->request_minimize);
+    toplevel->set_decorations.notify = xwayland_toplevel_set_decorations;
+    wl_signal_add(&xsurface->events.set_decorations, &toplevel->set_decorations);
     toplevel->request_configure.notify = xwayland_toplevel_request_configure;
     wl_signal_add(&xsurface->events.request_configure, &toplevel->request_configure);
     toplevel->set_override_redirect.notify = xwayland_toplevel_set_override_redirect;

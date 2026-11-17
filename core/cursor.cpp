@@ -320,6 +320,27 @@ static void process_cursor_resize(BiomeServer *server, uint32_t time) {
         new_height = height;
     }
 
+    if (toplevel->type == BiomeToplevelType::Xwayland) {
+        // WM_NORMAL_HINTS min/max, same anchoring as the xdg clamp above.
+        const xcb_size_hints_t *hints = toplevel->xwayland_surface->size_hints;
+        if (hints != nullptr) {
+            int width = new_width;
+            int height = new_height;
+            if (hints->flags & XCB_ICCCM_SIZE_HINT_P_MAX_SIZE) {
+                if (hints->max_width > 0) width = std::min(width, hints->max_width);
+                if (hints->max_height > 0) height = std::min(height, hints->max_height);
+            }
+            if (hints->flags & XCB_ICCCM_SIZE_HINT_P_MIN_SIZE) {
+                width = std::max(width, hints->min_width);
+                height = std::max(height, hints->min_height);
+            }
+            if (server->resize_edges & WLR_EDGE_LEFT) new_left = new_right - width;
+            if (server->resize_edges & WLR_EDGE_TOP) new_top = new_bottom - height;
+            new_width = width;
+            new_height = height;
+        }
+    }
+
     if (toplevel->type != BiomeToplevelType::Xdg) {
         // Xwayland surfaces own their absolute position and have no async
         // commit to defer to (unlike xdg-shell below), so position and size
