@@ -10,12 +10,8 @@ void scene_layers_init(BiomeServer *server) {
     server->layers.top = wlr_scene_tree_create(&server->scene->tree);
     server->layers.overlay = wlr_scene_tree_create(&server->scene->tree);
     server->layers.fullscreen = wlr_scene_tree_create(&server->scene->tree);
+    server->layers.osd = wlr_scene_tree_create(&server->scene->tree);
     server->layers.session_lock = wlr_scene_tree_create(&server->scene->tree);
-    // Starts disabled - only enabled for the duration of a lock.
-    // Its content (BiomeOutput::lock_tree, one per output) is created
-    // unconditionally by server_new_output() regardless of lock state, so
-    // this is what actually keeps it invisible/unhittable outside a lock -
-    // being structurally topmost only matters for what happens once it's
-    // enabled.
+    // Starts disabled; its per-output content exists regardless of lock state.
     wlr_scene_node_set_enabled(&server->layers.session_lock->node, false);
 }

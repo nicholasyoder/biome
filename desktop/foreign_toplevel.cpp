@@ -152,10 +152,20 @@ void foreign_toplevel_create(BiomeToplevel *toplevel) {
         } else {
             wlr_scene_surface_create(&wrapper->capture_scene->tree, toplevel_surface(toplevel));
         }
+        wlr_scene_node_set_enabled(&wrapper->capture_scene->tree.node, !server->session_locked);
     }
 
     if (server->window_workspaces_changed != nullptr) {
         server->window_workspaces_changed(server);
+    }
+}
+
+void foreign_toplevel_set_capture_blank(BiomeServer *server, bool blank) {
+    BiomeToplevel *toplevel;
+    wl_list_for_each(toplevel, &server->toplevels, link) {
+        if (toplevel->foreign_toplevel != nullptr && toplevel->foreign_toplevel->capture_scene != nullptr) {
+            wlr_scene_node_set_enabled(&toplevel->foreign_toplevel->capture_scene->tree.node, !blank);
+        }
     }
 }
 

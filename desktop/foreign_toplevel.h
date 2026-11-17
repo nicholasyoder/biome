@@ -33,6 +33,9 @@ void foreign_toplevel_create(BiomeToplevel *toplevel);
 // Called once from toplevel_unmap.
 void foreign_toplevel_destroy(BiomeToplevel *toplevel);
 
+// Hides/shows every window's private capture scene; blank while the session is locked.
+void foreign_toplevel_set_capture_blank(BiomeServer *server, bool blank);
+
 // Re-sends title/app_id from the toplevel's current xdg_toplevel/
 // xwayland_surface fields - called from the existing set_title listeners
 // (xdg_toplevel_set_title/xwayland_toplevel_set_title).

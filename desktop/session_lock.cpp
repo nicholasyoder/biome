@@ -4,7 +4,9 @@
 
 #include "desktop/window_menu.h"
 
+#include "core/cursor.h"
 #include "core/output.h"
+#include "desktop/foreign_toplevel.h"
 #include "desktop/switcher.h"
 #include "desktop/workspace.h"
 
@@ -123,6 +125,8 @@ static void handle_lock_unlock(wl_listener *listener, void *data) {
     // distinction switch_workspace() already has to make), or clears focus
     // if there isn't one.
     focus_topmost_on_active_workspace(server);
+    cursor_rebase(server); // pointer focus was cleared at lock
+    foreign_toplevel_set_capture_blank(server, false);
 }
 
 // Fires for both a clean unlock_and_destroy (after lock_unlock above) and an
@@ -177,6 +181,7 @@ static void handle_new_session_lock(wl_listener *listener, void *data) {
     wl_signal_add(&lock->events.destroy, &server->lock_destroy);
 
     server->session_locked = true;
+    foreign_toplevel_set_capture_blank(server, true);
     window_menu_close(server);
     switcher_cancel(server);
     // An xdg_popup grab's keyboard enter/clear_focus are no-ops, so it would keep
@@ -187,10 +192,7 @@ static void handle_new_session_lock(wl_listener *listener, void *data) {
     clear_keyboard_focus(server);
     wlr_seat_pointer_notify_clear_focus(server->seat);
 
-    // No raise_to_top needed: server->layers.session_lock is structurally
-    // the last of BiomeServer::layers' six fixed trees (core/layers.cpp),
-    // so it's already the topmost sibling of scene->tree the moment it's
-    // enabled - see server.h's doc comment on BiomeServer::layers.
+    // No raise needed: layers.session_lock is the last fixed tree (server.h).
     wlr_scene_node_set_enabled(&server->layers.session_lock->node, true);
 
     // Every lock starts from a clean, normally-colored rect - undoes the red

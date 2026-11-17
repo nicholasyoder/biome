@@ -72,7 +72,7 @@ struct BiomeServer {
     // server->scene->tree, in this order bottom to top - order is z-order in
     // wlr_scene, so this list *is* the compositor's global stacking policy,
     // not just a naming convenience:
-    //   background -> bottom -> toplevels -> above -> top -> overlay -> fullscreen -> session_lock
+    //   background -> bottom -> toplevels -> above -> top -> overlay -> fullscreen -> osd -> session_lock
     // background/bottom/top/overlay correspond 1:1 to wlr-layer-shell's own
     // four zwlr_layer_shell_v1_layer values (desktop/layer_shell.cpp);
     // toplevels is where every normal window's scene_tree lives; above holds
@@ -81,14 +81,11 @@ struct BiomeServer {
     // toplevel's scene_tree for the duration of being fullscreen, and back
     // to toplevels on restore - above every layer-shell layer (a fullscreen
     // window must cover a panel/dock sitting in top, same convention as
-    // every other desktop) but still below session_lock. Focusing another
+    // every other desktop) but still below osd. Focusing another
     // window on that output drops it back to toplevels (focus_toplevel).
-    // Because nothing can be created as a *later* sibling of scene->tree
-    // than session_lock (every other tree in this stack is created here,
-    // once, at startup, before any client ever connects), session_lock is
-    // structurally topmost by construction - no runtime "is the session
-    // locked" check is needed anywhere else to keep other content from
-    // rendering or hit-testing above it.
+    // osd holds compositor UI (switcher, window menu, drag icon), above
+    // everything but session_lock. Nothing is created as a later sibling of
+    // scene->tree than session_lock, so it is structurally topmost.
     struct {
         wlr_scene_tree *background = nullptr;
         wlr_scene_tree *bottom = nullptr;
@@ -97,6 +94,7 @@ struct BiomeServer {
         wlr_scene_tree *top = nullptr;
         wlr_scene_tree *overlay = nullptr;
         wlr_scene_tree *fullscreen = nullptr;
+        wlr_scene_tree *osd = nullptr;
         wlr_scene_tree *session_lock = nullptr;
     } layers;
 

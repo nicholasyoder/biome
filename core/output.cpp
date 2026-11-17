@@ -491,7 +491,9 @@ static void server_new_output(wl_listener *listener, void *data) {
     int lock_width, lock_height;
     wlr_output_effective_resolution(wlr_output, &lock_width, &lock_height);
     output->lock_rect =
-        wlr_scene_rect_create(output->lock_tree, lock_width, lock_height, kSessionLockColor);
+        wlr_scene_rect_create(output->lock_tree, lock_width, lock_height,
+            server->session_locked && server->active_lock == nullptr ? kSessionLockAbandonedColor
+                                                                    : kSessionLockColor);
 
     // A disabled output stays out of output_layout entirely: it has a
     // current_mode, so layout membership would give it real hit-testable space
