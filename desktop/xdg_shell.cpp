@@ -150,6 +150,7 @@ static void xdg_toplevel_commit(wl_listener *listener, void *data) {
 static void xdg_toplevel_set_title(wl_listener *listener, void *data) {
     (void)data;
     BiomeToplevel *toplevel = wl_container_of(listener, toplevel, set_title);
+    toplevel->title_serial++;
     render_toplevel_decoration(toplevel);
     foreign_toplevel_update_title_app_id(toplevel);
 }

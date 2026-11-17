@@ -149,6 +149,7 @@ void render_toplevel_decoration(BiomeToplevel *toplevel) {
         // The client asked for no decoration - clear any previously-set
         // buffer too, in case this is a re-render after the hint changed.
         wlr_scene_buffer_set_buffer(toplevel->decoration_buffer, nullptr);
+        toplevel->decoration_rendered_once = false; // else re-decorating hits the skip-cache
         if (toplevel->content_tree != nullptr) {
             wlr_scene_node_set_position(&toplevel->content_tree->node, 0, 0);
         }
@@ -194,8 +195,7 @@ void render_toplevel_decoration(BiomeToplevel *toplevel) {
 
     // Called on every surface commit, including plain content-only repaints
     // (e.g. scrolling) - skip the render below if nothing changed since last
-    // time. See last_decoration_title's declaration for the pointer-identity
-    // comparison.
+    // time. Title/icon are compared by serial (see title_serial).
     if (toplevel->decoration_rendered_once &&
             toplevel->last_decoration_width == width &&
             toplevel->last_decoration_height == height &&
@@ -204,8 +204,8 @@ void render_toplevel_decoration(BiomeToplevel *toplevel) {
             toplevel->last_decoration_maximized == render_maximized &&
             toplevel->last_decoration_hovered == toplevel->hovered_region &&
             toplevel->last_decoration_pressed == toplevel->pressed_region &&
-            toplevel->last_decoration_icon_data == toplevel->icon.pixels.data() &&
-            toplevel->last_decoration_title == title &&
+            toplevel->last_decoration_icon_serial == toplevel->icon_serial &&
+            toplevel->last_decoration_title_serial == toplevel->title_serial &&
             toplevel->last_decoration_scale == toplevel->decoration_scale) {
         return;
     }
@@ -226,8 +226,8 @@ void render_toplevel_decoration(BiomeToplevel *toplevel) {
     toplevel->last_decoration_maximized = render_maximized;
     toplevel->last_decoration_hovered = toplevel->hovered_region;
     toplevel->last_decoration_pressed = toplevel->pressed_region;
-    toplevel->last_decoration_icon_data = toplevel->icon.pixels.data();
-    toplevel->last_decoration_title = title;
+    toplevel->last_decoration_icon_serial = toplevel->icon_serial;
+    toplevel->last_decoration_title_serial = toplevel->title_serial;
     toplevel->last_decoration_scale = toplevel->decoration_scale;
 
     // Re-syncs content_tree to this render's border/titlebar metrics rather

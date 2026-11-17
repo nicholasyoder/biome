@@ -1198,6 +1198,7 @@ void toplevel_map(wl_listener *listener, void *data) {
                 ewmh, toplevel->xwayland_surface->window_id, wm_class != nullptr ? wm_class : "");
         }
         toplevel->icon_resolved = true;
+        toplevel->icon_serial++;
     }
 
     place_new_toplevel(toplevel);
@@ -1251,6 +1252,7 @@ void toplevel_unmap(wl_listener *listener, void *data) {
     // hide the frame, take it out of the switcher/menu, and (xdg, now uninitialized)
     // send no configures.
     toplevel->placed = false;
+    toplevel->decoration_rendered_once = false;
     wlr_scene_node_set_enabled(&toplevel->scene_tree->node, false);
     foreign_toplevel_destroy(toplevel);
     // A remap is a fresh window.
