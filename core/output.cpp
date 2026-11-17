@@ -3,6 +3,7 @@
 #include "core/output.h"
 #include "core/output_color.h"
 
+#include "core/cursor.h"
 #include "core/layers.h"
 #include "core/output_arrange.h"
 #include "core/output_management.h"
@@ -31,6 +32,7 @@ static void rescue_cursor(BiomeServer *server) {
         return;
     }
     wlr_cursor_warp_closest(server->cursor, nullptr, server->cursor->x, server->cursor->y);
+    cursor_rebase(server); // refresh pointer focus at the warped position
 }
 
 void output_layout_settled(BiomeServer *server) {
@@ -115,6 +117,17 @@ void output_relayout(BiomeServer *server) {
             wlr_output_layout_add(layout, manual[i]->wlr, arranged[i].x, arranged[i].y);
         }
     }
+}
+
+// Shared epilogue for hardware-driven output changes. `restored` (new output) gets its
+// homed windows back between the relayout and the settle.
+static void output_layout_changed_by_hardware(BiomeServer *server, wlr_output *restored = nullptr) {
+    output_relayout(server);
+    if (restored != nullptr) {
+        toplevels_home_restore(server, restored);
+    }
+    output_layout_settled(server);
+    output_management_schedule_publish(server);
 }
 
 static void output_layout_changed(wl_listener *listener, void *data) {
@@ -242,9 +255,7 @@ static void output_request_state(wl_listener *listener, void *data) {
     wlr_output_commit_state(output->wlr, event->state);
 
     output_sync_geometry(output);
-    output_relayout(output->server);
-    output_layout_settled(output->server);
-    output_management_schedule_publish(output->server);
+    output_layout_changed_by_hardware(output->server);
 }
 
 static void output_destroy(wl_listener *listener, void *data) {
@@ -272,10 +283,8 @@ static void output_destroy(wl_listener *listener, void *data) {
     wl_list_remove(&output->link);
     BiomeServer *server = output->server;
     free(output);
-    output_relayout(server);
-    output_layout_settled(server);
+    output_layout_changed_by_hardware(server);
     toplevels_home_end(server);
-    output_management_schedule_publish(server);
 }
 
 // The single place output-position-dependent state is updated; idempotent.
@@ -422,14 +431,32 @@ static void server_new_output(wl_listener *listener, void *data) {
     wlr_output_state_set_scale(&state, static_cast<float>(cfg.scale));
     wlr_output_state_set_transform(&state, cfg.transform);
 
-    wlr_output_commit_state(wlr_output, &state);
+    bool modeset_ok = wlr_output_commit_state(wlr_output, &state);
     wlr_output_state_finish(&state);
-    output_apply_rgb_range(server, wlr_output, cfg.rgb_range);
+    if (!modeset_ok && cfg.mode.has_value()) {
+        // Configured mode rejected: retry once with the preferred mode.
+        wlr_log(WLR_ERROR, "output %s: modeset failed, retrying with preferred mode", wlr_output->name);
+        wlr_output_state retry;
+        wlr_output_state_init(&retry);
+        wlr_output_state_set_enabled(&retry, true);
+        if (wlr_output_mode *mode = wlr_output_preferred_mode(wlr_output)) {
+            wlr_output_state_set_mode(&retry, mode);
+        }
+        wlr_output_state_set_scale(&retry, static_cast<float>(cfg.scale));
+        wlr_output_state_set_transform(&retry, cfg.transform);
+        modeset_ok = wlr_output_commit_state(wlr_output, &retry);
+        wlr_output_state_finish(&retry);
+    }
+    if (modeset_ok) {
+        output_apply_rgb_range(server, wlr_output, cfg.rgb_range);
+    } else {
+        wlr_log(WLR_ERROR, "output %s: modeset failed, leaving it disabled", wlr_output->name);
+    }
 
     // Second commit to blank: configured off, or an HPD bounce on power-off
     // (some DP monitors/docks do this) that must not re-light the screen.
     bool reconnected_off = output_power_reconnected_off(server, wlr_output->name) && cfg.enabled;
-    if (!cfg.enabled || reconnected_off) {
+    if (modeset_ok && (!cfg.enabled || reconnected_off)) {
         wlr_output_state blank_state;
         wlr_output_state_init(&blank_state);
         wlr_output_state_set_enabled(&blank_state, false);
@@ -469,14 +496,9 @@ static void server_new_output(wl_listener *listener, void *data) {
     // A disabled output stays out of output_layout entirely: it has a
     // current_mode, so layout membership would give it real hit-testable space
     // that toplevel placement (desktop/toplevel.cpp) could target.
-    output->disabled = !cfg.enabled;
+    output->disabled = !cfg.enabled || !modeset_ok;
     output->powered_off = reconnected_off;
-    output_set_enabled(output, cfg.enabled, cfg.position);
+    output_set_enabled(output, cfg.enabled && modeset_ok, cfg.position);
     // Can move already-present outputs (restoring the last live layout), hence the settle.
-    output_relayout(server);
-    if (!output->disabled) {
-        toplevels_home_restore(server, wlr_output);
-    }
-    output_layout_settled(server);
-    output_management_schedule_publish(server);
+    output_layout_changed_by_hardware(server, output->disabled ? nullptr : wlr_output);
 }
