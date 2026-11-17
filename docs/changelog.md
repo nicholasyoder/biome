@@ -2,6 +2,7 @@ Changelog
 ============
 
 * Unreleased
+  - Fix layer-shell clients (e.g. another shell's panel) hanging when they unmap and re-map a surface, and stop reconfiguring every surface on the output twice whenever a new one appears (a notification popping up no longer makes every panel recommit). ext-foreign-toplevel-list now reports real titles and app ids from the start. Scanout fades only apply to full-output surfaces, others use an opacity fade
   - Fix X11 windows losing their frame (and shifting content) after leaving fullscreen; X11 windows no longer move or resize themselves while maximized, fullscreen or snapped, interactive resize respects their min/max size hints, and a title change that reused the old text's memory no longer skips the title-bar redraw; X11 clients changing their decoration hints now update live
   - Fix windows staying on the other monitor after a monitor dropped out and returned (e.g. a DPMS blank bounce): they now go back to it, unless you moved them meanwhile. Fix maximized windows staying a panel-height short when the usable area briefly shrank and recovered before the client acked the resize
   - Fix two windows showing as active in the taskbar after the last window was minimized or the screen locked; maximizing a fullscreen window no longer shrinks it while fullscreen; dragging a window that mapped maximized no longer jumps; Ctrl-Alt-Shift-arrow moves the active window, not an unseen one; `MoveToplevelToWorkspace` ignores out-of-range workspaces

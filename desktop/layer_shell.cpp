@@ -201,6 +201,15 @@ static void refresh_layer_surface_focus(BiomeLayerSurface *wrapper) {
     }
 }
 
+// Configures just `wrapper` against the current usable area. Valid only when its
+// exclusive zone didn't change (<= 0 before and after), so no other surface moves.
+static void configure_layer_surface_alone(BiomeLayerSurface *wrapper) {
+    wlr_box full_area = {};
+    wlr_output_effective_resolution(wrapper->output->wlr, &full_area.width, &full_area.height);
+    wlr_box usable_area = wrapper->output->usable_area;
+    wlr_scene_layer_surface_v1_configure(wrapper->scene_layer_surface, &full_area, &usable_area);
+}
+
 static void handle_layer_surface_commit(wl_listener *listener, void *data) {
     (void)data;
     BiomeLayerSurface *wrapper = wl_container_of(listener, wrapper, commit);
@@ -230,7 +239,10 @@ static void handle_layer_surface_commit(wl_listener *listener, void *data) {
     // output reconfigure every surface on it, which acks and recommits in
     // turn: a self-sustaining reconfigure loop across the whole output. Only
     // actually re-arrange when something layout-relevant changed.
-    if (!(layer_surface->current.committed & kLayoutRelevantState)) {
+    // A re-initial commit after an unmap may carry no layout-relevant bits but
+    // still needs its configure, or the client hangs waiting for one.
+    const bool initial = layer_surface->initial_commit;
+    if (!initial && !(layer_surface->current.committed & kLayoutRelevantState)) {
         return;
     }
 
@@ -245,7 +257,23 @@ static void handle_layer_surface_commit(wl_listener *listener, void *data) {
             output_layer_tree(wrapper->output, layer_surface->current.layer));
     }
 
-    arrange_layers_refitting(wrapper->output);
+    // Only a changed exclusive zone can move other surfaces; otherwise
+    // configure just this one (avoids reconfiguring the whole output).
+    if ((layer_surface->current.committed & WLR_LAYER_SURFACE_V1_STATE_EXCLUSIVE_ZONE)
+            || layer_surface->current.exclusive_zone > 0) {
+        arrange_layers_refitting(wrapper->output);
+    } else {
+        configure_layer_surface_alone(wrapper);
+    }
+}
+
+static void start_opacity_fade_in(BiomeLayerSurface *wrapper) {
+    wrapper->fading_in = true;
+    wrapper->fade_start = {};
+    wrapper->output->fade_warmup_ticks = std::max(wrapper->output->fade_warmup_ticks, kOpacityWarmupTicks);
+    set_tree_opacity(wrapper->scene_layer_surface->tree, 0.0f);
+    // Rendering is damage-driven; nothing else guarantees a frame after map.
+    wlr_output_schedule_frame(wrapper->output->wlr);
 }
 
 static void handle_layer_surface_map(wl_listener *listener, void *data) {
@@ -268,24 +296,17 @@ static void handle_layer_surface_map(wl_listener *listener, void *data) {
     }
 
     switch (layer_surface_fade_kind(wrapper->server, layer_surface)) {
-    case FadeKind::Opacity: {
-        wrapper->fading_in = true;
-        wrapper->fade_start = {};
-        wrapper->output->fade_warmup_ticks =
-            std::max(wrapper->output->fade_warmup_ticks, kOpacityWarmupTicks);
-        set_tree_opacity(wrapper->scene_layer_surface->tree, 0.0f);
-        // Nothing else guarantees another frame fires soon after a fresh
-        // map with no other damage source - Biome's rendering is otherwise
-        // damage-driven, not continuous (see output_frame() in core/output.cpp).
-        wlr_output_schedule_frame(wrapper->output->wlr);
+    case FadeKind::Opacity:
+        start_opacity_fade_in(wrapper);
         break;
-    }
     case FadeKind::ScanoutSnapshot:
         wrapper->scanout_fade = scanout_fade_create(wrapper);
         if (wrapper->scanout_fade != nullptr) {
             wrapper->output->fade_warmup_ticks =
                 std::max(wrapper->output->fade_warmup_ticks, kScanoutWarmupTicks);
             wlr_output_schedule_frame(wrapper->output->wlr);
+        } else {
+            start_opacity_fade_in(wrapper); // not full-output or no scanout format
         }
         break;
     case FadeKind::None:
@@ -300,6 +321,11 @@ static void handle_layer_surface_map(wl_listener *listener, void *data) {
 static void handle_layer_surface_unmap(wl_listener *listener, void *data) {
     (void)data;
     BiomeLayerSurface *wrapper = wl_container_of(listener, wrapper, unmap);
+
+    // An unmapped exclusive surface stops reserving space.
+    if (wrapper->layer_surface->current.exclusive_zone > 0) {
+        arrange_layers_refitting(wrapper->output);
+    }
 
     switch (layer_surface_fade_kind(wrapper->server, wrapper->layer_surface)) {
     case FadeKind::Opacity: {
@@ -489,7 +515,8 @@ static void handle_new_layer_surface(wl_listener *listener, void *data) {
     wrapper->new_popup.notify = handle_layer_surface_new_popup;
     wl_signal_add(&layer_surface->events.new_popup, &wrapper->new_popup);
 
-    arrange_layers(output);
+    // No arrange here: the surface isn't initialized until its first commit,
+    // which configures it; arranging now only re-sent configures to others.
 }
 
 bool update_layer_surface_fades(BiomeOutput *output) {
