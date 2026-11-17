@@ -1,7 +1,7 @@
 Changelog
 ============
 
-* Unreleased
+* Release 0.3.1 - 2026-11-17
   - Handle SIGTERM/SIGINT with a clean shutdown (logout now runs the normal teardown and stops the `-s` command), and fix the Qt/GLib bridge losing an event source when a file descriptor number was reused
   - Fix Meta/Ctrl/Alt shortcuts (e.g. Meta+L to lock) not working while the window menu is open, and Meta then opening the main menu on release
   - Session lock: the Alt-Tab switcher, window menu and drag icon now sit below the lock screen instead of above it; window captures (ext-foreign-toplevel image capture) are blank while locked; a monitor plugged in during an abandoned lock shows the red rect; the pointer picks up the surface under it on unlock; new popups are refused while locked
