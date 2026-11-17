@@ -107,8 +107,8 @@ void close_switcher(BiomeServer *server) {
 
 void switcher_init(BiomeServer *server) {
     // Children of the scene root: not owned by any one window.
-    server->switcher.panel = wlr_scene_buffer_create(&server->scene->tree, nullptr);
-    server->switcher.highlight = wlr_scene_buffer_create(&server->scene->tree, nullptr);
+    server->switcher.panel = wlr_scene_buffer_create(server->layers.osd, nullptr);
+    server->switcher.highlight = wlr_scene_buffer_create(server->layers.osd, nullptr);
     hide_overlay(server);
 }
 

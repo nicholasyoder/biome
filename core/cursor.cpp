@@ -137,7 +137,7 @@ static void drag_icon_tree_handle_destroy(wl_listener *listener, void *data) {
 }
 
 void drag_icon_create(BiomeServer *server, wlr_drag_icon *drag_icon) {
-    server->drag_icon_tree = wlr_scene_drag_icon_create(&server->scene->tree, drag_icon);
+    server->drag_icon_tree = wlr_scene_drag_icon_create(server->layers.osd, drag_icon);
     if (server->drag_icon_tree == nullptr) {
         return;
     }

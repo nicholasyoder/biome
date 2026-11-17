@@ -2,6 +2,7 @@ Changelog
 ============
 
 * Unreleased
+  - Session lock: the Alt-Tab switcher, window menu and drag icon now sit below the lock screen instead of above it; window captures (ext-foreign-toplevel image capture) are blank while locked; a monitor plugged in during an abandoned lock shows the red rect; the pointer picks up the surface under it on unlock; new popups are refused while locked
   - Fix a monitor whose first modeset failed being treated as live: a rejected configured mode now retries with the monitor's preferred mode, and if that fails too the monitor stays disabled (and is reported so) instead of holding windows and layout space. The pointer now picks up the surface under it after being pulled back onto a remaining monitor
   - Fix layer-shell clients (e.g. another shell's panel) hanging when they unmap and re-map a surface, and stop reconfiguring every surface on the output twice whenever a new one appears (a notification popping up no longer makes every panel recommit). ext-foreign-toplevel-list now reports real titles and app ids from the start. Scanout fades only apply to full-output surfaces, others use an opacity fade
   - Fix X11 windows losing their frame (and shifting content) after leaving fullscreen; X11 windows no longer move or resize themselves while maximized, fullscreen or snapped, interactive resize respects their min/max size hints, and a title change that reused the old text's memory no longer skips the title-bar redraw; X11 clients changing their decoration hints now update live

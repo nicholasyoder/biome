@@ -48,8 +48,6 @@ session logs or design discussion.
 Review fixes (details in [`docs/review-2026-11.md`](review-2026-11.md)).
 Ships with/before Forest 0.11.1, which requires it.
 
-- **Session-lock follow-ups** ([detail](review-2026-11.md#lock-followups)). OSD layer
-  below the lock, blank window captures while locked.
 - **Shutdown and event-loop robustness** ([detail](review-2026-11.md#robustness)). SIGTERM
   teardown, fd-reuse in the Qt/GLib bridge.
 

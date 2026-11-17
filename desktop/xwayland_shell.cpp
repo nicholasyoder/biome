@@ -265,13 +265,7 @@ static void unmanaged_associate(wl_listener *listener, void *data) {
     BiomeUnmanaged *surface = wl_container_of(listener, surface, associate);
     wlr_xwayland_surface *xsurface = surface->xwayland_surface;
 
-    // Parented under layers.toplevels (not scene->tree directly) so it's
-    // structurally below layers.session_lock like every other toplevel-ish
-    // piece of content - see BiomeServer::layers' doc comment in server.h.
-    // An override-redirect surface (X11 popup/menu/tooltip) has no
-    // BiomeToplevel, so update_toplevel_visibility()'s per-toplevel
-    // visibility logic never runs for it; this reparenting is what covers
-    // it instead, with no runtime session_locked check needed here anymore.
+    // Under layers.toplevels so it stays below layers.session_lock (server.h).
     surface->scene_tree =
         wlr_scene_subsurface_tree_create(surface->server->layers.toplevels, xsurface->surface);
     wlr_scene_node_set_position(&surface->scene_tree->node, xsurface->x, xsurface->y);
@@ -279,15 +273,8 @@ static void unmanaged_associate(wl_listener *listener, void *data) {
     surface->map.notify = [](wl_listener *l, void *d) {
         (void)d;
         BiomeUnmanaged *s = wl_container_of(l, s, map);
-        // raise_to_top only reorders siblings within layers.toplevels (its
-        // scene_tree's parent - see unmanaged_associate above), so it can
-        // never put this surface above layers.session_lock regardless of
-        // lock state - no check needed here. Keyboard focus is a separate,
-        // seat-level concern structural z-order doesn't touch, though: while
-        // locked, the lock surface holds focus (desktop/session_lock.cpp)
-        // and nothing else may take it, so that grab still needs its own check.
         unmanaged_reparent(s);
-        if (!s->server->session_locked && wlr_xwayland_surface_override_redirect_wants_focus(s->xwayland_surface)) {
+        if (wlr_xwayland_surface_override_redirect_wants_focus(s->xwayland_surface)) {
             grant_keyboard_focus_to_non_toplevel(s->server, s->xwayland_surface->surface);
         }
     };

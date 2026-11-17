@@ -454,12 +454,6 @@ static void xdg_popup_map(wl_listener *listener, void *data) {
     BiomePopup *popup = wl_container_of(listener, popup, map);
     BiomeServer *server = popup->server;
 
-    // Matches desktop/layer_shell.cpp's identical guard on its own map-time
-    // focus grant: while locked, only the lock surfaces may hold keyboard
-    // focus.
-    if (server->session_locked) {
-        return;
-    }
     // Only grabbing or xdg-activated popups take focus on map.
     wlr_surface *surface = popup->xdg_popup->base->surface;
     const bool activated = server->activated_unmapped_popup == surface;
@@ -518,6 +512,12 @@ static void xdg_popup_unmap(wl_listener *listener, void *data) {
 static void server_new_xdg_popup(wl_listener *listener, void *data) {
     BiomeServer *server = wl_container_of(listener, server, new_xdg_popup);
     auto *xdg_popup = static_cast<wlr_xdg_popup *>(data);
+
+    // A new grab while locked would capture the lock client's input; popup_done.
+    if (server->session_locked) {
+        wlr_xdg_popup_destroy(xdg_popup);
+        return;
+    }
 
     auto *popup = static_cast<BiomePopup *>(calloc(1, sizeof(BiomePopup)));
     popup->xdg_popup = xdg_popup;

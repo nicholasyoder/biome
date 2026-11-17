@@ -365,7 +365,7 @@ void window_menu_init(BiomeServer *server) {
     g.server = server;
     for (Panel &p : g.panels) {
         // Children of the scene root, like the switcher: not owned by any window.
-        p.buffer = wlr_scene_buffer_create(&server->scene->tree, nullptr);
+        p.buffer = wlr_scene_buffer_create(server->layers.osd, nullptr);
         wlr_scene_node_set_enabled(&p.buffer->node, false);
     }
 }
