@@ -99,8 +99,10 @@ void sync_fd_sources() {
         auto it = g_fd_sources.find(fd);
         if (it == g_fd_sources.end()) {
             g_fd_sources[fd] = wl_event_loop_add_fd(g_loop, fd, mask, on_fd_ready, nullptr);
-        } else {
-            wl_event_source_fd_update(it->second, mask);
+        } else if (wl_event_source_fd_update(it->second, mask) < 0) {
+            // fd number reused within a cycle: epoll dropped the old registration.
+            wl_event_source_remove(it->second);
+            it->second = wl_event_loop_add_fd(g_loop, fd, mask, on_fd_ready, nullptr);
         }
     }
 
