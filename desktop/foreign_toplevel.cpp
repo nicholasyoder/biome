@@ -137,8 +137,10 @@ void foreign_toplevel_create(BiomeToplevel *toplevel) {
 
     if (server->ext_foreign_toplevel_list != nullptr) {
         wlr_ext_foreign_toplevel_handle_v1_state ext_state = {};
-        ext_state.title = "";
-        ext_state.app_id = "";
+        const char *title = toplevel_title(toplevel);
+        const char *app_id = toplevel_app_id(toplevel);
+        ext_state.title = title != nullptr ? title : "";
+        ext_state.app_id = app_id != nullptr ? app_id : "";
         wrapper->ext_handle =
             wlr_ext_foreign_toplevel_handle_v1_create(server->ext_foreign_toplevel_list, &ext_state);
         wrapper->ext_handle->data = wrapper;

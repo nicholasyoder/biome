@@ -242,6 +242,14 @@ BiomeScanoutFade *scanout_fade_create(BiomeLayerSurface *wrapper) {
     BiomeServer *server = wrapper->server;
     wlr_scene_tree *client_tree = wrapper->scene_layer_surface->tree;
 
+    // Only a full-output surface can reach scanout; callers fall back to Opacity.
+    wlr_box output_box = {};
+    wlr_output_effective_resolution(output->wlr, &output_box.width, &output_box.height);
+    if (static_cast<int>(wrapper->layer_surface->current.actual_width) != output_box.width
+            || static_cast<int>(wrapper->layer_surface->current.actual_height) != output_box.height) {
+        return nullptr;
+    }
+
     auto *fade = new BiomeScanoutFade();
     fade->output = output;
     fade->wrapper = wrapper;
