@@ -43,14 +43,6 @@ session logs or design discussion.
   reasoning in `docs/history.md`'s "Decoupling goal" section (2026-08-22).
 
 
-## 0.3.1 — review fixes
-
-Review fixes (details in [`docs/review-2026-11.md`](review-2026-11.md)).
-Ships with/before Forest 0.11.1, which requires it.
-
-- **Shutdown and event-loop robustness** ([detail](review-2026-11.md#robustness)). SIGTERM
-  teardown, fd-reuse in the Qt/GLib bridge.
-
 ## 0.4.0 — server structure & touch input (Phase 7)
 
 Pairs with Forest 0.12.0. Currently the single biggest user-visible gap versus

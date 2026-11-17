@@ -35,9 +35,12 @@
 
 #include <QApplication>
 
+#include <cerrno>
+#include <csignal>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <fcntl.h>
 #include <getopt.h>
 #include <initializer_list>
 #include <sys/syscall.h>
@@ -62,6 +65,25 @@ int handle_startup_exit(int, uint32_t, void *data) {
     }
     startup_pid = -1;
     wl_display_terminate(display);
+    return 0;
+}
+
+int signal_pipe[2] = {-1, -1};
+
+void on_signal(int) {
+    int saved = errno;
+    char b = 0;
+    (void)!write(signal_pipe[1], &b, 1);
+    errno = saved;
+}
+
+// A pipe rather than wl_event_loop_add_signal: Qt's threads already exist with
+// these signals unblocked, so a signalfd would miss them.
+int handle_signal_pipe(int fd, uint32_t, void *data) {
+    char b;
+    (void)!read(fd, &b, 1);
+    wlr_log(WLR_INFO, "Termination signal received");
+    wl_display_terminate(static_cast<wl_display *>(data));
     return 0;
 }
 
@@ -288,11 +310,31 @@ int main(int argc, char *argv[]) {
                                                   handle_startup_exit, server.display);
         }
     }
+    wl_event_source *signal_source = nullptr;
+    if (pipe2(signal_pipe, O_CLOEXEC | O_NONBLOCK) == 0) {
+        signal_source = wl_event_loop_add_fd(wl_display_get_event_loop(server.display),
+                                             signal_pipe[0], WL_EVENT_READABLE,
+                                             handle_signal_pipe, server.display);
+        struct sigaction sa{};
+        sa.sa_handler = on_signal;
+        sigemptyset(&sa.sa_mask);
+        sigaction(SIGTERM, &sa, nullptr);
+        sigaction(SIGINT, &sa, nullptr);
+    } else {
+        wlr_log_errno(WLR_ERROR, "pipe2 failed; SIGTERM won't run teardown");
+    }
     wlr_log(WLR_INFO, "Running Biome on WAYLAND_DISPLAY=%s", socket);
     wl_display_run(server.display);
 
+    if (signal_source) {
+        wl_event_source_remove(signal_source);
+    }
     if (startup_source) {
         wl_event_source_remove(startup_source);
+    }
+    if (startup_pid > 0) { // exiting on a signal, not the child's exit
+        kill(startup_pid, SIGTERM);
+        waitpid(startup_pid, nullptr, 0);
     }
     if (startup_pidfd >= 0) {
         close(startup_pidfd);
