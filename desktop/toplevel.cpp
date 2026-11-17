@@ -1039,9 +1039,20 @@ void toplevels_relocate_for_layout(BiomeServer *server) {
         } else if (toplevel->snap_zone != SnapZone::None) {
             target = snap_target_box(toplevel, toplevel->snap_zone, toplevel_content_output(toplevel));
         }
-        if (!wlr_box_empty(&target) &&
-            (target.x != content.x || target.y != content.y || target.width != geo.width ||
-             target.height != geo.height)) {
+        // Compare against the last requested size/position, not the committed one: a configure
+        // still unacked (e.g. a transient usable_area dip) would otherwise make the revert a no-op.
+        wlr_box current = {content.x, content.y, geo.width, geo.height};
+        if (toplevel->type == BiomeToplevelType::Xdg) {
+            if (toplevel->xdg_toplevel->scheduled.width > 0 && toplevel->xdg_toplevel->scheduled.height > 0) {
+                current.width = toplevel->xdg_toplevel->scheduled.width;
+                current.height = toplevel->xdg_toplevel->scheduled.height;
+            }
+            if (toplevel->reposition_pending) {
+                current.x = toplevel->reposition_pending_x + left;
+                current.y = toplevel->reposition_pending_y + top;
+            }
+        }
+        if (!wlr_box_empty(&target) && !wlr_box_equal(&target, &current)) {
             apply_target_box(toplevel, target);
             if (toplevel->type == BiomeToplevelType::Xdg) {
                 if (toplevel->fullscreen) {
@@ -1063,6 +1074,66 @@ void toplevels_relocate_for_layout(BiomeServer *server) {
         }
         // Unmoved windows can still gain/lose an output that moved or toggled.
         foreign_toplevel_update_outputs(toplevel);
+    }
+}
+
+void toplevels_home_begin(BiomeServer *server, wlr_output *leaving) {
+    if (leaving->name == nullptr) {
+        return;
+    }
+    wlr_box out_box = {};
+    wlr_output_layout_get_box(server->output_layout, leaving, &out_box);
+    BiomeToplevel *toplevel;
+    wl_list_for_each(toplevel, &server->toplevels, link) {
+        if (!toplevel->placed) {
+            continue;
+        }
+        double x = toplevel->scene_tree->node.x, y = toplevel->scene_tree->node.y;
+        wlr_box geo;
+        toplevel_get_geometry(toplevel, &geo);
+        wlr_box frame = {static_cast<int>(x), static_cast<int>(y), geo.width, geo.height};
+        if (output_with_largest_overlap(server, frame) != leaving) {
+            continue;
+        }
+        snprintf(toplevel->home_output, sizeof(toplevel->home_output), "%s", leaving->name);
+        toplevel->home_dx = static_cast<int>(x) - out_box.x;
+        toplevel->home_dy = static_cast<int>(y) - out_box.y;
+        toplevel->home_pending = true;
+        toplevel->home_rescued_x = static_cast<int>(x); // until `end` records the pull
+        toplevel->home_rescued_y = static_cast<int>(y);
+    }
+}
+
+void toplevels_home_end(BiomeServer *server) {
+    BiomeToplevel *toplevel;
+    wl_list_for_each(toplevel, &server->toplevels, link) {
+        if (toplevel->home_pending) {
+            toplevel->home_rescued_x = static_cast<int>(toplevel->scene_tree->node.x);
+            toplevel->home_rescued_y = static_cast<int>(toplevel->scene_tree->node.y);
+        }
+    }
+}
+
+void toplevels_home_restore(BiomeServer *server, wlr_output *returned) {
+    if (returned->name == nullptr) {
+        return;
+    }
+    wlr_box out_box = {};
+    wlr_output_layout_get_box(server->output_layout, returned, &out_box);
+    if (wlr_box_empty(&out_box)) {
+        return;
+    }
+    BiomeToplevel *toplevel;
+    wl_list_for_each(toplevel, &server->toplevels, link) {
+        if (!toplevel->home_pending || strcmp(toplevel->home_output, returned->name) != 0) {
+            continue;
+        }
+        toplevel->home_pending = false;
+        if (static_cast<int>(toplevel->scene_tree->node.x) != toplevel->home_rescued_x ||
+            static_cast<int>(toplevel->scene_tree->node.y) != toplevel->home_rescued_y) {
+            continue;
+        }
+        toplevel_set_position(toplevel, out_box.x + toplevel->home_dx, out_box.y + toplevel->home_dy);
     }
 }
 

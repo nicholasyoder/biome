@@ -36,6 +36,13 @@ struct BiomeToplevel {
     // this to avoid flashing a decoration buffer before placement runs.
     bool placed = false;
 
+    // Set when the window's output was unplugged (e.g. a DPMS hotplug bounce) and it was
+    // pulled elsewhere: lets the output's return put it back. Offset is from the output's origin.
+    bool home_pending = false;
+    char home_output[32] = {};
+    int home_dx = 0, home_dy = 0;
+    int home_rescued_x = 0, home_rescued_y = 0; // node position after the pull; moved since => user's
+
     // Set by set_toplevel_maximized. restore_box is the pre-maximize
     // visible content box (position + size), in output-layout coordinates -
     // reapplied on un-maximize.
@@ -483,3 +490,10 @@ BiomeToplevel *desktop_toplevel_at(
 // output onto the nearest one, and re-fits maximized/fullscreen windows to
 // their output's current box. Windows still on an output stay put.
 void toplevels_relocate_for_layout(BiomeServer *server);
+
+// Output removal: `begin` before the output leaves the layout remembers its windows,
+// `end` after the relocation records where they landed. `restore` on a reconnect with
+// the same name moves still-untouched ones back (caller then runs the settle).
+void toplevels_home_begin(BiomeServer *server, wlr_output *leaving);
+void toplevels_home_end(BiomeServer *server);
+void toplevels_home_restore(BiomeServer *server, wlr_output *returned);

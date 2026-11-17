@@ -13,6 +13,8 @@
 #include "desktop/toplevel.h"
 
 #include <algorithm>
+#include <cstdio>
+#include <cstring>
 #include <ctime>
 #include <vector>
 
@@ -119,8 +121,15 @@ static void output_layout_changed(wl_listener *listener, void *data) {
     (void)data;
     BiomeServer *server = wl_container_of(listener, server, output_layout_change);
     BiomeOutput *output;
+    bool usable_changed = false;
     wl_list_for_each(output, &server->outputs, link) {
+        wlr_box before = output->usable_area;
         output_sync_geometry(output);
+        usable_changed |= !wlr_box_equal(&before, &output->usable_area);
+    }
+    // A scale/mode change outside an apply (e.g. DPMS wake) resizes usable_area with no settle after it.
+    if (usable_changed) {
+        toplevels_relocate_for_layout(server);
     }
     output_management_schedule_publish(server);
 }
@@ -243,6 +252,7 @@ static void output_destroy(wl_listener *listener, void *data) {
     BiomeOutput *output = wl_container_of(listener, output, destroy);
 
     output_power_handle_output_destroy(output);
+    toplevels_home_begin(output->server, output->wlr);
 
     // Leaves the layout now (rather than in the layout's own destroy
     // listener, which runs after this one) so the settle below sees it gone.
@@ -264,6 +274,7 @@ static void output_destroy(wl_listener *listener, void *data) {
     free(output);
     output_relayout(server);
     output_layout_settled(server);
+    toplevels_home_end(server);
     output_management_schedule_publish(server);
 }
 
@@ -463,6 +474,9 @@ static void server_new_output(wl_listener *listener, void *data) {
     output_set_enabled(output, cfg.enabled, cfg.position);
     // Can move already-present outputs (restoring the last live layout), hence the settle.
     output_relayout(server);
+    if (!output->disabled) {
+        toplevels_home_restore(server, wlr_output);
+    }
     output_layout_settled(server);
     output_management_schedule_publish(server);
 }
