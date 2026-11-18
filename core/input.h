@@ -10,3 +10,4 @@
 #include "core/server.h"
 
 void input_init(BiomeServer *server);
+void input_finish(BiomeServer *server);

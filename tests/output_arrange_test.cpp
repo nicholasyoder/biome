@@ -102,9 +102,46 @@ void test_no_new_overlap() {
     expect(layout_components(boxes) == std::vector<int>({0, 0, 0}), "overlap: connected");
 }
 
+void test_effective_box() {
+    wlr_box b = effective_layout_box(10, 20, 3840, 2160, 1 /* 90 */, 1.5f);
+    expect(b.x == 10 && b.y == 20 && b.width == 1440 && b.height == 2560, "box: transform swaps, scale divides");
+    b = effective_layout_box(0, 0, 1366, 768, 0, 1.25f);
+    expect(b.width == 1092 && b.height == 614, "box: fractional scale truncates");
+    b = effective_layout_box(0, 0, 1920, 1080, 0, 0.0f);
+    expect(b.width == 1920, "box: zero scale treated as 1");
+}
+
+void test_plan_relayout() {
+    RelayoutOutput fresh; // replugged with its position from the newest apply
+    fresh.has_position = true;
+    fresh.x = 1920;
+    fresh.generation = 2;
+    fresh.auto_configured = true;
+    RelayoutOutput stale = fresh; // position predates that apply
+    stale.generation = 1;
+    stale.auto_configured = false;
+    RelayoutOutput unconfigured;
+    unconfigured.auto_configured = true;
+    RelayoutOutput in_place = fresh;
+    in_place.auto_configured = false;
+    in_place.cur_x = 1920;
+
+    std::vector<RelayoutStep> steps = plan_relayout({fresh, stale, unconfigured, in_place});
+    expect(steps[0].action == RelayoutAction::Place && steps[0].manual, "relayout: replug restores");
+    expect(steps[1].action == RelayoutAction::AutoPlace && !steps[1].manual, "relayout: stale auto-places");
+    expect(steps[2].action == RelayoutAction::Keep && !steps[2].manual, "relayout: auto stays auto");
+    expect(steps[3].action == RelayoutAction::Keep && steps[3].manual, "relayout: already in place");
+
+    stale.auto_configured = true;
+    steps = plan_relayout({fresh, stale});
+    expect(steps[1].action == RelayoutAction::Keep, "relayout: stale already auto");
+}
+
 } // namespace
 
 int main() {
+    test_effective_box();
+    test_plan_relayout();
     test_components();
     test_middle_unplug_row();
     test_middle_unplug_column();

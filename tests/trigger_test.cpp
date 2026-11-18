@@ -20,6 +20,56 @@ QString roundtrip(const char *trigger) {
     return parsed ? describe_trigger(*parsed) : QStringLiteral("<unparseable>");
 }
 
+// Feeds (sym, pressed, consumed) events, tracking the modifier mask the way
+// wlroots reports it (before the event is applied).
+struct TapSequence {
+    ModifierTap tap;
+    uint32_t mods = 0;
+    ModifierTap::Result key(xkb_keysym_t sym, bool pressed, bool consumed = false) {
+        ModifierTap::Result r = tap.step(sym, mods, pressed, consumed);
+        uint32_t bit = modifier_bit_for_keysym(sym);
+        mods = pressed ? (mods | bit) : (mods & ~bit);
+        return r;
+    }
+};
+
+void test_modifier_tap() {
+    {
+        TapSequence s;
+        expect(s.key(XKB_KEY_Super_L, true).fire == 0, "tap: press doesn't fire");
+        expect(s.key(XKB_KEY_Super_L, false).fire == WLR_MODIFIER_LOGO, "tap: release fires");
+    }
+    {
+        TapSequence s;
+        s.key(XKB_KEY_Super_L, true);
+        s.key(XKB_KEY_c, true);
+        s.key(XKB_KEY_c, false);
+        ModifierTap::Result r = s.key(XKB_KEY_Super_L, false);
+        expect(r.fire == 0 && !r.swallow, "combo: forwarded key, release forwarded");
+    }
+    {
+        TapSequence s;
+        s.key(XKB_KEY_Alt_L, true);
+        s.key(XKB_KEY_Tab, true, true);
+        s.key(XKB_KEY_Tab, false);
+        ModifierTap::Result r = s.key(XKB_KEY_Alt_L, false);
+        expect(r.fire == 0 && r.swallow, "combo: swallowed key, release swallowed");
+    }
+    {
+        TapSequence s;
+        s.key(XKB_KEY_Control_L, true);
+        s.key(XKB_KEY_Shift_L, true);
+        expect(s.key(XKB_KEY_Shift_L, false).fire == 0, "two modifiers: first release");
+        expect(s.key(XKB_KEY_Control_L, false).fire == 0, "two modifiers: no tap");
+        s.key(XKB_KEY_Control_L, true);
+        expect(s.key(XKB_KEY_Control_L, false).fire == WLR_MODIFIER_CTRL, "rearmed after a combo");
+    }
+    {
+        TapSequence s;
+        expect(s.key(XKB_KEY_a, false).fire == 0, "non-modifier release ignored");
+    }
+}
+
 } // namespace
 
 int main() {
@@ -55,6 +105,8 @@ int main() {
     expect(allowed("XF86AudioMute"), "XF86 ok");
     expect(allowed("Print"), "Print ok");
     expect(allowed("LOGO"), "tap ok");
+
+    test_modifier_tap();
 
     return failures == 0 ? 0 : 1;
 }

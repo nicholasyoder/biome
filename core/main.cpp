@@ -9,6 +9,7 @@
 
 #include "core/cursor.h"
 #include "core/input.h"
+#include "core/keybindings.h"
 #include "core/output.h"
 #include "core/gamma.h"
 #include "core/output_power.h"
@@ -17,6 +18,7 @@
 #include "core/server.h"
 #include "decoration/theme.h"
 #include "desktop/app_icon.h"
+#include "desktop/decoration_bridge.h"
 #include "desktop/ext_workspace.h"
 #include "desktop/foreign_toplevel.h"
 #include "desktop/idle.h"
@@ -42,7 +44,6 @@
 #include <cstring>
 #include <fcntl.h>
 #include <getopt.h>
-#include <initializer_list>
 #include <sys/syscall.h>
 #include <sys/wait.h>
 #include <unistd.h>
@@ -87,43 +88,34 @@ int handle_signal_pipe(int fd, uint32_t, void *data) {
     return 0;
 }
 
-void remove_listeners(std::initializer_list<wl_listener *> listeners) {
-    for (wl_listener *listener : listeners) {
-        wl_list_remove(&listener->link);
-    }
-}
-
-// wlroots asserts that nothing still listens on an object's signals when it is
-// destroyed, so each object's listeners go just before it does.
+// wlroots asserts nothing still listens on an object's signals when it is
+// destroyed. Modules finish in reverse init order, except that the backend
+// (whose output_destroy() still needs the scene, cursor and renderer) goes
+// before the rest, once nothing listens for new devices.
 void teardown(BiomeServer &server) {
     wl_display_destroy_clients(server.display);
-    if (server.ewmh_ready) {
-        xcb_ewmh_connection_wipe(&server.ewmh);
-    }
-    if (server.xwayland) {
-        remove_listeners({&server.new_xwayland_surface, &server.xwayland_ready});
-        wlr_xwayland_destroy(server.xwayland);
-    }
-    // First: output_destroy() still touches the scene, cursor and renderer.
-    remove_listeners({&server.new_input, &server.new_output});
+    xwayland_finish(&server);
+    input_finish(&server);
+    output_manager_finish(&server);
     wlr_backend_destroy(server.backend);
     wlr_scene_node_destroy(&server.scene->tree.node);
-    wlr_xcursor_manager_destroy(server.cursor_mgr);
-    remove_listeners({&server.cursor_motion, &server.cursor_motion_absolute, &server.cursor_button,
-        &server.cursor_axis, &server.cursor_frame, &server.cursor_swipe_begin, &server.cursor_swipe_update,
-        &server.cursor_swipe_end, &server.cursor_pinch_begin, &server.cursor_pinch_update,
-        &server.cursor_pinch_end, &server.cursor_hold_begin, &server.cursor_hold_end});
-    wlr_cursor_destroy(server.cursor);
+    cursor_finish(&server);
     wlr_allocator_destroy(server.allocator);
     wlr_renderer_destroy(server.renderer);
-    // Globals destroyed by wl_display_destroy().
-    remove_listeners({&server.new_xdg_toplevel, &server.new_xdg_popup, &server.new_xdg_toplevel_decoration,
-        &server.new_kde_decoration, &server.new_layer_surface, &server.request_set_shape,
-        &server.new_pointer_constraint, &server.keyboard_focus_change, &server.request_cursor,
-        &server.request_set_selection, &server.request_set_primary_selection, &server.request_start_drag,
-        &server.start_drag, &server.output_layout_change, &server.output_apply, &server.output_test,
-        &server.new_session_lock, &server.xdg_activation_new_token, &server.xdg_activation_request_activate,
-        &server.new_idle_inhibitor, &server.gamma_set_gamma, &server.output_power_set_mode});
+    gamma_finish(&server);
+    output_power_finish(&server);
+    idle_finish(&server);
+    pointer_constraints_finish(&server);
+    keybindings_finish(&server);
+    snap_finish(&server);
+    decoration_finish(&server);
+    xdg_shell_finish(&server);
+    window_menu_finish(&server);
+    xdg_activation_finish(&server);
+    ext_workspace_finish(&server);
+    foreign_toplevel_finish(&server);
+    layer_shell_finish(&server);
+    session_lock_finish(&server);
     wl_display_destroy(server.display);
 }
 
@@ -250,13 +242,8 @@ int main(int argc, char *argv[]) {
     wlr_content_type_manager_v1_create(server.display, 1);
     wlr_alpha_modifier_v1_create(server.display);
 
-    // wlroots captures straight off output commits and requests the frame
-    // itself; nothing else to wire. See architecture-notes.md "Screencopy".
-    wlr_screencopy_manager_v1_create(server.display);
-    // Per-window sources are wired in foreign_toplevel_init.
-    wlr_ext_image_copy_capture_manager_v1_create(server.display, 1);
-    wlr_ext_output_image_capture_source_manager_v1_create(server.display, 1);
-
+    // Order: output_manager_init creates the scene and layers everyone uses;
+    // input_init creates the seat that pointer_constraints and xwayland need.
     output_manager_init(&server);
     session_lock_init(&server);
     layer_shell_init(&server);
@@ -267,6 +254,7 @@ int main(int argc, char *argv[]) {
     window_menu_init(&server);
     xdg_shell_init(&server);
     cursor_init(&server);
+    keybindings_init(&server);
     input_init(&server);
     pointer_constraints_init(&server);
     idle_init(&server);

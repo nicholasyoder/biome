@@ -1,11 +1,9 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 //
-// BiomeToplevel and the toplevel-generic behavior shared between xdg-shell
-// and Xwayland: geometry/lookup helpers, focus, placement, maximize/
-// minimize, and the map/unmap/request_move listeners both backends wire up
-// identically. xdg-shell-only and Xwayland-only signal handling (surface
-// creation, commit, the backend-specific request_* signals) lives in
-// desktop/xdg_shell.h and desktop/xwayland_shell.h instead.
+// BiomeToplevel and the window management shared by xdg-shell and Xwayland:
+// geometry, focus, placement, maximize/snap/fullscreen/minimize, always-on-
+// top, and relocation across output changes. Backend-specific handling is in
+// desktop/xdg_shell.h and desktop/xwayland_shell.h.
 
 #pragma once
 
@@ -30,10 +28,7 @@ struct BiomeToplevel {
     BiomeToplevelType type = BiomeToplevelType::Xdg;
     int workspace = 0;
 
-    // Set once place_new_toplevel has given this toplevel its first real
-    // on-screen position. A scene node is visible from creation at whatever
-    // default position it starts at, so render_toplevel_decoration checks
-    // this to avoid flashing a decoration buffer before placement runs.
+    // Has its first real position (place_new_toplevel); no decoration before.
     bool placed = false;
 
     // Set when the window's output was unplugged (e.g. a DPMS hotplug bounce) and it was
@@ -43,9 +38,7 @@ struct BiomeToplevel {
     int home_dx = 0, home_dy = 0;
     int home_rescued_x = 0, home_rescued_y = 0; // node position after the pull; moved since => user's
 
-    // Set by set_toplevel_maximized. restore_box is the pre-maximize
-    // visible content box (position + size), in output-layout coordinates -
-    // reapplied on un-maximize.
+    // restore_box: pre-maximize/snap content box, layout coordinates.
     bool maximized = false;
     wlr_box restore_box = {};
 
@@ -53,37 +46,15 @@ struct BiomeToplevel {
     // restore_box with maximize; never set together with maximized.
     SnapZone snap_zone = SnapZone::None;
 
-    // Set by set_toplevel_fullscreen. fullscreen_restore_box is the
-    // pre-fullscreen visible content box (position + size), in
-    // output-layout coordinates - reapplied on un-fullscreen. Independent of
-    // maximized/restore_box above: fullscreening a maximized window and then
-    // un-fullscreening it restores the maximized fill, not the floating
-    // size, since toplevel->maximized itself is never touched by
-    // set_toplevel_fullscreen. While true, scene_tree is also reparented
-    // into BiomeServer::layers.fullscreen (above every layer-shell layer,
-    // still below layers.session_lock) instead of its usual
-    // layers.toplevels - see that field's declaration in core/server.h -
-    // until another window on its output takes focus (focus_toplevel).
+    // Independent of maximized, which survives a fullscreen round trip. While
+    // set, scene_tree is in layers.fullscreen until another window on its
+    // output takes focus.
     bool fullscreen = false;
     wlr_box fullscreen_restore_box = {};
 
-    // Set by set_toplevel_maximized/set_toplevel_fullscreen for xdg-shell
-    // toplevels only: applying the scene node's new position right away
-    // would put it ahead of the client's own matching commit (xdg-shell
-    // resizes asynchronously), showing the old, wrong-sized buffer at the
-    // new position for a frame or more. Deferred until xdg_toplevel_commit
-    // sees this request's configure serial come back acked, same idea as
-    // process_cursor_resize's deferred edge reposition. Tracking the serial
-    // rather than waiting for the buffer size to change matters because the
-    // requested size can legitimately equal the size the client already
-    // has (e.g. maximizing a window whose remembered size from a
-    // differently-sized output happens to match this output's maximized
-    // size) - the client is not required to resize in that case, but it
-    // still must ack the configure. Xwayland configures x/y/width/height
-    // together, so left unset for it. Shared between the two callers
-    // (whichever one fires last wins, which is fine - only one resize can
-    // be in flight at a time since both are synchronous calls into this
-    // same struct).
+    // xdg only: the new position waits for the client to ack this configure
+    // serial (not a size change, which may not happen), so the old buffer is
+    // never shown at the new position.
     bool reposition_pending = false;
     int reposition_pending_x = 0, reposition_pending_y = 0;
     uint32_t reposition_pending_serial = 0;
@@ -97,56 +68,35 @@ struct BiomeToplevel {
     wlr_box premap_target = {};
     uint32_t premap_serial = 0;
 
-    // Set by set_toplevel_always_on_top: lives in layers.above instead of
-    // layers.toplevels (see toplevel_layer()).
+    // Lives in layers.above instead of layers.toplevels (toplevel_layer()).
     bool always_on_top = false;
 
-    // Set by set_toplevel_minimized. No taskbar exists under Biome yet, so
-    // the only way to restore a minimized window is the Alt-Tab switcher.
     bool minimized = false;
 
     // Demands attention (unhonored activation, X11 urgency hint). Never set
     // while focused; focusing clears it. See set_toplevel_urgent.
     bool urgent = false;
 
-    // scene_tree is the container: its position is the window's on-screen
-    // position (what move/resize/focus-raise all act on). content_tree is
-    // the surface tree, a child of scene_tree offset by
-    // (decoration_border_width(), decoration_titlebar_height()) so
-    // decoration_buffer (also a child of scene_tree) can frame it.
+    // scene_tree's position is the window's; content_tree (the surfaces) and
+    // decoration_buffer are its children, content offset by the border/titlebar.
     wlr_scene_tree *scene_tree = nullptr;
     wlr_scene_tree *content_tree = nullptr;
     wlr_scene_buffer *decoration_buffer = nullptr;
     bool focused = false; // drives which QSS [focused=...] state gets applied
 
-    // Biome's own per-window title bar/border, as a real QSS-styled Qt
-    // widget tree - owned, one instance per toplevel (not a process-wide
-    // shared instance), so its geometry/paint state always reflects this
-    // window and never leaks a stale render/hit-test from some other
-    // toplevel's last call. Constructed in create_toplevel_decoration(),
-    // destroyed in destroy_toplevel_decoration() (both desktop/
-    // decoration_bridge.h) alongside scene_tree - see decoration/theme.h's
-    // create_decoration_frame().
+    // This window's own QSS-styled frame widget (desktop/decoration_bridge.h).
     biome_decoration::DecorationFrame *decoration_frame = nullptr;
 
-    // Which decoration button (if any) is currently hovered/pressed - kept
-    // per-toplevel so render_toplevel_decoration can pass the right state to
-    // decoration/renderer.h. Region::None for neither.
+    // Hovered/pressed decoration button, if any.
     biome_decoration::Region hovered_region = biome_decoration::Region::None;
     biome_decoration::Region pressed_region = biome_decoration::Region::None;
 
-    // Resolved once, in toplevel_map (see desktop/app_icon.h). icon.size ==
-    // 0 means either not-yet-resolved or genuinely no icon found;
-    // icon_resolved distinguishes the two so toplevel_map doesn't redo the
-    // resolution on a toplevel that legitimately has none. No live
-    // re-resolution if app_id/WM_CLASS changes after map.
+    // Resolved once at map (desktop/app_icon.h); size 0 = none found.
     biome_decoration::IconImage icon;
     bool icon_resolved = false;
 
-    // State last handed to render_toplevel_decoration(), so it can skip its
-    // expensive full-window QImage render when nothing changed (e.g. a
-    // plain content-only commit during scrolling). Title/icon are keyed on
-    // serials (bumped on change), not pointers, which can be reused (ABA).
+    // Last rendered decoration state, to skip unchanged re-renders. Title/icon
+    // are keyed on serials, not pointers (ABA).
     bool decoration_rendered_once = false;
     int last_decoration_width = -1;
     int last_decoration_height = -1;
@@ -167,9 +117,7 @@ struct BiomeToplevel {
     wl_listener decoration_outputs_update = {};
     wl_event_source *decoration_rescale_idle = nullptr;
 
-    // wlr-foreign-toplevel-management-unstable-v1 (desktop/foreign_toplevel.h) -
-    // created in toplevel_map, destroyed in toplevel_unmap. Null between
-    // those (or if the manager global failed to create).
+    // Exists while mapped (desktop/foreign_toplevel.h).
     BiomeForeignToplevel *foreign_toplevel = nullptr;
 
     wlr_xdg_toplevel *xdg_toplevel = nullptr;         // type == Xdg
@@ -178,9 +126,7 @@ struct BiomeToplevel {
     wl_listener map = {};
     wl_listener unmap = {};
     wl_listener commit = {}; // xdg only
-    // Shared: catches a title set/changed after map - Xwayland has no
-    // general commit hook to catch this opportunistically like xdg-shell's
-    // commit listener above does.
+    // Both backends: a title change after map.
     wl_listener set_title = {};
     wl_listener set_parent = {};
     wl_listener destroy = {};
@@ -192,31 +138,17 @@ struct BiomeToplevel {
     wl_listener request_minimize = {};
     wl_listener set_decorations = {}; // xwayland only
 
-    // xdg only: true once decoration negotiation (either protocol) has
-    // settled on client-side - see toplevel_decorated. Explicitly set to
-    // true in xdg_toplevel_commit's initial_commit branch for a client that
-    // creates neither a zxdg_toplevel_decoration_v1 nor a KDE
-    // org_kde_kwin_server_decoration object at all - both protocols specify
-    // that absence of a decoration object means client-side decorated
-    // (verified against sway's handle_map, which does the same: `csd = !deco
-    // || ...`), so Biome must not draw its own frame over such a surface.
+    // xdg only: negotiation (either protocol) settled on client-side, or the
+    // client created no decoration object at all (which both protocols define
+    // as client-side).
     bool xdg_client_side_decorated = false;
 
-    // xdg only: the client's decoration negotiation object, if any - kept
-    // for its whole lifetime (not just up to the initial commit) so a
-    // request_mode fired after the window is already mapped is still
-    // honored. nullptr if the client hasn't created one (or it was
-    // destroyed) - see server_new_xdg_toplevel_decoration.
+    // xdg only: kept for its lifetime so a request_mode after map is honored.
     wlr_xdg_toplevel_decoration_v1 *decoration = nullptr;
     wl_listener decoration_destroy = {};
     wl_listener decoration_request_mode = {};
 
-    // xdg only: same idea as decoration/decoration_destroy/
-    // decoration_request_mode above, but for a client using the older KDE
-    // protocol instead (GTK3, which never adopted xdg-decoration) - see
-    // server_new_kde_decoration. A toplevel only ever uses one of the two
-    // protocols in practice, so both write the same
-    // xdg_client_side_decorated flag.
+    // xdg only: the same via the KDE protocol (GTK3).
     wlr_server_decoration *kde_decoration = nullptr;
     wl_listener kde_decoration_destroy = {};
     wl_listener kde_decoration_mode = {};
@@ -277,51 +209,30 @@ void toplevel_get_geometry(BiomeToplevel *toplevel, wlr_box *box);
 // outlines. Same formula set_toplevel_maximized uses for restore_box.
 void toplevel_get_frame_box(BiomeToplevel *toplevel, wlr_box *box);
 
-// Always false while toplevel->fullscreen is set - a fullscreen window
-// fills the whole output with no border/titlebar regardless of what it
-// would otherwise negotiate, same convention as every other compositor.
-// Otherwise: false for an Xwayland surface that set _MOTIF_WM_HINTS asking
-// for no border/title - e.g. a GTK3 app already drawing its own CSD
-// titlebar. For an xdg-shell toplevel, false once either negotiation
-// protocol (xdg-decoration or the legacy KDE one) settled on client-side, or
-// once neither protocol was negotiated at all - see
-// xdg_client_side_decorated. A live query rather than a cached flag on the
-// Xwayland side - wlroots may not have parsed the property yet when a
-// toplevel is first created.
+// False while fullscreen, for an X11 window whose _MOTIF_WM_HINTS ask for no
+// decorations (queried live: parsed late), and for client-side xdg windows.
 bool toplevel_decorated(const BiomeToplevel *toplevel);
 
 // Xwayland surface with _NET_WM_WINDOW_TYPE_SPLASH: undecorated, centered on
 // the cursor's output without cascade, and not focused on map.
 bool toplevel_is_splash(const BiomeToplevel *toplevel);
 
-// content_tree->node.data is set to the owning BiomeToplevel for both xdg
-// and Xwayland, so these can recover a BiomeToplevel from a bare protocol
-// object - used for looking up a parent (transient placement) or the
-// previously-focused surface without needing a wlr_surface in hand.
+// The BiomeToplevel for a protocol object, or null.
 BiomeToplevel *toplevel_from_xdg(wlr_xdg_toplevel *xdg_toplevel);
 BiomeToplevel *toplevel_from_xwayland(wlr_xwayland_surface *xsurface);
 
-// Used during interactive resize: xdg-shell only needs the new size (the
-// client acks asynchronously and the compositor owns position via the scene
-// graph); Xwayland surfaces track their own absolute geometry, so x/y/width/
-// height all have to be sent together.
+// xdg uses only the size; X11 needs x/y too.
 void toplevel_set_size(BiomeToplevel *toplevel, int x, int y, int width, int height);
 
-// Xwayland surfaces need every position change mirrored into the X server
-// (X11 popups/menus position relative to their parent's known x/y).
-// xdg-shell toplevels have no equivalent state.
+// Mirrors a position into the X server (X11 menus position off it); no-op for xdg.
 void toplevel_sync_position(BiomeToplevel *toplevel, int x, int y);
 
 // Moves scene_tree and refreshes foreign-toplevel output_enter/leave. Use
 // instead of setting scene_tree's position directly.
 void toplevel_set_position(BiomeToplevel *toplevel, int x, int y);
 
-// Keyboard focus (and, for Xwayland, the X11 stacking order that goes along
-// with it) only - not pointer focus. Always enters toplevel's own canonical
-// role surface (toplevel_surface(toplevel)), never a caller's hit-tested
-// surface (which can be a subsurface, e.g. a Chromium extension popup) -
-// entering that instead caused spurious keyboard leaves that closed such
-// popups on click.
+// Keyboard focus (plus X11 stacking). Always enters the role surface, never a
+// hit-tested subsurface, which caused spurious leaves that closed popups.
 void focus_toplevel(BiomeToplevel *toplevel);
 void set_toplevel_focused(BiomeToplevel *toplevel, bool focused);
 
@@ -333,70 +244,35 @@ void activate_toplevel(BiomeToplevel *toplevel);
 // Ignored (urgent = true) for the focused toplevel.
 void set_toplevel_urgent(BiomeToplevel *toplevel, bool urgent);
 
-// If a toplevel currently holds keyboard focus (per the seat's real
-// wlr_surface, not any cached bookkeeping), unfocuses it - the same
-// "outgoing toplevel" half of what focus_toplevel() does before handing
-// focus to another toplevel. Used internally by focus_toplevel() and by
-// grant_keyboard_focus_to_non_toplevel() below - not meant to be called
-// directly by anything granting focus itself; see that function instead.
+// Unfocuses the toplevel the seat's keyboard focus is on, if any. Internal
+// to the two focus-granting functions; don't call it to grant focus.
 void clear_focused_toplevel(BiomeServer *server);
 
 // Deactivates the activated toplevel and clears seat keyboard focus. Use this,
 // never wlr_seat_keyboard_notify_clear_focus() directly.
 void clear_keyboard_focus(BiomeServer *server);
 
-// The single chokepoint for handing keyboard focus to any surface that
-// *isn't* a BiomeToplevel: a keyboard-interactive layer-shell surface (the
-// panel; refused while another client's `exclusive` layer surface is up), an xdg_popup (any of Forest's panel/panel-library popup/popupmenu
-// widgets - context menus, the main menu, tooltips), an Xwayland
-// override-redirect surface, or a plain click on one of those. Calls
-// clear_focused_toplevel() first (skipped when surface is a popup of the
-// focused toplevel, which stays activated), then grants via the grab-bypassing
-// wlr_seat_keyboard_enter() (safe and equivalent to the grab-aware
-// wlr_seat_keyboard_notify_enter() whenever no seat keyboard grab is
-// active, and necessary when `surface` is an xdg_popup that installed its
-// own grab - see desktop/xdg_shell.cpp's xdg_popup_map for the full
-// explanation of why notify_enter() would silently no-op there).
-//
-// Exists because call sites granting focus this way independently have to
-// remember to unfocus whatever toplevel currently holds focus first - easy
-// to get wrong per-callsite (an ordinary click on the panel is the everyday
-// trigger). Routing every such site through this one function makes it
-// structurally impossible to skip: nothing outside toplevel.cpp calls
-// wlr_seat_keyboard_(notify_)enter()/wlr_seat_keyboard_enter() directly for
-// a non-toplevel surface.
+// The only way to focus a non-toplevel surface (layer surface, popup, X11
+// override-redirect): unfocuses the current toplevel first (unless surface is
+// its popup), then enters bypassing grabs, which a grabbing popup needs.
 void grant_keyboard_focus_to_non_toplevel(BiomeServer *server, wlr_surface *surface);
 
-// Global-coordinate box a window should stay within on this output -
-// wlr_output's usable_area (desktop/layer_shell.cpp's arrange_layers(),
-// shrunk by any exclusive-zone layer surface) translated from its
-// output-local coordinates into the same global layout space
-// wlr_output_layout_get_box() itself uses. Falls back to the full output
-// box if wlr_output can't be resolved to a BiomeOutput, or if usable_area
-// is degenerate (e.g. a pathological exclusive-zone claim consuming the
-// whole output) - never returns something that would make a window
-// disappear entirely. Pass nullptr for wlr_output to get the whole
-// output-layout's combined extents instead of a single output's.
+// The output's usable area (minus exclusive zones) in layout coordinates;
+// the full output box if that's degenerate. nullptr: the whole layout.
 wlr_box output_target_box(BiomeServer *server, wlr_output *wlr_output);
 
 // The output overlapping box (layout coordinates) the most, or nullptr if
 // none - wlroots' own rule for a scene buffer's primary output.
 wlr_output *output_with_largest_overlap(BiomeServer *server, const wlr_box &box);
 
-// Places a newly-mapped floating toplevel. A transient window (one with a
-// parent, e.g. a dialog) centers on its parent, matching xfwm4's default
-// dialog placement. Otherwise it's centered on the output layout, with a
-// small cascading offset per concurrently-open window so repeated launches
-// don't stack exactly on top of each other.
+// A dialog centers on its parent; anything else centers on the layout,
+// cascaded per open window.
 void place_new_toplevel(BiomeToplevel *toplevel);
 
-// Real maximize/restore: no work-area reservation yet (no panel exists
-// under Biome), so this simply fills the current output.
+// Fills the output's usable area (default: the one it mostly overlaps).
 void set_toplevel_maximized(BiomeToplevel *toplevel, bool maximized, wlr_output *output = nullptr);
 
-// Snaps to zone on output's usable area (default: the output it mostly
-// overlaps; Top = maximize);
-// SnapZone::None restores the pre-snap/maximize box.
+// Snaps to zone on output's usable area (Top = maximize); None restores.
 void set_toplevel_snapped(BiomeToplevel *toplevel, SnapZone zone, wlr_output *output = nullptr);
 
 // Drops the snapped state without moving or resizing (the user is resizing it).
@@ -408,6 +284,8 @@ void snap_drag_motion(BiomeServer *server, double lx, double ly);
 
 // Hides the preview and cancels any pending dwell.
 void snap_preview_hide(BiomeServer *server);
+// Frees the dwell timer at teardown.
+void snap_finish(BiomeServer *server);
 
 // Applies the pending preview zone to the grabbed toplevel and hides the
 // preview. Call on button release before reset_cursor_mode.
@@ -419,15 +297,8 @@ wlr_scene_tree *toplevel_layer(const BiomeToplevel *toplevel);
 // Moves the toplevel between layers.toplevels and layers.above (and raises it).
 void set_toplevel_always_on_top(BiomeToplevel *toplevel, bool always_on_top);
 
-// Real fullscreen/restore: fills the *entire* current output (unlike
-// set_toplevel_maximized, not just its usable area - a fullscreen window
-// covers a panel/dock rather than reserving space around it), with the
-// decorated frame's border/titlebar forced off for the duration (see
-// toplevel_decorated) and the scene node raised above every layer-shell
-// layer for the same reason (see BiomeServer::layers.fullscreen).
-// Independent of maximized state - see fullscreen_restore_box's declaration.
-// `output`, if non-null and in the layout, is the output to fullscreen on
-// (xdg set_fullscreen); otherwise the one the window mostly overlaps.
+// Fills the whole output, undecorated, above the layer-shell layers.
+// output: the client's choice if in the layout, else the one it mostly overlaps.
 void set_toplevel_fullscreen(BiomeToplevel *toplevel, bool fullscreen, wlr_output *output = nullptr);
 
 // xdg only, between the initial commit and map: replies to the client's
@@ -439,14 +310,10 @@ void toplevel_configure_premap(BiomeToplevel *toplevel);
 // Centers the toplevel's current size on the output it overlaps the most.
 void toplevel_center_on_output(BiomeToplevel *toplevel);
 
-// Minimize just hides the toplevel and moves focus elsewhere if it was
-// focused - there's no taskbar under Biome yet for the usual "click to
-// restore", so the Alt-Tab switcher is the only way back for now.
+// Hides the toplevel and moves focus on if it had it.
 void set_toplevel_minimized(BiomeToplevel *toplevel, bool minimized);
 
-// Shared between xdg-shell and Xwayland: both wire toplevel->map/unmap to
-// these directly, and both signal request_move with irrelevant (or no)
-// event data so the handler is identical either way.
+// Listeners both backends wire up directly.
 void toplevel_map(wl_listener *listener, void *data);
 void toplevel_unmap(wl_listener *listener, void *data);
 
@@ -464,23 +331,14 @@ const char *toplevel_app_id(const BiomeToplevel *toplevel);
 BiomeToplevel *toplevel_parent(BiomeToplevel *toplevel);
 void toplevel_request_move(wl_listener *listener, void *data);
 
-// Raw scene-graph hit test, shared by desktop_toplevel_at and
-// decoration_toplevel_at (desktop/decoration_bridge.h) - a caller that needs
-// both classifications for the same point (core/cursor.cpp's motion handler)
-// does this walk once and feeds the result to desktop_toplevel_at_node/
-// decoration_toplevel_at_node, instead of hit-testing the scene twice per
-// event.
+// Raw scene hit test; classify the result with the *_at_node functions to
+// avoid walking the scene twice per event.
 wlr_scene_node *scene_node_at(BiomeServer *server, double lx, double ly, double *sx, double *sy);
 
-// Classifies an already-found scene node (see scene_node_at) the same way
-// desktop_toplevel_at does - split out so a caller holding one hit-test
-// result can reuse it instead of re-querying the scene.
 BiomeToplevel *desktop_toplevel_at_node(wlr_scene_node *node, wlr_surface **surface);
 
-// Returns the topmost surface node in the scene at the given layout coords.
-// Override-redirect Xwayland surfaces never set scene_tree->node.data, so
-// clicking one yields toplevel == nullptr - pointer events still reach it
-// via *surface, it just isn't managed by us.
+// Topmost surface at layout coords. Unmanaged surfaces (X11 override-
+// redirect) return null with *surface still set.
 BiomeToplevel *desktop_toplevel_at(
     BiomeServer *server, double lx, double ly,
     wlr_surface **surface, double *sx, double *sy);

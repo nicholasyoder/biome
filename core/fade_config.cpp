@@ -18,12 +18,12 @@ namespace {
 // either way, which is what let this go unnoticed until a second
 // namespace was added to the same key. toStringList() normalizes both
 // cases: one entry for a plain string, N entries for an auto-split list.
-std::unordered_set<std::string> parse_namespace_list(const QVariant &raw) {
-    std::unordered_set<std::string> result;
+std::vector<std::string> parse_namespace_list(const QVariant &raw) {
+    std::vector<std::string> result;
     for (const QString &ns : raw.toStringList()) {
         const QString trimmed = ns.trimmed();
         if (!trimmed.isEmpty()) {
-            result.insert(trimmed.toStdString());
+            result.push_back(trimmed.toStdString());
         }
     }
     return result;

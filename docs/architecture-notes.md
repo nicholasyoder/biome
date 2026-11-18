@@ -9,6 +9,19 @@ is where the reasoning behind specific pieces of code lives once it's
 settled, so a future change doesn't have to re-derive it or accidentally
 regress an invariant nothing else documents.
 
+## Module state and teardown (`core/server.h`, `core/main.cpp`)
+
+Each subsystem's globals, listeners and flags live in its own struct embedded
+in `BiomeServer` (`server->lock`, `server->pointer`, ...; module-private types
+behind an owned pointer, like `server->keys`). Listener-bearing structs are
+`static_assert`ed standard-layout, so handlers recover the server through
+`biome_server_from()` without `-Winvalid-offsetof`; no `unordered_map`/`set`
+in them. Each module has an `X_finish()` that removes its listeners; `teardown()`
+calls them in reverse init order, except that the backend goes first (its
+`output_destroy()` still needs the scene, cursor and renderer). wlroots asserts
+on any listener left on a destroyed object, so a new listener needs its removal
+in that module's `X_finish()`. `tests/integration/` covers teardown headless.
+
 ## Config sources (`core/config.{h,cpp}`)
 
 `/etc/biome/conf.d/*.conf` (filename order), then `~/.config/Biome/Biome.conf`;
@@ -24,28 +37,27 @@ the other's keys, so comments are lost.
 ## Session lock (`desktop/session_lock.{h,cpp}`, Phase 3.5)
 
 Wraps `wlr_session_lock_manager_v1`. Occlusion comes from the fixed layer
-stack (`core/layers.cpp`): `layers.session_lock` is the last of the eight
+stack (`core/layers.cpp`): `layers.session_lock` is the last of the fixed
 trees `scene_layers_init()` creates and is enabled only while locked. Each
 output has its lock tree there with an opaque full-output rect (created at
 output-add, so a hotplugged monitor is covered from its first frame) and
 the client's lock surface. Toplevels (including fullscreen ones and
 Xwayland override-redirect surfaces) and layer surfaces live in lower
 trees, so they're hidden and unhittable while locked without any
-per-surface lock check. Exception: the switcher, window-menu and drag-icon
-nodes are created later directly under `scene->tree`, so they sit *above*
-the lock; lock start cancels the switcher and ends seat grabs (destroying a
-drag), and the menu refuses to open while locked.
+per-surface lock check. So do the switcher, window menu and drag icon
+(`layers.osd`); lock start also cancels the switcher and ends seat grabs,
+and the menu refuses to open while locked.
 
 Keyboard: see "Keyboard-focus chokepoint". Keybindings, the switcher and
 modifier taps are gated while locked except VT switch (matches sway); every
 other key goes to the lock client.
 
-`session_locked` (survives a lock client crash) and `active_lock` (nulled
+`session_locked` (survives a lock client crash) and `lock.active` (nulled
 the moment that lock's `wl_resource` is gone, crash or not) are deliberately
 two separate fields: per spec, a client dying without calling
 `unlock_and_destroy` must not unlock the session, so `session_locked` is
 only ever cleared by a real `unlock` event. The reject-a-second-lock check
-in `new_session_lock` tests `active_lock`, not `session_locked`, so a
+in `handle_new_session_lock` tests `lock.active`, not `session_locked`, so a
 replacement client can `lock()` and take over recovery after a crash — the
 compositor-policy recovery path the spec names. Any client can do this
 (no allowlist), so a crashed lockscreen plus a hostile local client could
@@ -192,11 +204,12 @@ that section); any future Qt/D-Bus `ipc/` module needs nothing extra.
 
 ## Workspace protocol (Workstream D)
 
-`ext-workspace-v1` is hand-rolled from the raw XML (manager/group/handle);
-it predates the server helper wlroots 0.20 added (`wlr_ext_workspace_v1.h`).
-It sends no workspace `id`, so Forest maps `org.biome.Workspaces` indices to
-ext-workspace handles by arrival order (Biome announces them in index order
-and never removes one). It covers switching/listing but has **no toplevel↔workspace
+`ext-workspace-v1` uses wlroots' `wlr_ext_workspace_v1` helper: one group
+entered by every output, one handle per workspace with `id` `"<index>"`, name
+`"<index + 1>"` and coordinates `[index]`; only `activate` is advertised.
+**`org.biome.Workspaces` workspace numbers are the ext-workspace `id` parsed as
+an integer** (Forest falls back to arrival order when no `id` came, i.e.
+another compositor or an older Biome). It covers switching/listing but has **no toplevel↔workspace
 linkage at all** (checked against both its own XML and
 `wlr-foreign-toplevel-management-unstable-v1.xml`) — that's why the final
 design is a hybrid: `ext-workspace-v1` for switching/listing/active-highlight,
@@ -314,7 +327,7 @@ on the same tick.
 - An unstarted fade has a zero `fade_start`. `elapsed_fraction()` returns 0 for
   it, so cancelling during warmup fades out from 0, not 1.
 
-## Screencopy (`core/main.cpp`)
+## Screencopy (`desktop/foreign_toplevel.cpp`)
 
 wlroots implements `wlr-screencopy-unstable-v1` entirely; Biome only creates
 the global.
@@ -324,7 +337,7 @@ the global.
   the eventual fix.
 - Captures while locked show the lock screen: it copies what's presented.
 
-## Image copy capture (`core/main.cpp`, `desktop/foreign_toplevel.cpp`)
+## Image copy capture (`desktop/foreign_toplevel.cpp`)
 
 `ext-image-copy-capture-v1` with output and foreign-toplevel sources (wlroots
 implements both; Biome creates the globals). Same unrestricted stance as

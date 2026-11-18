@@ -1,11 +1,8 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 //
-// Pointer/cursor plumbing: motion/button/axis/frame signal handlers and
-// interactive move/resize state (BiomeServer::cursor_mode/grabbed_toplevel/
-// grab_*). Dispatches a button/motion event to either a client surface
-// (desktop/toplevel.h's desktop_toplevel_at) or a decoration region
-// (desktop/decoration_bridge.h's decoration_toplevel_at) but never
-// interprets a Region itself - see desktop/decoration_bridge.h for why.
+// Pointer events (server->pointer) and interactive move/resize
+// (server->grab). Routes each event to a client surface or a decoration
+// region (desktop/decoration_bridge.h).
 
 #pragma once
 
@@ -14,6 +11,7 @@
 struct BiomeToplevel;
 
 void cursor_init(BiomeServer *server);
+void cursor_finish(BiomeServer *server);
 
 // Sets a named cursor and remembers it so cursor_reload_theme can re-apply it.
 void cursor_set_xcursor(BiomeServer *server, const char *name);
@@ -44,9 +42,5 @@ void cursor_rebase(BiomeServer *server);
 void begin_interactive(BiomeToplevel *toplevel, BiomeCursorMode mode, uint32_t edges,
     bool check_pointer_focus);
 
-// Adds drag_icon's surface (and any sub-surfaces) to the scene graph and
-// positions it at the current cursor location - called from
-// seat_start_drag (core/input.cpp) once a client-initiated drag with an
-// icon actually begins. Tracks its own teardown via drag_icon_tree's
-// destroy signal, so nothing else needs to call a matching destroy.
+// Shows a drag's icon at the cursor; it removes itself when the icon goes.
 void drag_icon_create(BiomeServer *server, wlr_drag_icon *drag_icon);

@@ -48,10 +48,6 @@ session logs or design discussion.
 Pairs with Forest 0.12.0. Currently the single biggest user-visible gap versus
 sway/Hyprland (`core/input.cpp`/`cursor.cpp` have zero touch/tablet handling).
 
-- **Per-subsystem server state** ([detail](review-2026-11.md#server-split)). Split
-  `BiomeServer` into owned sub-structs with their own teardown; port
-  ext-workspace to the wlroots helper (sends ids); headless integration
-  tests first.
 - **Theme/cursor/icon watchers** ([detail](review-2026-11.md#watchers)). One watch helper;
   qt6ct.conf reload; app-icon caches.
 - **Edge-strip decoration buffers** ([detail](review-2026-11.md#decoration-strips)). A

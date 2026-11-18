@@ -1,39 +1,19 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 //
-// ext-workspace-v1, hand-rolled - wlroots ships no C type for this protocol
-// (unlike wlr-layer-shell-unstable-v1/wlr-foreign-toplevel-management-
-// unstable-v1, both of which wlroots implements itself), so this module
-// owns the wl_global/wl_resource plumbing directly instead of wrapping an
-// existing wlroots type the way every other desktop/*.cpp module does. See
-// docs/architecture-notes.md's "Workspace protocol (Workstream D)" section
-// for the research behind adopting it.
-//
-// Biome's workspace model (desktop/workspace.h) is a single flat, global
-// list (not per-output), so this exposes exactly one ext_workspace_group_
-// handle_v1 spanning every output, containing one ext_workspace_handle_v1
-// per index in [0, BiomeServer::workspace_count). Only the `activate`
-// capability is advertised - no create_workspace/remove/assign/deactivate,
-// matching Biome's fixed-policy identity (nothing dynamically creates or
-// destroys a workspace). output_enter/output_leave and workspace
-// coordinates are deliberately not sent: neither carries information a
-// client could act on given Biome's flat model, and every real client this
-// was tested against (Forest's deskswitch) only needs the workspace list,
-// names, and active state.
-//
-// Per ext-workspace-v1's `commit` semantics, a client's `activate` request
-// doesn't take effect until that client separately sends `commit` on the
-// manager - state changes from a batch of requests must be applied
-// atomically. This module tracks one pending activation index per bound
-// client and applies it on commit.
+// ext-workspace-v1 on wlroots' helper: one group spanning every output, one
+// handle per workspace index with id "<index>" (what org.biome.Workspaces
+// numbers mean), name "<index + 1>" and coordinates [index]. Only activate.
 
 #pragma once
 
 #include "core/server.h"
 
-// Creates the ext_workspace_manager_v1 global.
 void ext_workspace_init(BiomeServer *server);
+void ext_workspace_finish(BiomeServer *server);
 
-// Re-sends `state` (active, urgent) for every workspace handle on every
-// bound client, followed by `done`. Call whenever active_workspace changes or
-// an urgent toplevel appears, disappears or changes workspace.
+// Adds an output to the group; wlroots drops it when the output is destroyed.
+void ext_workspace_output_enter(BiomeServer *server, wlr_output *output);
+
+// Pushes active/urgent state. Call whenever active_workspace changes or an
+// urgent toplevel appears, disappears or changes workspace.
 void ext_workspace_sync_state(BiomeServer *server);

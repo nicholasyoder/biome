@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 //
 // Test client for run.sh. Prints progress lines to stdout for the driver.
-//   win <title> [remap]   map an xdg toplevel (optionally unmap and remap it)
+//   win <title> [remap|ssd]  map an xdg toplevel (unmap and remap it, or ask for
+//                         server-side decorations)
 //   panel                 exclusive-zone layer surface on every output
 //   lock                  lock; a lock surface per output; logs enter/key
 //   power on|off          set every output's DPMS mode, then exit
+//   workspaces <id>       list ext-workspace handles, activate <id>, report the result
 #define _GNU_SOURCE
 #include <stdarg.h>
 #include <stdio.h>
@@ -15,8 +17,10 @@
 #include <wayland-client.h>
 
 #include "ext-session-lock-v1-client-protocol.h"
+#include "ext-workspace-v1-client-protocol.h"
 #include "wlr-layer-shell-unstable-v1-client-protocol.h"
 #include "wlr-output-power-management-unstable-v1-client-protocol.h"
+#include "xdg-decoration-unstable-v1-client-protocol.h"
 #include "xdg-shell-client-protocol.h"
 
 #define MAX_OUTPUTS 8
@@ -29,6 +33,8 @@ static struct zwlr_layer_shell_v1 *layer_shell;
 static struct ext_session_lock_manager_v1 *lock_manager;
 static struct zwlr_output_power_manager_v1 *power_manager;
 static struct wl_seat *seat;
+static struct ext_workspace_manager_v1 *workspace_manager;
+static struct zxdg_decoration_manager_v1 *decoration_manager;
 static struct ext_session_lock_v1 *lock;
 static const char *mode;
 static int started;
@@ -185,6 +191,51 @@ static void setup_output(struct output *o) {
     }
 }
 
+// ---- ext-workspace ----
+struct workspace {
+    struct ext_workspace_handle_v1 *handle;
+    char id[16], name[16];
+    uint32_t state;
+};
+static struct workspace workspaces[16];
+static int nworkspaces, workspaces_done;
+
+static void ws_id(void *d, struct ext_workspace_handle_v1 *h, const char *id) {
+    (void)h;
+    snprintf(((struct workspace *)d)->id, 16, "%s", id);
+}
+static void ws_name(void *d, struct ext_workspace_handle_v1 *h, const char *name) {
+    (void)h;
+    snprintf(((struct workspace *)d)->name, 16, "%s", name);
+}
+static void ws_coordinates(void *d, struct ext_workspace_handle_v1 *h, struct wl_array *c) { (void)d; (void)h; (void)c; }
+static void ws_state(void *d, struct ext_workspace_handle_v1 *h, uint32_t state) {
+    (void)h;
+    ((struct workspace *)d)->state = state;
+}
+static void ws_caps(void *d, struct ext_workspace_handle_v1 *h, uint32_t caps) { (void)d; (void)h; (void)caps; }
+static void ws_removed(void *d, struct ext_workspace_handle_v1 *h) { (void)d; (void)h; }
+static const struct ext_workspace_handle_v1_listener ws_listener = {ws_id, ws_name, ws_coordinates, ws_state, ws_caps,
+                                                                    ws_removed};
+
+static void wm_group(void *d, struct ext_workspace_manager_v1 *m, struct ext_workspace_group_handle_v1 *g) {
+    (void)d; (void)m; (void)g;
+}
+static void wm_workspace(void *d, struct ext_workspace_manager_v1 *m, struct ext_workspace_handle_v1 *h) {
+    (void)d; (void)m;
+    if (nworkspaces < 16) {
+        workspaces[nworkspaces].handle = h;
+        ext_workspace_handle_v1_add_listener(h, &ws_listener, &workspaces[nworkspaces++]);
+    }
+}
+static void wm_done(void *d, struct ext_workspace_manager_v1 *m) {
+    (void)d; (void)m;
+    workspaces_done++;
+}
+static void wm_finished(void *d, struct ext_workspace_manager_v1 *m) { (void)d; (void)m; }
+static const struct ext_workspace_manager_v1_listener workspace_manager_listener = {wm_group, wm_workspace, wm_done,
+                                                                                    wm_finished};
+
 // ---- registry ----
 static void reg_global(void *d, struct wl_registry *r, uint32_t name, const char *iface, uint32_t v) {
     (void)d;
@@ -200,6 +251,11 @@ static void reg_global(void *d, struct wl_registry *r, uint32_t name, const char
         lock_manager = wl_registry_bind(r, name, &ext_session_lock_manager_v1_interface, 1);
     } else if (!strcmp(iface, zwlr_output_power_manager_v1_interface.name)) {
         power_manager = wl_registry_bind(r, name, &zwlr_output_power_manager_v1_interface, 1);
+    } else if (!strcmp(iface, ext_workspace_manager_v1_interface.name)) {
+        workspace_manager = wl_registry_bind(r, name, &ext_workspace_manager_v1_interface, 1);
+        ext_workspace_manager_v1_add_listener(workspace_manager, &workspace_manager_listener, NULL);
+    } else if (!strcmp(iface, zxdg_decoration_manager_v1_interface.name)) {
+        decoration_manager = wl_registry_bind(r, name, &zxdg_decoration_manager_v1_interface, 1);
     } else if (!strcmp(iface, wl_seat_interface.name)) {
         seat = wl_registry_bind(r, name, &wl_seat_interface, 5);
         wl_seat_add_listener(seat, &seat_listener, NULL);
@@ -256,7 +312,13 @@ static void wait_configure(struct wl_surface *s) {
     }
 }
 
-static void run_window(const char *title, int remap) {
+static void deco_configure(void *d, struct zxdg_toplevel_decoration_v1 *deco, uint32_t mode) {
+    (void)d; (void)deco;
+    say("decoration %s", mode == ZXDG_TOPLEVEL_DECORATION_V1_MODE_SERVER_SIDE ? "server-side" : "client-side");
+}
+static const struct zxdg_toplevel_decoration_v1_listener deco_listener = {deco_configure};
+
+static void run_window(const char *title, int remap, int ssd) {
     xdg_wm_base_add_listener(wm_base, &wm_listener, NULL);
     struct wl_surface *s = wl_compositor_create_surface(compositor);
     window_surface = s;
@@ -265,6 +327,11 @@ static void run_window(const char *title, int remap) {
     struct xdg_toplevel *t = xdg_surface_get_toplevel(xs);
     xdg_toplevel_add_listener(t, &toplevel_listener, NULL);
     xdg_toplevel_set_title(t, title);
+    if (ssd) {
+        struct zxdg_toplevel_decoration_v1 *deco = zxdg_decoration_manager_v1_get_toplevel_decoration(decoration_manager, t);
+        zxdg_toplevel_decoration_v1_add_listener(deco, &deco_listener, NULL);
+        zxdg_toplevel_decoration_v1_set_mode(deco, ZXDG_TOPLEVEL_DECORATION_V1_MODE_SERVER_SIDE);
+    }
     wait_configure(s);
     wl_surface_attach(s, make_buffer(400, 300, 0xff40a040), 0, 0);
     wl_surface_commit(s);
@@ -283,6 +350,31 @@ static void run_window(const char *title, int remap) {
     say("ready");
 }
 
+static void print_workspaces(void) {
+    for (int i = 0; i < nworkspaces; i++) {
+        say("workspace id=%s name=%s%s", workspaces[i].id, workspaces[i].name,
+            (workspaces[i].state & EXT_WORKSPACE_HANDLE_V1_STATE_ACTIVE) ? " active" : "");
+    }
+}
+
+static int run_workspaces(const char *activate_id) {
+    while (!workspaces_done) {
+        if (wl_display_dispatch(display) < 0) return 1;
+    }
+    print_workspaces();
+    for (int i = 0; i < nworkspaces; i++) {
+        if (!strcmp(workspaces[i].id, activate_id)) ext_workspace_handle_v1_activate(workspaces[i].handle);
+    }
+    ext_workspace_manager_v1_commit(workspace_manager);
+    int seen = workspaces_done;
+    while (workspaces_done == seen) {
+        if (wl_display_dispatch(display) < 0) return 1;
+    }
+    say("after-activate");
+    print_workspaces();
+    return 0;
+}
+
 int main(int argc, char **argv) {
     if (argc < 2) {
         fprintf(stderr, "usage: %s win|panel|lock|power ...\n", argv[0]);
@@ -299,6 +391,9 @@ int main(int argc, char **argv) {
     wl_display_roundtrip(display);
     wl_display_roundtrip(display);
 
+    if (!strcmp(mode, "workspaces")) {
+        return run_workspaces(argc > 2 ? argv[2] : "0");
+    }
     if (!strcmp(mode, "power")) {
         int on = argc > 2 && !strcmp(argv[2], "on");
         for (int i = 0; i < MAX_OUTPUTS; i++) {
@@ -310,7 +405,8 @@ int main(int argc, char **argv) {
         return 0;
     }
     if (!strcmp(mode, "win")) {
-        run_window(argc > 2 ? argv[2] : "test-win", argc > 3 && !strcmp(argv[3], "remap"));
+        run_window(argc > 2 ? argv[2] : "test-win", argc > 3 && !strcmp(argv[3], "remap"),
+                   argc > 3 && !strcmp(argv[3], "ssd"));
     } else if (!strcmp(mode, "lock")) {
         lock = ext_session_lock_manager_v1_lock(lock_manager);
         ext_session_lock_v1_add_listener(lock, &lock_listener, NULL);

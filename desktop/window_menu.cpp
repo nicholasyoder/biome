@@ -5,6 +5,7 @@
 #include "core/cursor.h"
 #include "decoration/menu.h"
 #include "desktop/decoration_bridge.h"
+#include "desktop/qt_buffer.h"
 #include "desktop/workspace.h"
 
 #include <algorithm>
@@ -43,7 +44,10 @@ struct Panel {
     double scale = 1.0;
 };
 
-struct State {
+
+} // namespace
+
+struct BiomeWindowMenu {
     BiomeServer *server = nullptr;
     BiomeToplevel *target = nullptr;
     Panel panels[2];
@@ -52,7 +56,8 @@ struct State {
     std::set<uint32_t> swallowed_keys;
 };
 
-State g;
+
+namespace {
 
 bool inside(const Panel &p, double lx, double ly) {
     return p.open && lx >= p.x && ly >= p.y && lx < p.x + p.width && ly < p.y + p.height;
@@ -160,24 +165,19 @@ std::vector<MenuEntry> workspace_entries(const BiomeToplevel *t) {
 }
 
 // Re-renders panel idx from its entries and hover state.
-void render_panel(int idx) {
+void render_panel(BiomeWindowMenu &g, int idx) {
     Panel &p = g.panels[idx];
     biome_decoration::RenderedMenu menu = biome_decoration::render_menu(idx, p.entries, p.hovered, p.scale);
     p.width = menu.frame.logical_width;
     p.height = menu.frame.logical_height;
     p.margin = menu.margin;
     p.items = std::move(menu.items);
-    if (!set_decoration_buffer(p.buffer, std::move(menu.frame))) {
+    if (!osd_node_show(p.buffer, std::move(menu.frame), p.x, p.y)) {
         p.open = false;
-        wlr_scene_node_set_enabled(&p.buffer->node, false);
-        return;
     }
-    wlr_scene_node_set_position(&p.buffer->node, p.x, p.y);
-    wlr_scene_node_set_enabled(&p.buffer->node, true);
-    wlr_scene_node_raise_to_top(&p.buffer->node);
 }
 
-void close_submenu() {
+void close_submenu(BiomeWindowMenu &g) {
     Panel &sub = g.panels[1];
     if (!sub.open) {
         return;
@@ -202,11 +202,11 @@ void place_visible(const wlr_box &box, const Panel &p, int vis_x, int vis_y, int
     *y = std::max(vis_y, box.y) - p.margin;
 }
 
-wlr_output *output_at(double lx, double ly) {
+wlr_output *output_at(BiomeWindowMenu &g, double lx, double ly) {
     return wlr_output_layout_output_at(g.server->output_layout, lx, ly);
 }
 
-void open_submenu(int parent_id) {
+void open_submenu(BiomeWindowMenu &g, int parent_id) {
     Panel &main = g.panels[0];
     const MenuItemRect *rect = nullptr;
     for (const MenuItemRect &r : main.items) {
@@ -228,7 +228,7 @@ void open_submenu(int parent_id) {
 
     sub.margin = measured.margin;
 
-    wlr_output *output = output_at(main.x, main.y);
+    wlr_output *output = output_at(g, main.x, main.y);
     wlr_box box = output_target_box(g.server, output);
     // Visible frames touch (right of the parent, left if it would overflow),
     // first items aligned.
@@ -247,23 +247,23 @@ void open_submenu(int parent_id) {
     sub.x = x;
     sub.y = y;
     sub.open = true;
-    render_panel(1);
+    render_panel(g, 1);
     // Parent keeps its highlight while the submenu is open.
     main.hovered = parent_id;
-    render_panel(0);
+    render_panel(g, 0);
     wlr_scene_node_raise_to_top(&sub.buffer->node);
 }
 
-void set_hover(int idx, int id) {
+void set_hover(BiomeWindowMenu &g, int idx, int id) {
     Panel &p = g.panels[idx];
     if (p.hovered == id) {
         return;
     }
     p.hovered = id;
-    render_panel(idx);
+    render_panel(g, idx);
 }
 
-void begin_menu_grab(BiomeToplevel *t, BiomeCursorMode mode) {
+void begin_menu_grab(BiomeWindowMenu &g, BiomeToplevel *t, BiomeCursorMode mode) {
     BiomeServer *server = g.server;
     wlr_box frame;
     toplevel_get_frame_box(t, &frame);
@@ -276,10 +276,10 @@ void begin_menu_grab(BiomeToplevel *t, BiomeCursorMode mode) {
         wlr_cursor_warp(server->cursor, nullptr, frame.x + frame.width - 1.0, frame.y + frame.height - 1.0);
         begin_interactive(t, mode, WLR_EDGE_BOTTOM | WLR_EDGE_RIGHT, false);
     }
-    server->grab_from_menu = server->cursor_mode != BiomeCursorMode::Passthrough;
+    server->grab.from_menu = server->grab.mode != BiomeCursorMode::Passthrough;
 }
 
-void activate(int id) {
+void activate(BiomeWindowMenu &g, int id) {
     BiomeToplevel *t = g.target;
     BiomeServer *server = g.server;
     if (t == nullptr) {
@@ -308,10 +308,10 @@ void activate(int id) {
         set_toplevel_minimized(t, true);
         break;
     case kMove:
-        begin_menu_grab(t, BiomeCursorMode::Move);
+        begin_menu_grab(g, t, BiomeCursorMode::Move);
         break;
     case kResize:
-        begin_menu_grab(t, BiomeCursorMode::Resize);
+        begin_menu_grab(g, t, BiomeCursorMode::Resize);
         break;
     case kAlwaysOnTop:
         set_toplevel_always_on_top(t, !t->always_on_top);
@@ -325,16 +325,16 @@ void activate(int id) {
 }
 
 // Activating or descending into the item under a pointer/keyboard selection.
-void activate_item(int panel_idx, int id) {
+void activate_item(BiomeWindowMenu &g, int panel_idx, int id) {
     const MenuEntry *entry = entry_for(g.panels[panel_idx], id);
     if (entry == nullptr || !entry->enabled) {
         return;
     }
     if (entry->submenu) {
-        open_submenu(id);
+        open_submenu(g, id);
         return;
     }
-    activate(id);
+    activate(g, id);
 }
 
 // Next enabled item from the hovered one in direction dir (wraps).
@@ -362,21 +362,27 @@ bool is_modifier(xkb_keysym_t sym) {
 } // namespace
 
 void window_menu_init(BiomeServer *server) {
+    server->window_menu = new BiomeWindowMenu;
+    BiomeWindowMenu &g = *server->window_menu;
     g.server = server;
     for (Panel &p : g.panels) {
-        // Children of the scene root, like the switcher: not owned by any window.
         p.buffer = wlr_scene_buffer_create(server->layers.osd, nullptr);
         wlr_scene_node_set_enabled(&p.buffer->node, false);
     }
 }
 
-bool window_menu_active() {
-    return g.panels[0].open;
+void window_menu_finish(BiomeServer *server) {
+    delete server->window_menu;
+    server->window_menu = nullptr;
+}
+
+bool window_menu_active(BiomeServer *server) {
+    return server->window_menu->panels[0].open;
 }
 
 void window_menu_close(BiomeServer *server) {
-    (void)server;
-    close_submenu();
+    BiomeWindowMenu &g = *server->window_menu;
+    close_submenu(g);
     Panel &main = g.panels[0];
     if (main.open) {
         main.open = false;
@@ -389,12 +395,13 @@ void window_menu_close(BiomeServer *server) {
 
 static void open_menu(BiomeToplevel *toplevel, int x, int y, int anchor_height, bool snap, bool armed) {
     BiomeServer *server = toplevel->server;
-    if (server->session_locked || g.server == nullptr || !toplevel->placed) {
+    if (server->session_locked || !toplevel->placed) {
         return;
     }
     window_menu_close(server);
+    BiomeWindowMenu &g = *server->window_menu;
 
-    wlr_output *output = output_at(x, y);
+    wlr_output *output = output_at(g, x, y);
     Panel &main = g.panels[0];
     g.target = toplevel;
     main.entries = snap ? snap_entries(toplevel) : main_entries(toplevel);
@@ -414,7 +421,7 @@ static void open_menu(BiomeToplevel *toplevel, int x, int y, int anchor_height, 
         main.y = y - main.margin;
     }
     main.open = true;
-    render_panel(0);
+    render_panel(g, 0);
     if (!main.open) {
         g.target = nullptr;
         return;
@@ -434,44 +441,47 @@ void window_menu_open_snap(BiomeToplevel *toplevel, int x, int y, int anchor_hei
 }
 
 void window_menu_remove_toplevel(BiomeServer *server, BiomeToplevel *toplevel) {
+    BiomeWindowMenu &g = *server->window_menu;
     if (g.target == toplevel) {
         window_menu_close(server);
     }
 }
 
 void window_menu_motion(BiomeServer *server, double lx, double ly) {
+    BiomeWindowMenu &g = *server->window_menu;
     wlr_seat_pointer_notify_clear_focus(server->seat);
     cursor_set_xcursor(server, "default");
     Panel &main = g.panels[0];
     Panel &sub = g.panels[1];
 
     if (const MenuItemRect *r = item_at(sub, lx, ly)) {
-        set_hover(1, r->id);
+        set_hover(g, 1, r->id);
         return;
     }
     if (inside(sub, lx, ly)) {
-        set_hover(1, -1);
+        set_hover(g, 1, -1);
         return;
     }
     if (const MenuItemRect *r = item_at(main, lx, ly)) {
         const MenuEntry *entry = entry_for(main, r->id);
         if (entry != nullptr && entry->enabled && entry->submenu) {
             if (!sub.open) {
-                open_submenu(r->id);
+                open_submenu(g, r->id);
             }
             return;
         }
-        close_submenu();
-        set_hover(0, entry != nullptr && entry->enabled ? r->id : -1);
+        close_submenu(g);
+        set_hover(g, 0, entry != nullptr && entry->enabled ? r->id : -1);
         return;
     }
     // Over a gap or outside: the submenu's parent keeps its highlight.
     if (inside(main, lx, ly) && !sub.open) {
-        set_hover(0, -1);
+        set_hover(g, 0, -1);
     }
 }
 
 bool window_menu_button(BiomeServer *server, uint32_t time_msec, uint32_t button, bool pressed) {
+    BiomeWindowMenu &g = *server->window_menu;
     double lx = server->cursor->x, ly = server->cursor->y;
     Panel &main = g.panels[0];
     Panel &sub = g.panels[1];
@@ -492,7 +502,7 @@ bool window_menu_button(BiomeServer *server, uint32_t time_msec, uint32_t button
             idx = 0;
         }
         if (r != nullptr) {
-            activate_item(idx, r->id);
+            activate_item(g, idx, r->id);
         }
         return true;
     }
@@ -506,10 +516,11 @@ bool window_menu_button(BiomeServer *server, uint32_t time_msec, uint32_t button
 }
 
 bool window_menu_key(BiomeServer *server, uint32_t keycode, xkb_keysym_t sym, bool pressed) {
+    BiomeWindowMenu &g = *server->window_menu;
     if (!pressed) {
         return g.swallowed_keys.erase(keycode) > 0;
     }
-    if (!window_menu_active()) {
+    if (!window_menu_active(server)) {
         return false;
     }
     if (is_modifier(sym)) {
@@ -524,27 +535,27 @@ bool window_menu_key(BiomeServer *server, uint32_t keycode, xkb_keysym_t sym, bo
     switch (sym) {
     case XKB_KEY_Escape:
         if (sub.open) {
-            close_submenu();
+            close_submenu(g);
         } else {
             window_menu_close(server);
         }
         break;
     case XKB_KEY_Down:
-        set_hover(idx, step_hover(cur, 1));
+        set_hover(g, idx, step_hover(cur, 1));
         break;
     case XKB_KEY_Up:
-        set_hover(idx, step_hover(cur, -1));
+        set_hover(g, idx, step_hover(cur, -1));
         break;
     case XKB_KEY_Right: {
         const MenuEntry *e = entry_for(main, main.hovered);
         if (!sub.open && e != nullptr && e->submenu && e->enabled) {
-            open_submenu(main.hovered);
-            set_hover(1, step_hover(sub, 1));
+            open_submenu(g, main.hovered);
+            set_hover(g, 1, step_hover(sub, 1));
         }
         break;
     }
     case XKB_KEY_Left:
-        close_submenu();
+        close_submenu(g);
         break;
     case XKB_KEY_Return:
     case XKB_KEY_KP_Enter:
@@ -552,10 +563,10 @@ bool window_menu_key(BiomeServer *server, uint32_t keycode, xkb_keysym_t sym, bo
         if (cur.hovered >= 0) {
             const MenuEntry *e = entry_for(cur, cur.hovered);
             if (e != nullptr && e->submenu && !sub.open) {
-                open_submenu(cur.hovered);
-                set_hover(1, step_hover(sub, 1));
+                open_submenu(g, cur.hovered);
+                set_hover(g, 1, step_hover(sub, 1));
             } else {
-                activate_item(idx, cur.hovered);
+                activate_item(g, idx, cur.hovered);
             }
         }
         break;

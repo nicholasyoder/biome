@@ -7,96 +7,33 @@
 #include "core/cursor.h"
 #include "decoration/renderer.h"
 #include "decoration/theme.h"
+#include "desktop/qt_buffer.h"
 
-#include <drm_fourcc.h>
 #include <string>
 #include <utility>
 #include <vector>
 
+// Cached per frame, so a read never restyles the shared widget.
+static const biome_decoration::DecorationFrame::Metrics kNoDecoration;
+
+static const biome_decoration::DecorationFrame::Metrics &metrics_of(const BiomeToplevel *toplevel, bool maximized) {
+    return toplevel_decorated(toplevel) ? toplevel->decoration_frame->metrics(maximized) : kNoDecoration;
+}
+
 int decoration_border_width(const BiomeToplevel *toplevel, bool maximized) {
-    if (!toplevel_decorated(toplevel)) {
-        return 0;
-    }
-    toplevel->decoration_frame->setMaximizedState(maximized);
-    return toplevel->decoration_frame->borderWidth();
+    return metrics_of(toplevel, maximized).left;
 }
 
 int decoration_titlebar_height(const BiomeToplevel *toplevel, bool maximized) {
-    if (!toplevel_decorated(toplevel)) {
-        return 0;
-    }
-    toplevel->decoration_frame->setMaximizedState(maximized);
-    return toplevel->decoration_frame->titlebarHeight();
+    return metrics_of(toplevel, maximized).top;
 }
 
 int decoration_border_right_width(const BiomeToplevel *toplevel, bool maximized) {
-    if (!toplevel_decorated(toplevel)) {
-        return 0;
-    }
-    toplevel->decoration_frame->setMaximizedState(maximized);
-    return toplevel->decoration_frame->rightBorderWidth();
+    return metrics_of(toplevel, maximized).right;
 }
 
 int decoration_border_bottom_height(const BiomeToplevel *toplevel, bool maximized) {
-    if (!toplevel_decorated(toplevel)) {
-        return 0;
-    }
-    toplevel->decoration_frame->setMaximizedState(maximized);
-    return toplevel->decoration_frame->bottomBorderHeight();
-}
-
-// --- Decoration buffer: wraps a RenderedFrame in a minimal software
-// wlr_buffer so it can be handed to wlr_scene_buffer_set_buffer. ---
-
-struct BiomeDecorationBuffer {
-    wlr_buffer base = {};
-    std::vector<uint8_t> pixels;
-    int stride = 0;
-};
-
-static void decoration_buffer_destroy(wlr_buffer *buf) {
-    BiomeDecorationBuffer *buffer = wl_container_of(buf, buffer, base);
-    delete buffer;
-}
-
-static bool decoration_buffer_begin_data_ptr_access(wlr_buffer *buf,
-        uint32_t flags, void **data, uint32_t *format, size_t *stride) {
-    (void)flags;
-    BiomeDecorationBuffer *buffer = wl_container_of(buf, buffer, base);
-    *data = buffer->pixels.data();
-    *format = DRM_FORMAT_ARGB8888;
-    *stride = static_cast<size_t>(buffer->stride);
-    return true;
-}
-
-static void decoration_buffer_end_data_ptr_access(wlr_buffer *buf) {
-    (void)buf;
-}
-
-// Field order: destroy, get_dmabuf, get_shm, begin_data_ptr_access,
-// end_data_ptr_access. This buffer is CPU-only pixel data, so
-// get_dmabuf/get_shm stay null.
-static const wlr_buffer_impl kDecorationBufferImpl = {
-    decoration_buffer_destroy,
-    nullptr,
-    nullptr,
-    decoration_buffer_begin_data_ptr_access,
-    decoration_buffer_end_data_ptr_access,
-};
-
-bool set_decoration_buffer(wlr_scene_buffer *scene_buffer, biome_decoration::RenderedFrame &&frame) {
-    if (frame.width <= 0 || frame.height <= 0) {
-        return false;
-    }
-    auto *buffer = new BiomeDecorationBuffer();
-    buffer->stride = frame.stride;
-    buffer->pixels = std::move(frame.pixels);
-    wlr_buffer_init(&buffer->base, &kDecorationBufferImpl, frame.width, frame.height);
-    // Dest size first, so the buffer is never briefly laid out at its pixel size.
-    wlr_scene_buffer_set_dest_size(scene_buffer, frame.logical_width, frame.logical_height);
-    wlr_scene_buffer_set_buffer(scene_buffer, &buffer->base);
-    wlr_buffer_drop(&buffer->base);
-    return true;
+    return metrics_of(toplevel, maximized).bottom;
 }
 
 static void decoration_rescale_idle(void *data) {
@@ -214,7 +151,7 @@ void render_toplevel_decoration(BiomeToplevel *toplevel) {
         toplevel->decoration_frame, width, height,
         toplevel->focused, toplevel->urgent, render_maximized, title, toplevel->icon,
         toplevel->hovered_region, toplevel->pressed_region, toplevel->decoration_scale);
-    if (!set_decoration_buffer(toplevel->decoration_buffer, std::move(frame))) {
+    if (!set_scene_frame(toplevel->decoration_buffer, std::move(frame))) {
         return;
     }
 
@@ -255,6 +192,7 @@ void reload_decoration_theme(BiomeServer *server, const QString &dir, const QStr
 
     for (auto &[tl, origin] : origins) {
         tl->decoration_frame->layoutFor(200, 200);
+        tl->decoration_frame->invalidateMetrics();
         tl->decoration_rendered_once = false;
         if (!tl->placed) {
             continue;
@@ -319,7 +257,7 @@ void update_decoration_hover(BiomeServer *server, BiomeToplevel *toplevel,
     biome_decoration::Region new_region =
         new_hovered != nullptr ? region : biome_decoration::Region::None;
 
-    BiomeToplevel *old_hovered = server->hovered_decoration_toplevel;
+    BiomeToplevel *old_hovered = server->decor.hovered;
     if (old_hovered == new_hovered && (old_hovered == nullptr || old_hovered->hovered_region == new_region)) {
         return;
     }
@@ -332,7 +270,7 @@ void update_decoration_hover(BiomeServer *server, BiomeToplevel *toplevel,
         new_hovered->hovered_region = new_region;
         render_toplevel_decoration(new_hovered);
     }
-    server->hovered_decoration_toplevel = new_hovered;
+    server->decor.hovered = new_hovered;
 }
 
 void set_decoration_pressed(BiomeServer *server, BiomeToplevel *toplevel,
@@ -341,7 +279,7 @@ void set_decoration_pressed(BiomeServer *server, BiomeToplevel *toplevel,
     biome_decoration::Region new_region =
         new_pressed != nullptr ? region : biome_decoration::Region::None;
 
-    BiomeToplevel *old_pressed = server->pressed_decoration_toplevel;
+    BiomeToplevel *old_pressed = server->decor.pressed;
     if (old_pressed == new_pressed && (old_pressed == nullptr || old_pressed->pressed_region == new_region)) {
         return;
     }
@@ -354,7 +292,7 @@ void set_decoration_pressed(BiomeServer *server, BiomeToplevel *toplevel,
         new_pressed->pressed_region = new_region;
         render_toplevel_decoration(new_pressed);
     }
-    server->pressed_decoration_toplevel = new_pressed;
+    server->decor.pressed = new_pressed;
 }
 
 void refresh_decoration_hover(BiomeServer *server) {
@@ -365,11 +303,11 @@ void refresh_decoration_hover(BiomeServer *server) {
 }
 
 void clear_decoration_tracking(BiomeServer *server, BiomeToplevel *toplevel) {
-    if (server->hovered_decoration_toplevel == toplevel) {
-        server->hovered_decoration_toplevel = nullptr;
+    if (server->decor.hovered == toplevel) {
+        server->decor.hovered = nullptr;
     }
-    if (server->pressed_decoration_toplevel == toplevel) {
-        server->pressed_decoration_toplevel = nullptr;
+    if (server->decor.pressed == toplevel) {
+        server->decor.pressed = nullptr;
     }
 }
 
@@ -455,11 +393,9 @@ void open_snap_menu(BiomeToplevel *toplevel, bool armed) {
 }
 
 // Press-and-hold on the maximize button opens the snap menu.
-static wl_event_source *g_hold_timer = nullptr;
-
 static int snap_hold_fired(void *data) {
     auto *server = static_cast<BiomeServer *>(data);
-    BiomeToplevel *pressed = server->pressed_decoration_toplevel;
+    BiomeToplevel *pressed = server->decor.pressed;
     if (pressed == nullptr || pressed->pressed_region != biome_decoration::Region::ButtonMaximize) {
         return 0;
     }
@@ -470,11 +406,18 @@ static int snap_hold_fired(void *data) {
 
 static void snap_hold_arm(BiomeServer *server) {
     constexpr int kHoldMs = 500;
-    if (g_hold_timer == nullptr) {
-        g_hold_timer = wl_event_loop_add_timer(wl_display_get_event_loop(server->display), snap_hold_fired, server);
+    if (server->decor.hold_timer == nullptr) {
+        server->decor.hold_timer = wl_event_loop_add_timer(wl_display_get_event_loop(server->display), snap_hold_fired, server);
     }
-    if (g_hold_timer != nullptr) {
-        wl_event_source_timer_update(g_hold_timer, kHoldMs);
+    if (server->decor.hold_timer != nullptr) {
+        wl_event_source_timer_update(server->decor.hold_timer, kHoldMs);
+    }
+}
+
+void decoration_finish(BiomeServer *server) {
+    if (server->decor.hold_timer != nullptr) {
+        wl_event_source_remove(server->decor.hold_timer);
+        server->decor.hold_timer = nullptr;
     }
 }
 
@@ -492,10 +435,10 @@ void handle_decoration_press(BiomeToplevel *toplevel, biome_decoration::Region r
 }
 
 void handle_decoration_release(BiomeServer *server) {
-    if (g_hold_timer != nullptr) {
-        wl_event_source_timer_update(g_hold_timer, 0);
+    if (server->decor.hold_timer != nullptr) {
+        wl_event_source_timer_update(server->decor.hold_timer, 0);
     }
-    BiomeToplevel *pressed = server->pressed_decoration_toplevel;
+    BiomeToplevel *pressed = server->decor.pressed;
     if (pressed == nullptr) {
         return;
     }

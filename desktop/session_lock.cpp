@@ -10,17 +10,11 @@
 #include "desktop/switcher.h"
 #include "desktop/workspace.h"
 
-// Per-BiomeOutput wlr_session_lock_surface_v1 wrapper - not exposed outside
-// this file. BiomeOutput::lock_surface holds the raw wlroots pointer for
-// output_request_state()'s resize-reconfigure; this struct is only for the
-// scene content and listener bookkeeping that goes with it.
+// Scene content and listeners for one output's lock surface.
 struct BiomeLockSurface {
     BiomeServer *server = nullptr;
     wlr_session_lock_surface_v1 *lock_surface = nullptr;
-    // Not explicitly destroyed here - wlr_scene_subsurface_tree_create's
-    // tree self-destroys on the underlying wlr_surface's own destroy event
-    // (confirmed in wlroots' subsurface_tree.c), and it's already unmapped
-    // (invisible) well before that by the time our own destroy handler runs.
+    // Destroys itself with the wlr_surface.
     wlr_scene_tree *scene_tree = nullptr;
     wl_listener destroy = {};
     wl_listener surface_map = {};
@@ -81,7 +75,7 @@ static void handle_lock_surface_destroy(wl_listener *listener, void *data) {
 }
 
 static void handle_lock_new_surface(wl_listener *listener, void *data) {
-    BiomeServer *server = wl_container_of(listener, server, lock_new_surface);
+    BiomeServer *server = biome_server_from(listener, BiomeSessionLock, new_surface);
     auto *lock_surface = static_cast<wlr_session_lock_surface_v1 *>(data);
 
     BiomeOutput *output = biome_output_from_wlr(server, lock_surface->output);
@@ -112,7 +106,7 @@ static void handle_lock_new_surface(wl_listener *listener, void *data) {
 
 static void handle_lock_unlock(wl_listener *listener, void *data) {
     (void)data;
-    BiomeServer *server = wl_container_of(listener, server, lock_unlock);
+    BiomeServer *server = biome_server_from(listener, BiomeSessionLock, unlock);
     server->session_locked = false;
     wlr_scene_node_set_enabled(&server->layers.session_lock->node, false);
 
@@ -134,11 +128,11 @@ static void handle_lock_unlock(wl_listener *listener, void *data) {
 // does not touch server->session_locked, see server.h's field comment.
 static void handle_lock_destroy(wl_listener *listener, void *data) {
     (void)data;
-    BiomeServer *server = wl_container_of(listener, server, lock_destroy);
-    wl_list_remove(&server->lock_new_surface.link);
-    wl_list_remove(&server->lock_unlock.link);
-    wl_list_remove(&server->lock_destroy.link);
-    server->active_lock = nullptr;
+    BiomeServer *server = biome_server_from(listener, BiomeSessionLock, destroy);
+    wl_list_remove(&server->lock.new_surface.link);
+    wl_list_remove(&server->lock.unlock.link);
+    wl_list_remove(&server->lock.destroy.link);
+    server->lock.active = nullptr;
 
     if (server->session_locked) {
         // Abandoned lock (client died without unlock_and_destroy, so
@@ -156,29 +150,24 @@ static void handle_lock_destroy(wl_listener *listener, void *data) {
 }
 
 static void handle_new_session_lock(wl_listener *listener, void *data) {
-    BiomeServer *server = wl_container_of(listener, server, new_session_lock);
+    BiomeServer *server = biome_server_from(listener, BiomeSessionLock, new_lock);
     auto *lock = static_cast<wlr_session_lock_v1 *>(data);
 
-    if (server->active_lock != nullptr) {
-        // Already locked, or another lock is mid-negotiation - refuse this
-        // one immediately per spec ("finished event should be sent
-        // immediately... if the compositor decides the locked event will
-        // not be sent"). Note this checks active_lock, not session_locked:
-        // after a crashed lock client's destroy event nulls active_lock,
-        // session_locked can still be true while a *replacement* client is
-        // allowed to lock() and take over - see server.h's field comment.
+    if (server->lock.active != nullptr) {
+        // Another lock is live: refuse (sends finished). Not session_locked,
+        // so a replacement can take over after a lock client crashes.
         wlr_session_lock_v1_destroy(lock);
         return;
     }
 
-    server->active_lock = lock;
-    server->active_lock_locked_sent = false;
-    server->lock_new_surface.notify = handle_lock_new_surface;
-    wl_signal_add(&lock->events.new_surface, &server->lock_new_surface);
-    server->lock_unlock.notify = handle_lock_unlock;
-    wl_signal_add(&lock->events.unlock, &server->lock_unlock);
-    server->lock_destroy.notify = handle_lock_destroy;
-    wl_signal_add(&lock->events.destroy, &server->lock_destroy);
+    server->lock.active = lock;
+    server->lock.locked_sent = false;
+    server->lock.new_surface.notify = handle_lock_new_surface;
+    wl_signal_add(&lock->events.new_surface, &server->lock.new_surface);
+    server->lock.unlock.notify = handle_lock_unlock;
+    wl_signal_add(&lock->events.unlock, &server->lock.unlock);
+    server->lock.destroy.notify = handle_lock_destroy;
+    wl_signal_add(&lock->events.destroy, &server->lock.destroy);
 
     server->session_locked = true;
     foreign_toplevel_set_capture_blank(server, true);
@@ -192,7 +181,6 @@ static void handle_new_session_lock(wl_listener *listener, void *data) {
     clear_keyboard_focus(server);
     wlr_seat_pointer_notify_clear_focus(server->seat);
 
-    // No raise needed: layers.session_lock is the last fixed tree (server.h).
     wlr_scene_node_set_enabled(&server->layers.session_lock->node, true);
 
     // Every lock starts from a clean, normally-colored rect - undoes the red
@@ -226,7 +214,7 @@ static void handle_new_session_lock(wl_listener *listener, void *data) {
 }
 
 void session_lock_maybe_send_locked(BiomeServer *server) {
-    if (!server->session_locked || server->active_lock == nullptr || server->active_lock_locked_sent) {
+    if (!server->session_locked || server->lock.active == nullptr || server->lock.locked_sent) {
         return;
     }
     BiomeOutput *output;
@@ -235,15 +223,20 @@ void session_lock_maybe_send_locked(BiomeServer *server) {
             return;
         }
     }
-    server->active_lock_locked_sent = true;
-    wlr_session_lock_v1_send_locked(server->active_lock);
+    server->lock.locked_sent = true;
+    wlr_session_lock_v1_send_locked(server->lock.active);
 }
 
 void session_lock_init(BiomeServer *server) {
+    server->lock.server = server;
     // server->layers.session_lock already exists (core/layers.cpp, called
     // from output_manager_init before this runs) and starts disabled -
     // nothing to create here.
-    server->session_lock_manager = wlr_session_lock_manager_v1_create(server->display);
-    server->new_session_lock.notify = handle_new_session_lock;
-    wl_signal_add(&server->session_lock_manager->events.new_lock, &server->new_session_lock);
+    server->lock.manager = wlr_session_lock_manager_v1_create(server->display);
+    server->lock.new_lock.notify = handle_new_session_lock;
+    wl_signal_add(&server->lock.manager->events.new_lock, &server->lock.new_lock);
+}
+
+void session_lock_finish(BiomeServer *server) {
+    wl_list_remove(&server->lock.new_lock.link);
 }

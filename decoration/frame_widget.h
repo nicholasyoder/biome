@@ -1,15 +1,8 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 //
-// The real, QSS-styled Qt widget tree behind a decoration frame: a
-// DecorationFrame (border/radius/background) containing a titlebar with a
-// title label and three DecorationButtons (minimize/maximize/close).
-// biome_decoration::create_decoration_frame() (decoration/theme.h) builds
-// one instance per toplevel (BiomeToplevel::decoration_frame, desktop/
-// toplevel.h) - decoration/renderer.cpp renders it for every repaint by
-// resizing it and toggling state, then calling QWidget::render() into an
-// offscreen QImage; core/cursor.cpp reuses the same instance for
-// hit-testing and geometry (hitTest()/borderWidth()/titlebarHeight())
-// instead of a separate model.
+// The QSS-styled widget tree behind a window frame: border strips and a
+// titlebar with icon, title and minimize/maximize/close buttons. One per
+// toplevel, used for rendering, hit-testing and metrics alike.
 
 #pragma once
 
@@ -24,11 +17,8 @@
 
 namespace biome_decoration {
 
-// Generic icon-theme fallback (hicolor's spec-mandated
-// application-x-executable) for a window whose own icon couldn't be
-// resolved - shown instead of leaving a gap. Shared by DecorationFrame's
-// titlebar icon and switcher.cpp's per-entry icons.
-QIcon fallback_icon();
+// A window's icon, or hicolor's application-x-executable when it has none.
+QIcon icon_from_image(const IconImage &image);
 
 // Forces every widget in root's subtree (root included) to reapply its QSS
 // rules, including qproperty-* values - Qt doesn't re-polish on its own
@@ -94,23 +84,22 @@ class DecorationFrame : public QFrame {
 public:
     explicit DecorationFrame(QWidget *parent = nullptr);
 
-    // Content-size-independent metrics, read live off content_spacer_'s own
-    // laid-out position - it sits directly against border_left_/titlebar_,
-    // so its (x, y) *is* the border-width/titlebar-height offset, however
-    // that ends up computed. Safe to call any time after
-    // load_decoration_theme()'s initial layoutFor() call. Used by core/
-    // main.cpp for the content-tree scene-node offset and window
-    // move/resize/maximize math.
+    // Live, in the current [biomeMaximized] state: content_spacer_'s offset
+    // within the frame is the border/titlebar size.
     int borderWidth() const { return content_spacer_->x(); }
     int titlebarHeight() const { return content_spacer_->y(); }
     QRect contentRect() const { return content_spacer_->geometry(); }
-    // Same idea, but for the right/bottom edges - border strips are
-    // independently QSS-sized, so these can't be assumed equal to
-    // borderWidth()/titlebarHeight(). Derived from the frame's total size
-    // minus content_spacer_'s box, so it stays correct regardless of layout
-    // spacing/margins.
     int rightBorderWidth() const { return width() - content_spacer_->x() - content_spacer_->width(); }
     int bottomBorderHeight() const { return height() - content_spacer_->y() - content_spacer_->height(); }
+
+    // The four edge sizes in either state, cached so reading them never
+    // restyles the frame. Content-size independent.
+    struct Metrics {
+        int left = 0, top = 0, right = 0, bottom = 0;
+    };
+    const Metrics &metrics(bool maximized);
+    // Call after anything that can resize the edges (theme reload).
+    void invalidateMetrics() { metrics_valid_ = false; }
 
     // Resizes the frame to fit the given client content size; the QLayout
     // tree built in the constructor repositions everything else around it.
@@ -128,15 +117,10 @@ public:
     void setFocusedState(bool focused);
     // Drives #biomeFrame[urgent=...]; the look is entirely the theme's.
     void setUrgentState(bool urgent);
-    // Drives the #biomeFrame[biomeMaximized=...] QSS state - lets a theme
-    // style a maximized window differently (e.g. no corner radius) via QSS
-    // alone. Also read back by borderWidth()/titlebarHeight()/
-    // rightBorderWidth()/bottomBorderHeight() above, so callers must set
-    // this before querying those.
+    // Drives #biomeFrame[biomeMaximized=...], which may also resize edges.
     void setMaximizedState(bool maximized);
     void setTitle(const QString &title);
-    // Sets the titlebar icon slot - an empty IconImage gets fallback_icon()
-    // rather than leaving a gap. icon_button_ is a QToolButton rather than a
+    // Sets the titlebar icon slot (generic icon if empty). icon_button_ is a QToolButton rather than a
     // QLabel so its rendered size stays QSS-controllable via
     // qproperty-iconSize.
     void setIcon(const IconImage &icon);
@@ -164,6 +148,8 @@ private:
     // area - the middle row's QHBoxLayout sizes border_left_/border_right_
     // around it like any other fixed-size widget.
     QWidget *content_spacer_ = nullptr;
+    Metrics metrics_[2];
+    bool metrics_valid_ = false;
 };
 
 } // namespace biome_decoration

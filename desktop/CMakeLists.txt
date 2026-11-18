@@ -35,13 +35,14 @@ add_library(biome_desktop STATIC
     ext_workspace.cpp
     xdg_activation.h
     xdg_activation.cpp
-    $<TARGET_OBJECTS:biome_ext_workspace_protocol>
+    qt_buffer.h
+    qt_buffer.cpp
 )
 
 add_dependencies(biome_desktop biome_wlroots_cxx_shim
     ${XDG_SHELL_PROTOCOL_HEADER_TARGET} ${LAYER_SHELL_PROTOCOL_HEADER_TARGET}
     ${CURSOR_SHAPE_PROTOCOL_HEADER_TARGET} ${OUTPUT_POWER_PROTOCOL_HEADER_TARGET}
-    ${POINTER_CONSTRAINTS_PROTOCOL_HEADER_TARGET} ${EXT_WORKSPACE_PROTOCOL_SOURCE_TARGET})
+    ${POINTER_CONSTRAINTS_PROTOCOL_HEADER_TARGET})
 
 # BIOME_WLROOTS_SHIM_DIR must come before PkgConfig::WLROOTS's own include
 # dir so the patched copies of wlr_scene.h/render/color.h are the ones found.
@@ -53,7 +54,6 @@ target_include_directories(biome_desktop PUBLIC
 
 target_link_libraries(biome_desktop PUBLIC
     biome_decoration
-    biome_ext_workspace_protocol
     PkgConfig::WLROOTS
     PkgConfig::WAYLAND_SERVER
     PkgConfig::XCB_EWMH

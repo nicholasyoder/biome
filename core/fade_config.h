@@ -25,11 +25,12 @@
 #pragma once
 
 #include <string>
-#include <unordered_set>
+#include <vector>
 
+// Vectors (a handful of entries), so BiomeLayerShell stays standard-layout.
 struct FadeConfig {
-    std::unordered_set<std::string> fading_namespaces;
-    std::unordered_set<std::string> scanout_fading_namespaces;
+    std::vector<std::string> fading_namespaces;
+    std::vector<std::string> scanout_fading_namespaces;
 };
 
 // Absent keys = empty sets = no namespace fades. Startup-only.

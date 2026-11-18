@@ -1,10 +1,7 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 //
-// The one module that knows both "wlroots scene graph" and "Qt-rendered
-// decoration" - every direct use of biome_decoration:: is confined to this
-// file and its .cpp. core/cursor.cpp dispatches pointer events here
-// (decoration_toplevel_at/update_decoration_hover/set_decoration_pressed)
-// but never inspects a Region itself.
+// Window decorations between the scene graph and decoration/'s Qt widgets:
+// metrics, rendering, hit-testing and button hover/press/click.
 
 #pragma once
 
@@ -14,42 +11,20 @@
 
 #include <QString>
 
-// Hands frame's pixels to scene_buffer, displayed at the frame's logical
-// size. Returns false (scene_buffer left untouched) for an empty frame.
-bool set_decoration_buffer(wlr_scene_buffer *scene_buffer, biome_decoration::RenderedFrame &&frame);
-
-// Content-size-independent decoration metrics, read live off the toplevel's
-// own QSS-styled widget tree (BiomeToplevel::decoration_frame) instead of a
-// separately-duplicated constant. Returns 0 if toplevel opted out of
-// Biome's decoration entirely - either an Xwayland client with
-// _MOTIF_WM_HINTS asking for no border/title, or an xdg-shell client whose
-// decoration negotiation settled on CLIENT_SIDE (see toplevel_decorated).
-//
-// maximized selects which QSS [biomeMaximized=...] state to read the metric
-// from, since a theme is free to size the maximized border/titlebar
-// differently - pass the toplevel's own `maximized` flag, or the target
-// state when computing geometry for a transition not yet committed.
+// Edge sizes from the theme (0 if undecorated). maximized: which
+// [biomeMaximized] state, i.e. the current or target one.
 int decoration_border_width(const BiomeToplevel *toplevel, bool maximized);
 int decoration_titlebar_height(const BiomeToplevel *toplevel, bool maximized);
-// Right/bottom, kept separate since border strips are independently
-// QSS-sized (not assumed symmetric).
 int decoration_border_right_width(const BiomeToplevel *toplevel, bool maximized);
 int decoration_border_bottom_height(const BiomeToplevel *toplevel, bool maximized);
 
-// Creates toplevel's own DecorationFrame widget (biome_decoration::
-// create_decoration_frame()) plus the (initially empty) decoration_buffer
-// scene node as a child of toplevel->scene_tree, positioned at its origin.
-// The buffer is filled in by render_toplevel_decoration once geometry is
-// known.
+// The frame widget and an empty decoration_buffer node in scene_tree.
 void create_toplevel_decoration(BiomeToplevel *toplevel);
 
-// Tears down what create_toplevel_decoration() built - called from both
-// toplevel destroy handlers, before scene_tree (and with it
-// decoration_buffer, whose signal it unhooks) is destroyed.
+// Call before scene_tree is destroyed.
 void destroy_toplevel_decoration(BiomeToplevel *toplevel);
 
-// Re-renders the full decoration frame and uploads it. Called whenever a
-// toplevel's content geometry, focus, title, or hover/press state changes.
+// Re-renders after a size, focus, title, icon or hover/press change.
 void render_toplevel_decoration(BiomeToplevel *toplevel);
 
 // Applies theme `name` from `dir` (empty = built-in) to the running compositor:
@@ -57,49 +32,31 @@ void render_toplevel_decoration(BiomeToplevel *toplevel);
 // each window's content in place and re-fitting maximized/fullscreen ones.
 void reload_decoration_theme(BiomeServer *server, const QString &dir, const QString &name);
 
-// Classifies an already-found scene node (see desktop/toplevel.h's
-// scene_node_at) the same way decoration_toplevel_at does - split out so a
-// caller holding one hit-test result (core/cursor.cpp's motion handler,
-// after desktop_toplevel_at_node already came back empty) can reuse it
-// instead of re-querying the scene.
+// For a node from scene_node_at (desktop/toplevel.h).
 BiomeToplevel *decoration_toplevel_at_node(
     wlr_scene_node *node, double sx, double sy, biome_decoration::Region *out_region);
 
-// Like desktop_toplevel_at (desktop/toplevel.h), but for Biome's own
-// decoration_buffer nodes instead of client surfaces - the topmost-node
-// lookup respects real stacking order. Returns nullptr (region left
-// untouched) if the point isn't over any toplevel's decoration.
+// The toplevel whose decoration is topmost at the point; null (region
+// untouched) if none.
 BiomeToplevel *decoration_toplevel_at(
     BiomeServer *server, double lx, double ly, biome_decoration::Region *out_region);
 
-// Updates whichever toplevel's decoration button is under the pointer so
-// its QSS :hover state stays in sync, re-rendering only the toplevel(s)
-// whose hover actually changed. toplevel may be nullptr and region may be a
-// non-button region, both meaning "no button is hovered".
+// Moves the :hover state; null toplevel or a non-button region = none.
 void update_decoration_hover(BiomeServer *server, BiomeToplevel *toplevel,
     biome_decoration::Region region);
 
-// Same shape as update_decoration_hover, but for the pressed QSS state a
-// left button-down/up on a decoration button drives.
+// Same for :pressed.
 void set_decoration_pressed(BiomeServer *server, BiomeToplevel *toplevel,
     biome_decoration::Region region);
 
-// Re-hit-tests at the pointer's current position and syncs hover to match -
-// for whenever decoration geometry just changed under a stationary cursor
-// (so no motion event will arrive to trigger the usual update_decoration_hover
-// call in server_cursor_motion). Callers: the decoration button release
-// itself, and - the case that actually matters, since xdg-shell maximize/
-// fullscreen/restore only moves the scene node once the client's
-// matching-size buffer lands - wherever reposition_pending gets resolved.
+// Re-syncs hover after geometry changed under a still pointer (button
+// release, a deferred reposition landing).
 void refresh_decoration_hover(BiomeServer *server);
 
-// Called from both toplevel destroy handlers, before free(). Unlike
-// BiomeServer::last_left_click_toplevel (only ever compared, never
-// dereferenced), hovered_/pressed_decoration_toplevel ARE dereferenced when
-// clearing hover/press state, so a dangling pointer here is a real
-// use-after-free: press the close button, and the client can tear its
-// surface down before the button-release event that would otherwise clear
-// pressed_decoration_toplevel ever arrives.
+// Frees the press-and-hold timer at teardown.
+void decoration_finish(BiomeServer *server);
+
+// Drops server->decor's (dereferenced) pointers to a dying toplevel.
 void clear_decoration_tracking(BiomeServer *server, BiomeToplevel *toplevel);
 
 // Opens the snap-layout menu (window_menu_open_snap) under the pointer, hanging
@@ -108,18 +65,10 @@ void open_snap_menu(BiomeToplevel *toplevel, bool armed);
 
 const char *resize_cursor_name(biome_decoration::Region region);
 
-// Handles a left-button *press* over a decoration region (see core/
-// cursor.cpp's server_cursor_button) - the click has already focused/raised
-// toplevel by this point. Titlebar/resize regions act immediately (they
-// begin an interactive grab that has to start on press). Button regions
-// (min/max/close) do nothing here - real button semantics dictate they only
-// commit on a matching release, see handle_decoration_release below, so the
-// QSS :pressed state is actually visible and dragging off cancels the click.
+// Left press: titlebar/resize regions start their grab now; buttons only arm
+// (they act on a matching release).
 void handle_decoration_press(BiomeToplevel *toplevel, biome_decoration::Region region);
 
-// Handles a left-button *release*, called before the pressed-region tracking
-// (set_decoration_pressed) is cleared for this event. If a button was armed
-// by a preceding press (server->pressed_decoration_toplevel/pressed_region),
-// commits its action only when the release lands back on that same
-// toplevel/region - otherwise the press is silently cancelled.
+// Left release, before the pressed state is cleared: fires an armed button
+// if released over the same toplevel and region.
 void handle_decoration_release(BiomeServer *server);

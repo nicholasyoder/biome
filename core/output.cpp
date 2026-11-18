@@ -8,6 +8,7 @@
 #include "core/output_arrange.h"
 #include "core/output_management.h"
 #include "core/output_power.h"
+#include "desktop/ext_workspace.h"
 #include "desktop/idle.h"
 #include "desktop/layer_shell.h"
 #include "desktop/session_lock.h"
@@ -17,6 +18,7 @@
 #include <cstdio>
 #include <cstring>
 #include <ctime>
+#include <tuple>
 #include <vector>
 
 static void server_new_output(wl_listener *listener, void *data);
@@ -52,42 +54,41 @@ static const OutputConfig *output_config_of(BiomeServer *server, BiomeOutput *ou
 void output_relayout(BiomeServer *server) {
     wlr_output_layout *layout = server->output_layout;
 
-    unsigned newest = 0;
+    std::vector<BiomeOutput *> placed;
+    std::vector<RelayoutOutput> inputs;
     BiomeOutput *output;
-    wl_list_for_each(output, &server->outputs, link) {
-        const OutputConfig *cfg = output_config_of(server, output);
-        if (!output->disabled && cfg != nullptr && cfg->position.has_value()) {
-            newest = std::max(newest, cfg->position_generation);
-        }
-    }
-
-    // Back to the last live layout; positions predating the latest apply are auto-placed instead.
-    std::vector<BiomeOutput *> manual;
     wl_list_for_each(output, &server->outputs, link) {
         wlr_output_layout_output *l_output = wlr_output_layout_get(layout, output->wlr);
         if (output->disabled || l_output == nullptr) {
             continue;
         }
-        const OutputConfig *cfg = output_config_of(server, output);
-        if (cfg == nullptr || !cfg->position.has_value()) {
-            if (!l_output->auto_configured) {
-                manual.push_back(output);
-            }
-            continue;
+        RelayoutOutput in;
+        if (const OutputConfig *cfg = output_config_of(server, output); cfg && cfg->position) {
+            in.has_position = true;
+            std::tie(in.x, in.y) = *cfg->position;
+            in.generation = cfg->position_generation;
         }
-        if (cfg->position_generation < newest) {
-            if (!l_output->auto_configured) {
-                wlr_log(WLR_INFO, "output %s: position predates the last layout change, auto-placing",
-                        output->wlr->name);
-                wlr_output_layout_add_auto(layout, output->wlr);
-            }
-            continue;
+        in.auto_configured = l_output->auto_configured;
+        in.cur_x = l_output->x;
+        in.cur_y = l_output->y;
+        placed.push_back(output);
+        inputs.push_back(in);
+    }
+
+    // Back to the last live layout; positions predating the latest apply are auto-placed instead.
+    std::vector<RelayoutStep> steps = plan_relayout(inputs);
+    std::vector<BiomeOutput *> manual;
+    for (size_t i = 0; i < placed.size(); ++i) {
+        if (steps[i].action == RelayoutAction::AutoPlace) {
+            wlr_log(WLR_INFO, "output %s: position predates the last layout change, auto-placing",
+                    placed[i]->wlr->name);
+            wlr_output_layout_add_auto(layout, placed[i]->wlr);
+        } else if (steps[i].action == RelayoutAction::Place) {
+            wlr_output_layout_add(layout, placed[i]->wlr, inputs[i].x, inputs[i].y);
         }
-        auto [x, y] = *cfg->position;
-        if (l_output->auto_configured || l_output->x != x || l_output->y != y) {
-            wlr_output_layout_add(layout, output->wlr, x, y);
+        if (steps[i].manual) {
+            manual.push_back(placed[i]);
         }
-        manual.push_back(output);
     }
     // Auto-placed outputs are chained right of the rightmost manual one, so can't cause a gap.
     if (manual.size() < 2) {
@@ -132,7 +133,7 @@ static void output_layout_changed_by_hardware(BiomeServer *server, wlr_output *r
 
 static void output_layout_changed(wl_listener *listener, void *data) {
     (void)data;
-    BiomeServer *server = wl_container_of(listener, server, output_layout_change);
+    BiomeServer *server = biome_server_from(listener, BiomeOutputEvents, layout_change);
     BiomeOutput *output;
     bool usable_changed = false;
     wl_list_for_each(output, &server->outputs, link) {
@@ -158,12 +159,13 @@ BiomeOutput *biome_output_from_wlr(BiomeServer *server, wlr_output *wlr_output) 
 }
 
 void output_manager_init(BiomeServer *server) {
+    server->output_events.server = server;
     server->output_layout = wlr_output_layout_create(server->display);
 
     wl_list_init(&server->outputs);
     server->output_configs = load_output_configs();
-    server->new_output.notify = server_new_output;
-    wl_signal_add(&server->backend->events.new_output, &server->new_output);
+    server->output_events.new_output.notify = server_new_output;
+    wl_signal_add(&server->backend->events.new_output, &server->output_events.new_output);
 
     // Handles all rendering and damage tracking; things get added to it at
     // the proper positions and wlr_scene_output_commit() renders a frame.
@@ -172,8 +174,8 @@ void output_manager_init(BiomeServer *server) {
         wlr_scene_set_linux_dmabuf_v1(server->scene, server->linux_dmabuf);
     }
     server->scene_layout = wlr_scene_attach_output_layout(server->scene, server->output_layout);
-    server->output_layout_change.notify = output_layout_changed;
-    wl_signal_add(&server->output_layout->events.change, &server->output_layout_change);
+    server->output_events.layout_change.notify = output_layout_changed;
+    wl_signal_add(&server->output_layout->events.change, &server->output_events.layout_change);
     scene_layers_init(server);
     output_management_init(server);
 
@@ -182,6 +184,12 @@ void output_manager_init(BiomeServer *server) {
     // after creation (same one-call shape as
     // wlr_primary_selection_v1_device_manager_create in core/main.cpp).
     wlr_xdg_output_manager_v1_create(server->display, server->output_layout);
+}
+
+void output_manager_finish(BiomeServer *server) {
+    wl_list_remove(&server->output_events.new_output.link);
+    wl_list_remove(&server->output_events.layout_change.link);
+    output_management_finish(server);
 }
 
 // Diagnostic only - logs how often output_frame fires vs. how often it
@@ -376,7 +384,7 @@ static wlr_output_mode *find_matching_mode(wlr_output *wlr_output, const OutputC
 }
 
 static void server_new_output(wl_listener *listener, void *data) {
-    BiomeServer *server = wl_container_of(listener, server, new_output);
+    BiomeServer *server = biome_server_from(listener, BiomeOutputEvents, new_output);
     auto *wlr_output = static_cast<struct wlr_output *>(data);
 
     wlr_output_init_render(wlr_output, server->allocator, server->renderer);
@@ -476,6 +484,7 @@ static void server_new_output(wl_listener *listener, void *data) {
     wl_signal_add(&wlr_output->events.destroy, &output->destroy);
 
     wl_list_insert(&server->outputs, &output->link);
+    ext_workspace_output_enter(server, wlr_output);
 
     // wlr-layer-shell: one child tree per output-scoped layer, positioned at
     // this output's layout coords by output_sync_geometry().
@@ -492,7 +501,7 @@ static void server_new_output(wl_listener *listener, void *data) {
     wlr_output_effective_resolution(wlr_output, &lock_width, &lock_height);
     output->lock_rect =
         wlr_scene_rect_create(output->lock_tree, lock_width, lock_height,
-            server->session_locked && server->active_lock == nullptr ? kSessionLockAbandonedColor
+            server->session_locked && server->lock.active == nullptr ? kSessionLockAbandonedColor
                                                                     : kSessionLockColor);
 
     // A disabled output stays out of output_layout entirely: it has a

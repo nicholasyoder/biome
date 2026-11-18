@@ -46,45 +46,65 @@ static uint32_t xcursor_size_from_env() {
 }
 
 void cursor_init(BiomeServer *server) {
+    server->pointer.server = server;
     server->cursor = wlr_cursor_create();
     wlr_cursor_attach_output_layout(server->cursor, server->output_layout);
     server->cursor_mgr = wlr_xcursor_manager_create(getenv("XCURSOR_THEME"), xcursor_size_from_env());
     wlr_xcursor_manager_load(server->cursor_mgr, 1);
 
-    server->cursor_mode = BiomeCursorMode::Passthrough;
-    server->cursor_motion.notify = server_cursor_motion;
-    wl_signal_add(&server->cursor->events.motion, &server->cursor_motion);
-    server->cursor_motion_absolute.notify = server_cursor_motion_absolute;
-    wl_signal_add(&server->cursor->events.motion_absolute, &server->cursor_motion_absolute);
-    server->cursor_button.notify = server_cursor_button;
-    wl_signal_add(&server->cursor->events.button, &server->cursor_button);
-    server->cursor_axis.notify = server_cursor_axis;
-    wl_signal_add(&server->cursor->events.axis, &server->cursor_axis);
-    server->cursor_frame.notify = server_cursor_frame;
-    wl_signal_add(&server->cursor->events.frame, &server->cursor_frame);
+    server->grab.mode = BiomeCursorMode::Passthrough;
+    server->pointer.motion.notify = server_cursor_motion;
+    wl_signal_add(&server->cursor->events.motion, &server->pointer.motion);
+    server->pointer.motion_absolute.notify = server_cursor_motion_absolute;
+    wl_signal_add(&server->cursor->events.motion_absolute, &server->pointer.motion_absolute);
+    server->pointer.button.notify = server_cursor_button;
+    wl_signal_add(&server->cursor->events.button, &server->pointer.button);
+    server->pointer.axis.notify = server_cursor_axis;
+    wl_signal_add(&server->cursor->events.axis, &server->pointer.axis);
+    server->pointer.frame.notify = server_cursor_frame;
+    wl_signal_add(&server->cursor->events.frame, &server->pointer.frame);
 
-    server->pointer_gestures = wlr_pointer_gestures_v1_create(server->display);
+    server->pointer.gestures = wlr_pointer_gestures_v1_create(server->display);
     auto add = [&](wl_listener *l, wl_signal *sig, wl_notify_func_t fn) {
         l->notify = fn;
         wl_signal_add(sig, l);
     };
     auto &ev = server->cursor->events;
-    add(&server->cursor_swipe_begin, &ev.swipe_begin, server_cursor_swipe_begin);
-    add(&server->cursor_swipe_update, &ev.swipe_update, server_cursor_swipe_update);
-    add(&server->cursor_swipe_end, &ev.swipe_end, server_cursor_swipe_end);
-    add(&server->cursor_pinch_begin, &ev.pinch_begin, server_cursor_pinch_begin);
-    add(&server->cursor_pinch_update, &ev.pinch_update, server_cursor_pinch_update);
-    add(&server->cursor_pinch_end, &ev.pinch_end, server_cursor_pinch_end);
-    add(&server->cursor_hold_begin, &ev.hold_begin, server_cursor_hold_begin);
-    add(&server->cursor_hold_end, &ev.hold_end, server_cursor_hold_end);
+    add(&server->pointer.swipe_begin, &ev.swipe_begin, server_cursor_swipe_begin);
+    add(&server->pointer.swipe_update, &ev.swipe_update, server_cursor_swipe_update);
+    add(&server->pointer.swipe_end, &ev.swipe_end, server_cursor_swipe_end);
+    add(&server->pointer.pinch_begin, &ev.pinch_begin, server_cursor_pinch_begin);
+    add(&server->pointer.pinch_update, &ev.pinch_update, server_cursor_pinch_update);
+    add(&server->pointer.pinch_end, &ev.pinch_end, server_cursor_pinch_end);
+    add(&server->pointer.hold_begin, &ev.hold_begin, server_cursor_hold_begin);
+    add(&server->pointer.hold_end, &ev.hold_end, server_cursor_hold_end);
 
-    server->cursor_shape_manager = wlr_cursor_shape_manager_v1_create(server->display, 1);
-    server->request_set_shape.notify = cursor_shape_manager_request_set_shape;
-    wl_signal_add(&server->cursor_shape_manager->events.request_set_shape, &server->request_set_shape);
+    server->pointer.shape_manager = wlr_cursor_shape_manager_v1_create(server->display, 1);
+    server->pointer.request_set_shape.notify = cursor_shape_manager_request_set_shape;
+    wl_signal_add(&server->pointer.shape_manager->events.request_set_shape, &server->pointer.request_set_shape);
+}
+
+void cursor_finish(BiomeServer *server) {
+    wlr_xcursor_manager_destroy(server->cursor_mgr);
+    wl_list_remove(&server->pointer.motion.link);
+    wl_list_remove(&server->pointer.motion_absolute.link);
+    wl_list_remove(&server->pointer.button.link);
+    wl_list_remove(&server->pointer.axis.link);
+    wl_list_remove(&server->pointer.frame.link);
+    wl_list_remove(&server->pointer.swipe_begin.link);
+    wl_list_remove(&server->pointer.swipe_update.link);
+    wl_list_remove(&server->pointer.swipe_end.link);
+    wl_list_remove(&server->pointer.pinch_begin.link);
+    wl_list_remove(&server->pointer.pinch_update.link);
+    wl_list_remove(&server->pointer.pinch_end.link);
+    wl_list_remove(&server->pointer.hold_begin.link);
+    wl_list_remove(&server->pointer.hold_end.link);
+    wl_list_remove(&server->pointer.request_set_shape.link);
+    wlr_cursor_destroy(server->cursor);
 }
 
 void cursor_set_xcursor(BiomeServer *server, const char *name) {
-    snprintf(server->cursor_xcursor_name, sizeof(server->cursor_xcursor_name), "%s", name);
+    snprintf(server->pointer.xcursor_name, sizeof(server->pointer.xcursor_name), "%s", name);
     wlr_cursor_set_xcursor(server->cursor, server->cursor_mgr, name);
 }
 
@@ -95,8 +115,8 @@ void cursor_reload_theme(BiomeServer *server, const char *theme, uint32_t size) 
     // Empty name = a client surface is showing, which doesn't reference the manager.
     wlr_xcursor_manager *old_mgr = server->cursor_mgr;
     server->cursor_mgr = new_mgr;
-    if (server->cursor_xcursor_name[0] != '\0') {
-        wlr_cursor_set_xcursor(server->cursor, new_mgr, server->cursor_xcursor_name);
+    if (server->pointer.xcursor_name[0] != '\0') {
+        wlr_cursor_set_xcursor(server->cursor, new_mgr, server->pointer.xcursor_name);
     }
     wlr_xcursor_manager_destroy(old_mgr);
     // The pointer's on-screen image only repaints on the next motion event -
@@ -106,7 +126,7 @@ void cursor_reload_theme(BiomeServer *server, const char *theme, uint32_t size) 
 }
 
 static void cursor_shape_manager_request_set_shape(wl_listener *listener, void *data) {
-    BiomeServer *server = wl_container_of(listener, server, request_set_shape);
+    BiomeServer *server = biome_server_from(listener, BiomePointer, request_set_shape);
     auto *event = static_cast<wlr_cursor_shape_manager_v1_request_set_shape_event *>(data);
     if (event->device_type != WLR_CURSOR_SHAPE_MANAGER_V1_DEVICE_TYPE_POINTER) {
         // Biome has no tablet-tool support elsewhere either.
@@ -123,27 +143,27 @@ static void cursor_shape_manager_request_set_shape(wl_listener *listener, void *
 }
 
 void reset_cursor_mode(BiomeServer *server) {
-    server->cursor_mode = BiomeCursorMode::Passthrough;
-    server->grabbed_toplevel = nullptr;
-    server->grab_from_menu = false;
+    server->grab.mode = BiomeCursorMode::Passthrough;
+    server->grab.toplevel = nullptr;
+    server->grab.from_menu = false;
     snap_preview_hide(server);
 }
 
 static void drag_icon_tree_handle_destroy(wl_listener *listener, void *data) {
     (void)data;
-    BiomeServer *server = wl_container_of(listener, server, drag_icon_tree_destroy);
-    wl_list_remove(&server->drag_icon_tree_destroy.link);
-    server->drag_icon_tree = nullptr;
+    BiomeServer *server = biome_server_from(listener, BiomePointer, drag_icon_destroy);
+    wl_list_remove(&server->pointer.drag_icon_destroy.link);
+    server->pointer.drag_icon = nullptr;
 }
 
 void drag_icon_create(BiomeServer *server, wlr_drag_icon *drag_icon) {
-    server->drag_icon_tree = wlr_scene_drag_icon_create(server->layers.osd, drag_icon);
-    if (server->drag_icon_tree == nullptr) {
+    server->pointer.drag_icon = wlr_scene_drag_icon_create(server->layers.osd, drag_icon);
+    if (server->pointer.drag_icon == nullptr) {
         return;
     }
-    wlr_scene_node_set_position(&server->drag_icon_tree->node, server->cursor->x, server->cursor->y);
-    server->drag_icon_tree_destroy.notify = drag_icon_tree_handle_destroy;
-    wl_signal_add(&server->drag_icon_tree->node.events.destroy, &server->drag_icon_tree_destroy);
+    wlr_scene_node_set_position(&server->pointer.drag_icon->node, server->cursor->x, server->cursor->y);
+    server->pointer.drag_icon_destroy.notify = drag_icon_tree_handle_destroy;
+    wl_signal_add(&server->pointer.drag_icon->node.events.destroy, &server->pointer.drag_icon_destroy);
 }
 
 void begin_interactive(BiomeToplevel *toplevel, BiomeCursorMode mode, uint32_t edges,
@@ -164,15 +184,15 @@ void begin_interactive(BiomeToplevel *toplevel, BiomeCursorMode mode, uint32_t e
             return;
         }
     }
-    server->grabbed_toplevel = toplevel;
-    server->cursor_mode = mode;
+    server->grab.toplevel = toplevel;
+    server->grab.mode = mode;
     if (mode == BiomeCursorMode::Resize) {
         toplevel_clear_snap(toplevel);
     }
 
     if (mode == BiomeCursorMode::Move) {
-        server->grab_x = server->cursor->x - toplevel->scene_tree->node.x;
-        server->grab_y = server->cursor->y - toplevel->scene_tree->node.y;
+        server->grab.x = server->cursor->x - toplevel->scene_tree->node.x;
+        server->grab.y = server->cursor->y - toplevel->scene_tree->node.y;
     } else {
         wlr_box geo_box;
         toplevel_get_geometry(toplevel, &geo_box);
@@ -181,22 +201,22 @@ void begin_interactive(BiomeToplevel *toplevel, BiomeCursorMode mode, uint32_t e
             ((edges & WLR_EDGE_RIGHT) ? geo_box.width : 0);
         double border_y = (toplevel->scene_tree->node.y + decoration_titlebar_height(toplevel, toplevel->maximized) + geo_box.y) +
             ((edges & WLR_EDGE_BOTTOM) ? geo_box.height : 0);
-        server->grab_x = server->cursor->x - border_x;
-        server->grab_y = server->cursor->y - border_y;
+        server->grab.x = server->cursor->x - border_x;
+        server->grab.y = server->cursor->y - border_y;
 
-        server->grab_geobox = geo_box;
-        server->grab_geobox.x +=
+        server->grab.geobox = geo_box;
+        server->grab.geobox.x +=
             static_cast<int>(toplevel->scene_tree->node.x) + decoration_border_width(toplevel, toplevel->maximized);
-        server->grab_geobox.y +=
+        server->grab.geobox.y +=
             static_cast<int>(toplevel->scene_tree->node.y) + decoration_titlebar_height(toplevel, toplevel->maximized);
 
-        server->resize_edges = edges;
+        server->grab.resize_edges = edges;
     }
 }
 
 static void process_cursor_move(BiomeServer *server, uint32_t time) {
     (void)time;
-    BiomeToplevel *toplevel = server->grabbed_toplevel;
+    BiomeToplevel *toplevel = server->grab.toplevel;
     if (toplevel->maximized || toplevel->snap_zone != SnapZone::None) {
         // A titlebar press left the maximized state untouched (see
         // handle_decoration_click) so a plain click-and-release doesn't
@@ -232,14 +252,14 @@ static void process_cursor_move(BiomeServer *server, uint32_t time) {
             restore_box.width + decoration_border_width(toplevel, false) + decoration_border_right_width(toplevel, false);
         double new_frame_h =
             restore_box.height + decoration_titlebar_height(toplevel, false) + decoration_border_bottom_height(toplevel, false);
-        server->grab_x = fraction_x * new_frame_w;
-        server->grab_y = fraction_y * new_frame_h;
+        server->grab.x = fraction_x * new_frame_w;
+        server->grab.y = fraction_y * new_frame_h;
     }
-    if (!server->grab_from_menu) {
+    if (!server->grab.from_menu) {
         snap_drag_motion(server, server->cursor->x, server->cursor->y);
     }
-    int x = static_cast<int>(server->cursor->x - server->grab_x);
-    int y = static_cast<int>(server->cursor->y - server->grab_y);
+    int x = static_cast<int>(server->cursor->x - server->grab.x);
+    int y = static_cast<int>(server->cursor->y - server->grab.y);
     toplevel->reposition_center = false; // else a window mapped maximized snaps to center on ack
     if (toplevel->reposition_pending) {
         // set_toplevel_maximized() above requested the restore but (xdg-shell)
@@ -260,31 +280,31 @@ static void process_cursor_move(BiomeServer *server, uint32_t time) {
 
 static void process_cursor_resize(BiomeServer *server, uint32_t time) {
     (void)time;
-    BiomeToplevel *toplevel = server->grabbed_toplevel;
-    double border_x = server->cursor->x - server->grab_x;
-    double border_y = server->cursor->y - server->grab_y;
-    int new_left = server->grab_geobox.x;
-    int new_right = server->grab_geobox.x + server->grab_geobox.width;
-    int new_top = server->grab_geobox.y;
-    int new_bottom = server->grab_geobox.y + server->grab_geobox.height;
+    BiomeToplevel *toplevel = server->grab.toplevel;
+    double border_x = server->cursor->x - server->grab.x;
+    double border_y = server->cursor->y - server->grab.y;
+    int new_left = server->grab.geobox.x;
+    int new_right = server->grab.geobox.x + server->grab.geobox.width;
+    int new_top = server->grab.geobox.y;
+    int new_bottom = server->grab.geobox.y + server->grab.geobox.height;
 
-    if (server->resize_edges & WLR_EDGE_TOP) {
+    if (server->grab.resize_edges & WLR_EDGE_TOP) {
         new_top = static_cast<int>(border_y);
         if (new_top >= new_bottom) {
             new_top = new_bottom - 1;
         }
-    } else if (server->resize_edges & WLR_EDGE_BOTTOM) {
+    } else if (server->grab.resize_edges & WLR_EDGE_BOTTOM) {
         new_bottom = static_cast<int>(border_y);
         if (new_bottom <= new_top) {
             new_bottom = new_top + 1;
         }
     }
-    if (server->resize_edges & WLR_EDGE_LEFT) {
+    if (server->grab.resize_edges & WLR_EDGE_LEFT) {
         new_left = static_cast<int>(border_x);
         if (new_left >= new_right) {
             new_left = new_right - 1;
         }
-    } else if (server->resize_edges & WLR_EDGE_RIGHT) {
+    } else if (server->grab.resize_edges & WLR_EDGE_RIGHT) {
         new_right = static_cast<int>(border_x);
         if (new_right <= new_left) {
             new_right = new_left + 1;
@@ -310,10 +330,10 @@ static void process_cursor_resize(BiomeServer *server, uint32_t time) {
             height = std::min(height, state.max_height);
         }
         height = std::max(height, state.min_height);
-        if (server->resize_edges & WLR_EDGE_LEFT) {
+        if (server->grab.resize_edges & WLR_EDGE_LEFT) {
             new_left = new_right - width;
         }
-        if (server->resize_edges & WLR_EDGE_TOP) {
+        if (server->grab.resize_edges & WLR_EDGE_TOP) {
             new_top = new_bottom - height;
         }
         new_width = width;
@@ -334,8 +354,8 @@ static void process_cursor_resize(BiomeServer *server, uint32_t time) {
                 width = std::max(width, hints->min_width);
                 height = std::max(height, hints->min_height);
             }
-            if (server->resize_edges & WLR_EDGE_LEFT) new_left = new_right - width;
-            if (server->resize_edges & WLR_EDGE_TOP) new_top = new_bottom - height;
+            if (server->grab.resize_edges & WLR_EDGE_LEFT) new_left = new_right - width;
+            if (server->grab.resize_edges & WLR_EDGE_TOP) new_top = new_bottom - height;
             new_width = width;
             new_height = height;
         }
@@ -359,19 +379,19 @@ static void process_cursor_resize(BiomeServer *server, uint32_t time) {
 }
 
 static void process_cursor_motion(BiomeServer *server, uint32_t time) {
-    if (server->drag_icon_tree != nullptr) {
-        wlr_scene_node_set_position(&server->drag_icon_tree->node, server->cursor->x, server->cursor->y);
+    if (server->pointer.drag_icon != nullptr) {
+        wlr_scene_node_set_position(&server->pointer.drag_icon->node, server->cursor->x, server->cursor->y);
     }
 
-    if (window_menu_active()) {
+    if (window_menu_active(server)) {
         window_menu_motion(server, server->cursor->x, server->cursor->y);
         return;
     }
 
-    if (server->cursor_mode == BiomeCursorMode::Move) {
+    if (server->grab.mode == BiomeCursorMode::Move) {
         process_cursor_move(server, time);
         return;
-    } else if (server->cursor_mode == BiomeCursorMode::Resize) {
+    } else if (server->grab.mode == BiomeCursorMode::Resize) {
         process_cursor_resize(server, time);
         return;
     }
@@ -385,8 +405,8 @@ static void process_cursor_motion(BiomeServer *server, uint32_t time) {
         // re-hit-testing, so a drag (e.g. text selection) isn't cut short at
         // the surface edge. Skipped during DnD (seat->drag set), which needs
         // the hit test below to track the drop target across windows.
-        double sx = server->cursor->x - server->pointer_focus_origin_x;
-        double sy = server->cursor->y - server->pointer_focus_origin_y;
+        double sx = server->cursor->x - server->pointer.focus_origin_x;
+        double sy = server->cursor->y - server->pointer.focus_origin_y;
         wlr_seat_pointer_notify_motion(seat, time, sx, sy);
         return;
     }
@@ -419,8 +439,8 @@ static void process_cursor_motion(BiomeServer *server, uint32_t time) {
         wlr_seat_pointer_notify_enter(seat, surface, sx, sy);
         wlr_seat_pointer_notify_motion(seat, time, sx, sy);
         // Cached for the implicit-grab branch above.
-        server->pointer_focus_origin_x = server->cursor->x - sx;
-        server->pointer_focus_origin_y = server->cursor->y - sy;
+        server->pointer.focus_origin_x = server->cursor->x - sx;
+        server->pointer.focus_origin_y = server->cursor->y - sy;
     } else {
         // Clear pointer focus so future button events and such are not sent
         // to the last client to have the cursor over it. The _notify_
@@ -435,10 +455,10 @@ static void process_cursor_motion(BiomeServer *server, uint32_t time) {
 
 void server_cursor_motion(wl_listener *listener, void *data) {
     // Forwarded by the cursor for a _relative_ pointer motion event (a delta).
-    BiomeServer *server = wl_container_of(listener, server, cursor_motion);
+    BiomeServer *server = biome_server_from(listener, BiomePointer, motion);
     auto *event = static_cast<wlr_pointer_motion_event *>(data);
     // Sent unclamped - relative motion is exactly what a locked client wants.
-    wlr_relative_pointer_manager_v1_send_relative_motion(server->relative_pointer_manager, server->seat,
+    wlr_relative_pointer_manager_v1_send_relative_motion(server->constraints.relative_manager, server->seat,
         static_cast<uint64_t>(event->time_msec) * 1000, event->delta_x, event->delta_y,
         event->unaccel_dx, event->unaccel_dy);
     double dx = event->delta_x;
@@ -452,7 +472,7 @@ void server_cursor_motion_absolute(wl_listener *listener, void *data) {
     // Forwarded by the cursor for an _absolute_ motion event (0..1 on each
     // axis) - e.g. wlroots running nested in a Wayland/X11 window, where the
     // mouse can enter from any edge, so the cursor has to be warped there.
-    BiomeServer *server = wl_container_of(listener, server, cursor_motion_absolute);
+    BiomeServer *server = biome_server_from(listener, BiomePointer, motion_absolute);
     auto *event = static_cast<wlr_pointer_motion_absolute_event *>(data);
     // Turned into a delta so constraints (and relative-pointer clients) work
     // nested too.
@@ -460,7 +480,7 @@ void server_cursor_motion_absolute(wl_listener *listener, void *data) {
     wlr_cursor_absolute_to_layout_coords(server->cursor, &event->pointer->base, event->x, event->y, &lx, &ly);
     double dx = lx - server->cursor->x;
     double dy = ly - server->cursor->y;
-    wlr_relative_pointer_manager_v1_send_relative_motion(server->relative_pointer_manager, server->seat,
+    wlr_relative_pointer_manager_v1_send_relative_motion(server->constraints.relative_manager, server->seat,
         static_cast<uint64_t>(event->time_msec) * 1000, dx, dy, dx, dy);
     pointer_constraints_clamp_motion(server, &dx, &dy);
     wlr_cursor_move(server->cursor, &event->pointer->base, dx, dy);
@@ -474,22 +494,22 @@ void cursor_rebase(BiomeServer *server) {
 }
 
 void server_cursor_button(wl_listener *listener, void *data) {
-    BiomeServer *server = wl_container_of(listener, server, cursor_button);
+    BiomeServer *server = biome_server_from(listener, BiomePointer, button);
     auto *event = static_cast<wlr_pointer_button_event *>(data);
     const bool pressed = event->state == WL_POINTER_BUTTON_STATE_PRESSED;
-    if (window_menu_active()) {
+    if (window_menu_active(server)) {
         window_menu_button(server, event->time_msec, event->button, pressed);
         return;
     }
-    if (server->grab_from_menu) {
+    if (server->grab.from_menu) {
         if (pressed) {
             reset_cursor_mode(server);
-            server->swallow_release = true;
+            server->grab.swallow_release = true;
         }
         return;
     }
-    if (server->swallow_release && !pressed) {
-        server->swallow_release = false;
+    if (server->grab.swallow_release && !pressed) {
+        server->grab.swallow_release = false;
         return;
     }
     wlr_seat_pointer_notify_button(server->seat,
@@ -546,16 +566,16 @@ void server_cursor_button(wl_listener *listener, void *data) {
                 set_decoration_pressed(server, decoration_toplevel, region);
                 constexpr uint32_t kDoubleClickMs = 400;
                 if (region == biome_decoration::Region::Titlebar &&
-                        server->last_left_click_toplevel == decoration_toplevel &&
-                        event->time_msec - server->last_left_click_time <= kDoubleClickMs) {
+                        server->pointer.last_click_toplevel == decoration_toplevel &&
+                        event->time_msec - server->pointer.last_click_time <= kDoubleClickMs) {
                     // Double-click on the titlebar toggles maximize, standard
                     // WM convention - consume the click pair so a third quick
                     // click doesn't immediately toggle it back again.
                     set_toplevel_maximized(decoration_toplevel, !decoration_toplevel->maximized);
-                    server->last_left_click_toplevel = nullptr;
+                    server->pointer.last_click_toplevel = nullptr;
                 } else {
-                    server->last_left_click_toplevel = decoration_toplevel;
-                    server->last_left_click_time = event->time_msec;
+                    server->pointer.last_click_toplevel = decoration_toplevel;
+                    server->pointer.last_click_time = event->time_msec;
                     handle_decoration_press(decoration_toplevel, region);
                 }
             }
@@ -610,9 +630,9 @@ void server_cursor_button(wl_listener *listener, void *data) {
 
 void server_cursor_axis(wl_listener *listener, void *data) {
     // Forwarded by the cursor for an axis event, e.g. a scroll wheel.
-    BiomeServer *server = wl_container_of(listener, server, cursor_axis);
+    BiomeServer *server = biome_server_from(listener, BiomePointer, axis);
     auto *event = static_cast<wlr_pointer_axis_event *>(data);
-    if (window_menu_active()) {
+    if (window_menu_active(server)) {
         return;
     }
     wlr_seat_pointer_notify_axis(server->seat,
@@ -624,7 +644,7 @@ void server_cursor_frame(wl_listener *listener, void *data) {
     (void)data;
     // Frame events group preceding pointer events sent in the same batch
     // (e.g. simultaneous axis events).
-    BiomeServer *server = wl_container_of(listener, server, cursor_frame);
+    BiomeServer *server = biome_server_from(listener, BiomePointer, frame);
     // libinput emits a frame after every motion/button/axis event.
     idle_notify_activity(server);
     wlr_seat_pointer_notify_frame(server->seat);
@@ -633,26 +653,26 @@ void server_cursor_frame(wl_listener *listener, void *data) {
 // Gestures go to the focused client only; during a compositor move/resize
 // grab they're dropped (as in sway). Sent events are closed by the
 // cursor's frame event.
-#define GESTURE_HANDLER(name, event_type, listener_field, ...)                                \
+#define GESTURE_HANDLER(name, event_type, ...)                                              \
     void server_cursor_##name(wl_listener *listener, void *data) {                            \
-        BiomeServer *server = wl_container_of(listener, server, listener_field);              \
+        BiomeServer *server = biome_server_from(listener, BiomePointer, name);                \
         auto *event = static_cast<event_type *>(data);                                        \
         idle_notify_activity(server);                                                         \
-        if (server->cursor_mode != BiomeCursorMode::Passthrough) {                           \
+        if (server->grab.mode != BiomeCursorMode::Passthrough) {                           \
             return;                                                                           \
         }                                                                                     \
-        wlr_pointer_gestures_v1_send_##name(server->pointer_gestures, server->seat,           \
+        wlr_pointer_gestures_v1_send_##name(server->pointer.gestures, server->seat,           \
             event->time_msec, __VA_ARGS__);                                                   \
     }
 
-GESTURE_HANDLER(swipe_begin, wlr_pointer_swipe_begin_event, cursor_swipe_begin, event->fingers)
-GESTURE_HANDLER(swipe_update, wlr_pointer_swipe_update_event, cursor_swipe_update, event->dx, event->dy)
-GESTURE_HANDLER(swipe_end, wlr_pointer_swipe_end_event, cursor_swipe_end, event->cancelled)
-GESTURE_HANDLER(pinch_begin, wlr_pointer_pinch_begin_event, cursor_pinch_begin, event->fingers)
-GESTURE_HANDLER(pinch_update, wlr_pointer_pinch_update_event, cursor_pinch_update, event->dx, event->dy,
+GESTURE_HANDLER(swipe_begin, wlr_pointer_swipe_begin_event, event->fingers)
+GESTURE_HANDLER(swipe_update, wlr_pointer_swipe_update_event, event->dx, event->dy)
+GESTURE_HANDLER(swipe_end, wlr_pointer_swipe_end_event, event->cancelled)
+GESTURE_HANDLER(pinch_begin, wlr_pointer_pinch_begin_event, event->fingers)
+GESTURE_HANDLER(pinch_update, wlr_pointer_pinch_update_event, event->dx, event->dy,
     event->scale, event->rotation)
-GESTURE_HANDLER(pinch_end, wlr_pointer_pinch_end_event, cursor_pinch_end, event->cancelled)
-GESTURE_HANDLER(hold_begin, wlr_pointer_hold_begin_event, cursor_hold_begin, event->fingers)
-GESTURE_HANDLER(hold_end, wlr_pointer_hold_end_event, cursor_hold_end, event->cancelled)
+GESTURE_HANDLER(pinch_end, wlr_pointer_pinch_end_event, event->cancelled)
+GESTURE_HANDLER(hold_begin, wlr_pointer_hold_begin_event, event->fingers)
+GESTURE_HANDLER(hold_end, wlr_pointer_hold_end_event, event->cancelled)
 
 #undef GESTURE_HANDLER

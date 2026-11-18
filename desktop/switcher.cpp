@@ -5,6 +5,7 @@
 #include "decoration/switcher.h"
 #include "decoration/switcher_highlight.h"
 #include "desktop/decoration_bridge.h"
+#include "desktop/qt_buffer.h"
 
 #include <algorithm>
 #include <string>
@@ -46,14 +47,7 @@ void update_highlight(BiomeServer *server, BiomeToplevel *selected) {
     toplevel_get_frame_box(selected, &box);
     wlr_output *output = output_with_largest_overlap(server, box);
     float scale = output != nullptr ? output->scale : 1.0f;
-    if (!set_decoration_buffer(highlight,
-            biome_decoration::render_switcher_highlight(box.width, box.height, scale))) {
-        wlr_scene_node_set_enabled(&highlight->node, false);
-        return;
-    }
-    wlr_scene_node_set_position(&highlight->node, box.x, box.y);
-    wlr_scene_node_set_enabled(&highlight->node, true);
-    wlr_scene_node_raise_to_top(&highlight->node);
+    osd_node_show(highlight, biome_decoration::render_switcher_highlight(box.width, box.height, scale), box.x, box.y);
 }
 
 void update_overlay(BiomeServer *server) {
@@ -80,16 +74,12 @@ void update_overlay(BiomeServer *server) {
 
     biome_decoration::RenderedFrame frame = biome_decoration::render_switcher(
         entries, switcher.index, wlr_output != nullptr ? wlr_output->scale : 1.0f);
-    int width = frame.logical_width;
-    int height = frame.logical_height;
-    if (!set_decoration_buffer(switcher.panel, std::move(frame))) {
+    int x = target.x + (target.width - frame.logical_width) / 2;
+    int y = target.y + (target.height - frame.logical_height) / 2;
+    if (!osd_node_show(switcher.panel, std::move(frame), x, y)) {
         hide_overlay(server);
         return;
     }
-    wlr_scene_node_set_position(&switcher.panel->node,
-        target.x + (target.width - width) / 2,
-        target.y + (target.height - height) / 2);
-    wlr_scene_node_set_enabled(&switcher.panel->node, true);
 
     // Panel raised last so a highlight box never occludes it.
     update_highlight(server, switcher.order[static_cast<size_t>(switcher.index)]);

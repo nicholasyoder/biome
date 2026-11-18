@@ -43,17 +43,17 @@ bool surface_visible(BiomeServer *server, wlr_surface *surface) {
 void update_inhibited(BiomeServer *server, wlr_idle_inhibitor_v1 *ignore) {
     bool inhibited = false;
     wlr_idle_inhibitor_v1 *inhibitor;
-    wl_list_for_each(inhibitor, &server->idle_inhibit_manager->inhibitors, link) {
+    wl_list_for_each(inhibitor, &server->idle.inhibit_manager->inhibitors, link) {
         if (inhibitor != ignore && surface_visible(server, inhibitor->surface)) {
             inhibited = true;
             break;
         }
     }
-    if (inhibited != server->idle_inhibited) {
+    if (inhibited != server->idle.inhibited) {
         wlr_log(WLR_DEBUG, "idle: %s", inhibited ? "inhibited" : "uninhibited");
     }
-    server->idle_inhibited = inhibited;
-    wlr_idle_notifier_v1_set_inhibited(server->idle_notifier, inhibited);
+    server->idle.inhibited = inhibited;
+    wlr_idle_notifier_v1_set_inhibited(server->idle.notifier, inhibited);
 }
 
 void handle_inhibitor_destroy(wl_listener *listener, void *data) {
@@ -65,7 +65,7 @@ void handle_inhibitor_destroy(wl_listener *listener, void *data) {
 }
 
 void handle_new_inhibitor(wl_listener *listener, void *data) {
-    BiomeServer *server = wl_container_of(listener, server, new_idle_inhibitor);
+    BiomeServer *server = biome_server_from(listener, BiomeIdle, new_inhibitor);
     auto *wrapper = new BiomeIdleInhibitor;
     wrapper->server = server;
     wrapper->wlr = static_cast<wlr_idle_inhibitor_v1 *>(data);
@@ -77,19 +77,24 @@ void handle_new_inhibitor(wl_listener *listener, void *data) {
 } // namespace
 
 void idle_init(BiomeServer *server) {
-    server->idle_notifier = wlr_idle_notifier_v1_create(server->display);
-    server->idle_inhibit_manager = wlr_idle_inhibit_v1_create(server->display);
-    server->new_idle_inhibitor.notify = handle_new_inhibitor;
-    wl_signal_add(&server->idle_inhibit_manager->events.new_inhibitor, &server->new_idle_inhibitor);
+    server->idle.server = server;
+    server->idle.notifier = wlr_idle_notifier_v1_create(server->display);
+    server->idle.inhibit_manager = wlr_idle_inhibit_v1_create(server->display);
+    server->idle.new_inhibitor.notify = handle_new_inhibitor;
+    wl_signal_add(&server->idle.inhibit_manager->events.new_inhibitor, &server->idle.new_inhibitor);
+}
+
+void idle_finish(BiomeServer *server) {
+    wl_list_remove(&server->idle.new_inhibitor.link);
 }
 
 void idle_notify_activity(BiomeServer *server) {
     output_power_forget_unplugged(server);
-    wlr_idle_notifier_v1_notify_activity(server->idle_notifier, server->seat);
+    wlr_idle_notifier_v1_notify_activity(server->idle.notifier, server->seat);
 }
 
 void idle_update_inhibited(BiomeServer *server) {
-    if (wl_list_empty(&server->idle_inhibit_manager->inhibitors) && !server->idle_inhibited) {
+    if (wl_list_empty(&server->idle.inhibit_manager->inhibitors) && !server->idle.inhibited) {
         return;
     }
     update_inhibited(server, nullptr);

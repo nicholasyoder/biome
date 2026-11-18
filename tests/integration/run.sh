@@ -96,9 +96,10 @@ sigterm)
 remap)
     start_biome 1
     client a win a remap
-    client b win b
+    client b win b ssd
     wait_for "$RT/client-a.log" ready || fail "window a not remapped"
     wait_for "$RT/client-b.log" ready || fail "window b not mapped"
+    grep -q "decoration server-side" "$RT/client-b.log" || fail "window b not server-decorated"
     stop_biome
     ;;
 lock-outputs-off)
@@ -129,6 +130,16 @@ lock-unplug)
     for i in $(seq 100); do [ "$(grep -c '^key 30' "$RT/client-lock.log")" -ge 2 ] && break; sleep 0.05; done
     [ "$(grep -c '^key 30' "$RT/client-lock.log")" -ge 2 ] || fail "key lost after unplug"
     grep -q "^key" "$RT/client-win.log" && fail "window received a key while locked"
+    stop_biome
+    ;;
+workspaces)
+    # ext-workspace ids are the org.biome.Workspaces numbers.
+    start_biome 1
+    "$CLIENT" workspaces 2 > "$RT/client-ws.log" || fail "workspace client failed"
+    head -4 "$RT/client-ws.log" | grep -qx "workspace id=0 name=1 active" || fail "workspace 0 not first/active"
+    grep -qx "workspace id=3 name=4" "$RT/client-ws.log" || fail "workspace 3 missing"
+    sed -n '/after-activate/,$p' "$RT/client-ws.log" | grep -qx "workspace id=2 name=3 active" ||
+        fail "activate did not switch to workspace 2"
     stop_biome
     ;;
 *)

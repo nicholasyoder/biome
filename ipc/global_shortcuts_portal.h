@@ -1,36 +1,12 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 //
-// org.freedesktop.impl.portal.GlobalShortcuts - the desktop-specific
-// *backend* interface xdg-desktop-portal brokers to on behalf of an app
-// calling the generic org.freedesktop.portal.GlobalShortcuts frontend (the
-// same split KWin/Mutter implement for GNOME/KDE). Implementing the backend
-// rather than the frontend directly is what satisfies docs/history.md's
-// Decoupling goal here: any shell going through the standard broker can use
-// this, not just Forest specifically. See docs/architecture-notes.md's
-// "GlobalShortcuts portal architecture (Workstream C)" section for the full
-// research behind this choice.
-//
-// CreateSession/BindShortcuts/ListShortcuts are implemented. There is no
-// confirmation dialog (none is planned); a shortcut is bound unless its
-// trigger is unparseable or already used by a built-in or another binding,
-// in which case it's omitted from the reply. A repeat BindShortcuts adds new
-// ids and leaves already-bound ids untouched (no rebinding).
-// ConfigureShortcuts is a no-op. System wiring
-// (data/xdg-desktop-portal/biome-portals.conf and portals/biome.portal,
-// installed by the top-level CMakeLists.txt) is done - see
-// docs/architecture-notes.md's Workstream C section. Trigger parsing and the
-// actual key-press matching/dispatch live in core/keybindings.h, shared
-// with Biome's own built-in compositor keybindings - this class only
-// forwards BindShortcuts requests into that registry and re-emits
-// Activated/Deactivated as real D-Bus signals when a registered trigger
-// fires.
-//
-// Session teardown: CreateSession() also exports a real per-session
-// org.freedesktop.impl.portal.Session object (PortalSession below) at the
-// session_handle path - the real xdg-desktop-portal daemon calls
-// org.freedesktop.DBus.Properties.GetAll and
-// org.freedesktop.impl.portal.Session.Close() against that exact path, and
-// gets UnknownObject back without an object there.
+// org.freedesktop.impl.portal.GlobalShortcuts backend, reached through
+// xdg-desktop-portal so any shell can use it (architecture-notes.md). Binds
+// without a confirmation dialog, skipping unparseable or already-used
+// triggers; a repeat BindShortcuts only adds new ids. ConfigureShortcuts is a
+// no-op. Matching and dispatch are core/keybindings.h's. Each session also
+// exports an org.freedesktop.impl.portal.Session at its handle path, which
+// the portal daemon calls GetAll/Close on.
 
 #pragma once
 
@@ -63,7 +39,7 @@ class GlobalShortcutsPortal : public QObject, protected QDBusContext {
     Q_PROPERTY(uint version READ version)
 
 public:
-    explicit GlobalShortcutsPortal(QObject *parent = nullptr);
+    explicit GlobalShortcutsPortal(BiomeServer *server, QObject *parent = nullptr);
 
     uint version() const { return 1; }
 
@@ -100,11 +76,13 @@ signals:
 private:
     // Unexports the session object and drops its keybindings and bookkeeping.
     // Called from PortalSession::Close() and when the session's caller exits.
-    void closeSession(const QString &owner);
+    // `closing`: the session object whose own Close() slot is running.
+    void closeSession(const QString &owner, class PortalSession *closing = nullptr);
     friend class PortalSession;
 
     // xdg-desktop-portal never calls Close() for its sessions if it dies;
     // without this their bindings outlive it and shadow its replacement's.
+    BiomeServer *m_server;
     class QDBusServiceWatcher *m_callerWatcher;
     // session_handle path -> unique bus name that created it.
     QHash<QString, QString> m_sessionCallers;

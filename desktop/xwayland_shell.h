@@ -12,9 +12,10 @@
 // Starts Xwayland (lazily - the actual Xwayland process only spawns once a
 // client tries to connect) and wires its listeners. Optional: if it fails
 // to start (e.g. Xwayland isn't installed), Biome keeps running as a
-// Wayland-only compositor - logs its own error and leaves server->xwayland
+// Wayland-only compositor - logs its own error and leaves server->xwayland.wlr
 // null in that case.
 void xwayland_init(BiomeServer *server, wlr_compositor *compositor);
+void xwayland_finish(BiomeServer *server);
 
 // Re-parents mapped override-redirect surfaces above a fullscreen window
 // (layers.fullscreen) or back to layers.toplevels. Call after a fullscreen change.

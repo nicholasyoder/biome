@@ -1,6 +1,10 @@
 Changelog
 ============
 
+* Unreleased
+  - ext-workspace-v1 now uses wlroots' implementation and sends each workspace's `id` (its `org.biome.Workspaces` number) and coordinates; outputs join the workspace group
+  - Internal: compositor state split into per-subsystem structs, each removing its own listeners at shutdown; headless integration tests (`ctest`) cover exit and SIGTERM teardown, window remap, locking with outputs off, lock focus across a monitor unplug, and ext-workspace; decoration sizes are cached per theme instead of restyling the frame on every read
+
 * Release 0.3.1 - 2026-11-17
   - Handle SIGTERM/SIGINT with a clean shutdown (logout now runs the normal teardown and stops the `-s` command), and fix the Qt/GLib bridge losing an event source when a file descriptor number was reused
   - Fix Meta/Ctrl/Alt shortcuts (e.g. Meta+L to lock) not working while the window menu is open, and Meta then opening the main menu on release

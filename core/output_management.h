@@ -9,6 +9,7 @@
 
 // Creates the manager global. Call after output_layout exists.
 void output_management_init(BiomeServer *server);
+void output_management_finish(BiomeServer *server);
 
 // Republishes the current output state to clients on the next idle tick
 // (coalesced). Call after any change to an output's existence, enabled state,

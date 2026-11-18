@@ -12,8 +12,6 @@
 #include <charconv>
 #include <cmath>
 
-namespace {
-
 std::optional<OutputConfig::Mode> parse_mode(const QString &raw, const QString &connector) {
     const QString trimmed = raw.trimmed();
     if (trimmed.isEmpty() || trimmed.compare("preferred", Qt::CaseInsensitive) == 0) {
@@ -53,6 +51,8 @@ std::optional<OutputConfig::Mode> parse_mode(const QString &raw, const QString &
 
     return OutputConfig::Mode{width, height, refresh_mhz};
 }
+
+namespace {
 
 const struct {
     const char *name;

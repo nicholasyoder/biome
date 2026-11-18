@@ -2,6 +2,7 @@
 
 #include "core/output_config.h"
 
+#include <QString>
 #include <QTemporaryDir>
 
 #include <cstdio>
@@ -32,7 +33,7 @@ bool same(const OutputConfig &a, const OutputConfig &b) {
         (!a.mode || (a.mode->width == b.mode->width && a.mode->height == b.mode->height &&
                      a.mode->refresh_mhz == b.mode->refresh_mhz));
     return a.enabled == b.enabled && mode_same && static_cast<float>(a.scale) == static_cast<float>(b.scale) &&
-        a.position == b.position && a.transform == b.transform;
+        a.position == b.position && a.transform == b.transform && a.rgb_range == b.rgb_range;
 }
 
 } // namespace
@@ -44,6 +45,7 @@ int main() {
 
     OutputConfig disabled = config({1920, 1080, 60000}, 1.0f, WL_OUTPUT_TRANSFORM_NORMAL, 0, 0);
     disabled.enabled = false;
+    disabled.rgb_range = OutputConfig::RgbRange::Limited;
     OutputConfig never_placed; // no mode/position: those keys stay unwritten
     never_placed.enabled = false;
     const std::vector<std::pair<std::string, OutputConfig>> saved = {
@@ -61,6 +63,16 @@ int main() {
         auto it = loaded.find(connector);
         expect(it != loaded.end() && same(it->second, cfg), connector.c_str());
     }
+
+    const auto mode = [](const char *raw) { return parse_mode(QString::fromLatin1(raw), QStringLiteral("T")); };
+    auto m = mode("1920x1080@59.94");
+    expect(m && m->width == 1920 && m->height == 1080 && m->refresh_mhz == 59940, "mode: fractional refresh");
+    m = mode(" 2560X1440 ");
+    expect(m && m->width == 2560 && m->refresh_mhz == 0, "mode: no refresh, upper X, whitespace");
+    m = mode("1280x720@bogus");
+    expect(m && m->width == 1280 && m->refresh_mhz == 0, "mode: bad refresh ignored");
+    expect(!mode("preferred") && !mode("Preferred") && !mode(""), "mode: preferred");
+    expect(!mode("garbage") && !mode("x1080") && !mode("1920x") && !mode("-1x5"), "mode: malformed");
 
     if (failures != 0) {
         return EXIT_FAILURE;

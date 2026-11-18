@@ -33,6 +33,8 @@ if(BIOME_INTEGRATION_TESTS AND DBUS_RUN_SESSION)
     set(itest_protocols
         "${WAYLAND_PROTOCOLS_DATADIR}/stable/xdg-shell/xdg-shell.xml"
         "${WAYLAND_PROTOCOLS_DATADIR}/staging/ext-session-lock/ext-session-lock-v1.xml"
+        "${WAYLAND_PROTOCOLS_DATADIR}/staging/ext-workspace/ext-workspace-v1.xml"
+        "${WAYLAND_PROTOCOLS_DATADIR}/unstable/xdg-decoration/xdg-decoration-unstable-v1.xml"
         "${CMAKE_SOURCE_DIR}/protocol/wlr-layer-shell-unstable-v1.xml"
         "${CMAKE_SOURCE_DIR}/protocol/wlr-output-power-management-unstable-v1.xml")
     set(itest_dir "${CMAKE_CURRENT_BINARY_DIR}/integration-protocol")
@@ -56,7 +58,7 @@ if(BIOME_INTEGRATION_TESTS AND DBUS_RUN_SESSION)
     add_library(biome_test_shim MODULE integration/shim.c)
     target_link_libraries(biome_test_shim PRIVATE PkgConfig::WLROOTS ${CMAKE_DL_LIBS})
 
-    foreach(scenario startup-exit sigterm remap lock-outputs-off lock-unplug)
+    foreach(scenario startup-exit sigterm remap lock-outputs-off lock-unplug workspaces)
         add_test(NAME integration.${scenario}
             COMMAND ${DBUS_RUN_SESSION} -- ${CMAKE_CURRENT_SOURCE_DIR}/integration/run.sh
                 $<TARGET_FILE:biome> $<TARGET_FILE:biome_test_client> $<TARGET_FILE:biome_test_shim> ${scenario})

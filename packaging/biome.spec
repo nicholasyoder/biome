@@ -32,7 +32,7 @@ like sway or river; policy is fixed in code.
 %autosetup
 
 %build
-%cmake -DCMAKE_BUILD_TYPE=Release -DBIOME_DEV_BUILD=OFF
+%cmake -DCMAKE_BUILD_TYPE=Release -DBIOME_DEV_BUILD=OFF -DBIOME_INTEGRATION_TESTS=OFF
 %cmake_build
 
 %install

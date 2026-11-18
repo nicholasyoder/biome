@@ -28,7 +28,7 @@ struct OutputConfig {
 
     double scale = 1.0;
     std::optional<std::pair<int, int>> position; // nullopt = auto-arrange
-    // BiomeServer::output_layout_generation when `position` was recorded (Biome.conf = 0).
+    // server->output_mgmt.layout_generation when `position` was recorded (Biome.conf = 0).
     unsigned position_generation = 0;
     wl_output_transform transform = WL_OUTPUT_TRANSFORM_NORMAL;
 
@@ -38,6 +38,10 @@ struct OutputConfig {
     enum class RgbRange { Full, Automatic, Limited };
     RgbRange rgb_range = RgbRange::Full;
 };
+
+// "WIDTHxHEIGHT[@HZ]"; nullopt for "preferred" or malformed input (logged).
+class QString;
+std::optional<OutputConfig::Mode> parse_mode(const QString &raw, const QString &connector);
 
 // Per-connector overrides keyed by wlr connector name. Malformed fields log
 // a warning and keep OutputConfig{}'s defaults. Startup-only.
