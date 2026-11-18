@@ -18,13 +18,14 @@ int decoration_titlebar_height(const BiomeToplevel *toplevel, bool maximized);
 int decoration_border_right_width(const BiomeToplevel *toplevel, bool maximized);
 int decoration_border_bottom_height(const BiomeToplevel *toplevel, bool maximized);
 
-// The frame widget and an empty decoration_buffer node in scene_tree.
+// The frame widget and its empty strip nodes in scene_tree.
 void create_toplevel_decoration(BiomeToplevel *toplevel);
 
 // Call before scene_tree is destroyed.
 void destroy_toplevel_decoration(BiomeToplevel *toplevel);
 
-// Re-renders after a size, focus, title, icon or hover/press change.
+// Re-renders after a size, focus, title, icon or hover/press change; a
+// titlebar-only change re-renders only the top strip.
 void render_toplevel_decoration(BiomeToplevel *toplevel);
 
 // Applies theme `name` from `dir` (empty = built-in) to the running compositor:

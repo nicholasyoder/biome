@@ -7,10 +7,10 @@
 
 namespace {
 
+// Wraps the rendered QImage itself; no copy.
 struct QtBuffer {
     wlr_buffer base = {};
-    std::vector<uint8_t> pixels;
-    int stride = 0;
+    QImage image;
 };
 
 void qt_buffer_destroy(wlr_buffer *buf) {
@@ -22,9 +22,10 @@ bool qt_buffer_begin_data_ptr_access(wlr_buffer *buf,
         uint32_t flags, void **data, uint32_t *format, size_t *stride) {
     (void)flags;
     QtBuffer *buffer = wl_container_of(buf, buffer, base);
-    *data = buffer->pixels.data();
+    // constBits(): bits() could detach a shared image.
+    *data = const_cast<uchar *>(buffer->image.constBits());
     *format = DRM_FORMAT_ARGB8888;
-    *stride = static_cast<size_t>(buffer->stride);
+    *stride = static_cast<size_t>(buffer->image.bytesPerLine());
     return true;
 }
 
@@ -44,13 +45,22 @@ const wlr_buffer_impl kQtBufferImpl = {
 } // namespace
 
 bool set_scene_frame(wlr_scene_buffer *scene_buffer, biome_decoration::RenderedFrame &&frame) {
-    if (frame.width <= 0 || frame.height <= 0) {
+    if (frame.image.isNull()) {
         return false;
     }
+    // Same pixels (a cached render) as already shown: skip the texture re-upload.
+    wlr_buffer *current = scene_buffer->buffer;
+    if (current != nullptr && current->impl == &kQtBufferImpl) {
+        QtBuffer *shown = wl_container_of(current, shown, base);
+        if (shown->image.cacheKey() == frame.image.cacheKey()) {
+            wlr_scene_buffer_set_dest_size(scene_buffer, frame.logical_width, frame.logical_height);
+            return true;
+        }
+    }
     auto *buffer = new QtBuffer();
-    buffer->stride = frame.stride;
-    buffer->pixels = std::move(frame.pixels);
-    wlr_buffer_init(&buffer->base, &kQtBufferImpl, frame.width, frame.height);
+    const int width = frame.image.width(), height = frame.image.height();
+    buffer->image = std::move(frame.image);
+    wlr_buffer_init(&buffer->base, &kQtBufferImpl, width, height);
     // Dest size first, so the buffer is never briefly laid out at its pixel size.
     wlr_scene_buffer_set_dest_size(scene_buffer, frame.logical_width, frame.logical_height);
     wlr_scene_buffer_set_buffer(scene_buffer, &buffer->base);

@@ -91,6 +91,8 @@ public:
     QRect contentRect() const { return content_spacer_->geometry(); }
     int rightBorderWidth() const { return width() - content_spacer_->x() - content_spacer_->width(); }
     int bottomBorderHeight() const { return height() - content_spacer_->y() - content_spacer_->height(); }
+    // A strip's rect within the frame; empty if the theme gives it no size.
+    QRect stripRect(Strip strip) const;
 
     // The four edge sizes in either state, cached so reading them never
     // restyles the frame. Content-size independent.
