@@ -645,7 +645,7 @@ static void apply_kde_decoration_mode(BiomeToplevel *toplevel) {
     }
     toplevel->xdg_client_side_decorated = want_client_side;
     if (!toplevel->xdg_toplevel->base->initialized) {
-        // Too early to touch content_tree/decoration_buffer - the initial
+        // Too early to touch content_tree/decoration strips - the initial
         // position gets set for real once xdg_toplevel_commit's
         // initial_commit branch runs, same as the xdg-decoration path.
         return;

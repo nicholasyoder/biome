@@ -1292,7 +1292,7 @@ BiomeToplevel *toplevel_create(BiomeServer *server, BiomeToplevelType type) {
 
 void toplevel_destroy_common(BiomeToplevel *toplevel) {
     toplevel_forget(toplevel);
-    destroy_toplevel_decoration(toplevel); // before scene_tree: unhooks a decoration_buffer signal
+    destroy_toplevel_decoration(toplevel); // before scene_tree: unhooks a decoration strip signal
     wlr_scene_node_destroy(&toplevel->scene_tree->node); // also frees content_tree and the decoration buffer
     delete toplevel;
 }

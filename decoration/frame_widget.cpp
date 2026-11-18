@@ -182,6 +182,17 @@ DecorationFrame::DecorationFrame(QWidget *parent) : QFrame(parent) {
     show_offscreen(this);
 }
 
+QRect DecorationFrame::stripRect(Strip strip) const {
+    const QRect content = contentRect();
+    switch (strip) {
+    case Strip::Top: return {0, 0, width(), content.top()};
+    case Strip::Left: return {0, content.top(), content.left(), content.height()};
+    case Strip::Right: return {content.right() + 1, content.top(), rightBorderWidth(), content.height()};
+    case Strip::Bottom: return {0, content.bottom() + 1, width(), bottomBorderHeight()};
+    }
+    return {};
+}
+
 void DecorationFrame::layoutFor(int content_width, int content_height) {
     // Hot path (every resize and hover/press re-render calls this, often
     // with an unchanged size) - skip the repolish/layout/resize dance when

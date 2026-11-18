@@ -50,8 +50,6 @@ sway/Hyprland (`core/input.cpp`/`cursor.cpp` have zero touch/tablet handling).
 
 - **Theme/cursor/icon watchers** ([detail](review-2026-11.md#watchers)). One watch helper;
   qt6ct.conf reload; app-icon caches.
-- **Edge-strip decoration buffers** ([detail](review-2026-11.md#decoration-strips)). A
-  hover or title change re-renders a whole-window buffer (~30 ms at 4K).
 - **Theme-format version coupling** ([detail](review-2026-11.md#theme-coupling)). Versioned
   `ForestTheme` dependency; regenerate `builtin.qss` after Forest 0.12.0's
   CSS consolidation.

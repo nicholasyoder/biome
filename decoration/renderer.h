@@ -4,6 +4,9 @@
 
 #include "layout.h" // Region
 
+#include <QImage>
+#include <QRect>
+
 #include <cstdint>
 #include <vector>
 
@@ -13,23 +16,17 @@ namespace biome_decoration {
 
 class DecorationFrame;
 
-// A rendered decoration frame (titlebar + border, transparent hole where
-// the client's own surface shows through), as tightly-packed premultiplied
-// ARGB8888 pixels, top-to-bottom, row-major - ready to hand straight to a
-// software wlr_buffer. Empty (width/height == 0) if content_width/height
-// were non-positive.
+// Rendered widget pixels: premultiplied ARGB32 at logical size * scale. Null
+// image for an empty source.
 struct RenderedFrame {
-    int width = 0;  // pixels: logical size * scale
-    int height = 0;
+    QImage image;
     int logical_width = 0; // the scene buffer's dest size
     int logical_height = 0;
-    int stride = 0; // bytes per row
-    std::vector<uint8_t> pixels;
 };
 
-// Renders widget at its current (logical) size into a buffer of scale times
+// Renders source (logical, whole widget if null) into a buffer of scale times
 // as many pixels. Shared by every decoration/ renderer.
-RenderedFrame render_widget(QWidget *widget, double scale);
+RenderedFrame render_widget(QWidget *widget, double scale, const QRect &source = {});
 
 // A resolved window icon - square ARGB32-premultiplied pixel data at
 // whatever fixed size desktop/app_icon.h rasterizes to. size == 0 (pixels
@@ -39,20 +36,23 @@ struct IconImage {
     std::vector<uint8_t> pixels;
 };
 
-// content_width/content_height: size of the client's own surface. Renders
-// widget in place - a toplevel's own DecorationFrame instance
-// (biome_decoration::create_decoration_frame(), decoration/theme.h), not a
-// shared one, so its state always reflects this window and nothing else's
-// render/hit-test call can leave it stale.
-//
-// urgent drives #biomeFrame[urgent=...].
-// hovered_region/pressed_region select which button (if any) gets a live
-// QSS :hover/:pressed state - Region::None for neither. maximized drives the
-// #biomeFrame[biomeMaximized=...] QSS state, letting a theme style a
-// maximized window differently. icon is the window's resolved icon - an
-// empty one hides the titlebar icon slot. scale is the target output's.
-RenderedFrame render_decoration(DecorationFrame *widget, int content_width, int content_height,
+// The frame is drawn as four buffers around the client's surface, so a
+// titlebar-only change (title, hover) re-renders just the titlebar.
+enum class Strip { Top, Left, Right, Bottom };
+constexpr int kStripCount = 4;
+
+// Applies a window's state to its own DecorationFrame
+// (create_decoration_frame(), decoration/theme.h) and lays it out for a client
+// of content_width x content_height. hovered/pressed_region select which
+// button (if any) gets a live :hover/:pressed state. An empty icon shows a
+// generic one. False if the content size is non-positive.
+bool update_decoration(DecorationFrame *widget, int content_width, int content_height,
     bool focused, bool urgent, bool maximized, const char *title, const IconImage &icon,
-    Region hovered_region, Region pressed_region, double scale);
+    Region hovered_region, Region pressed_region);
+
+// Renders one strip of the frame as last laid out by update_decoration(); its
+// position within the frame is DecorationFrame::stripRect(). scale is the
+// target output's.
+RenderedFrame render_decoration_strip(DecorationFrame *widget, Strip strip, double scale);
 
 } // namespace biome_decoration

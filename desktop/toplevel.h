@@ -78,10 +78,11 @@ struct BiomeToplevel {
     bool urgent = false;
 
     // scene_tree's position is the window's; content_tree (the surfaces) and
-    // decoration_buffer are its children, content offset by the border/titlebar.
+    // the decoration strips around it (indexed by biome_decoration::Strip) are
+    // its children, content offset by the border/titlebar.
     wlr_scene_tree *scene_tree = nullptr;
     wlr_scene_tree *content_tree = nullptr;
-    wlr_scene_buffer *decoration_buffer = nullptr;
+    wlr_scene_buffer *decoration_strips[biome_decoration::kStripCount] = {};
     bool focused = false; // drives which QSS [focused=...] state gets applied
 
     // This window's own QSS-styled frame widget (desktop/decoration_bridge.h).
@@ -111,7 +112,7 @@ struct BiomeToplevel {
     biome_decoration::Region last_decoration_pressed = biome_decoration::Region::None;
     float last_decoration_scale = 0.0f;
 
-    // Output scale the decoration renders at, tracked via decoration_buffer's
+    // Output scale the decoration renders at, tracked via the top strip's
     // outputs_update (desktop/decoration_bridge.cpp).
     float decoration_scale = 1.0f;
     wl_listener decoration_outputs_update = {};

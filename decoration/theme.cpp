@@ -2,6 +2,8 @@
 
 #include "theme.h"
 
+#include "switcher_highlight.h"
+
 #include <QApplication>
 #include <QDir>
 #include <QFile>
@@ -79,6 +81,7 @@ void load_decoration_theme(const QString &dir, const QString &name) {
         stylesheet = read_file(kBuiltinPath);
     }
     qApp->setStyleSheet(stylesheet);
+    invalidate_switcher_highlight();
 }
 
 DecorationFrame *create_decoration_frame() {

@@ -35,6 +35,11 @@ public:
 
 SwitcherHighlightRoot *g_root = nullptr;
 
+// The last render, reused while the size and scale match (e.g. Alt-Tab across
+// maximized windows); shares pixels, so the scene can skip the upload too.
+RenderedFrame g_cached;
+double g_cached_scale = 0.0;
+
 } // namespace
 
 RenderedFrame render_switcher_highlight(int width, int height, double scale) {
@@ -49,8 +54,18 @@ RenderedFrame render_switcher_highlight(int width, int height, double scale) {
         // widgets constructed after load_decoration_theme() runs.
     }
 
+    if (!g_cached.image.isNull() && g_cached.logical_width == width
+            && g_cached.logical_height == height && g_cached_scale == scale) {
+        return g_cached;
+    }
     g_root->resize(width, height); // visible, so this relays out synchronously
-    return render_widget(g_root, scale);
+    g_cached = render_widget(g_root, scale);
+    g_cached_scale = scale;
+    return g_cached;
+}
+
+void invalidate_switcher_highlight() {
+    g_cached = {};
 }
 
 } // namespace biome_decoration
