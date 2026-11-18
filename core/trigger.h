@@ -60,3 +60,21 @@ bool trigger_allowed(const ParsedTrigger &trigger);
 // Human-readable form for the portal's `trigger_description`, e.g.
 // "Ctrl+Alt+Return"; a bare-modifier trigger reads "Meta (tap)".
 QString describe_trigger(const ParsedTrigger &trigger);
+
+// The single kMatchableModifierMask bit a modifier keysym maps to; 0 otherwise.
+uint32_t modifier_bit_for_keysym(xkb_keysym_t sym);
+
+// Bare-modifier ("tap") detector, fed every key press and release. A lone
+// matchable modifier pressed and released with no other key between fires.
+struct ModifierTap {
+    uint32_t candidate = 0; // the lone modifier held; 0 = none
+    bool interrupted = false; // another key went down during the hold
+    bool forwarded = false; // one of those keys reached the client
+
+    struct Result {
+        uint32_t fire = 0; // modifier bit of a completed tap
+        bool swallow = false; // hide this release from the client
+    };
+    // `modifiers` is the mask before this event; `consumed`: Biome swallowed this press.
+    Result step(xkb_keysym_t sym, uint32_t modifiers, bool pressed, bool consumed);
+};

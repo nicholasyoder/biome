@@ -9,18 +9,7 @@
 #include "desktop/window_menu.h"
 
 void update_toplevel_visibility(BiomeToplevel *toplevel) {
-    // No session_locked check needed here - see BiomeServer::layers' doc
-    // comment in server.h. toplevel->scene_tree is always a child of one of
-    // the fixed server->layers trees
-    // (layers.toplevels normally, layers.fullscreen while fullscreen - see
-    // set_toplevel_fullscreen), both structurally below
-    // server->layers.session_lock for every toplevel that will ever exist,
-    // not just the ones that existed when a lock began - so while locked,
-    // layers.session_lock's opaque per-output rect (desktop/
-    // session_lock.cpp) already covers every toplevel for both rendering
-    // and hit-testing (desktop_toplevel_at/decoration_toplevel_at stop at
-    // the first node they hit, topmost first) with no need to separately
-    // disable this node too.
+    // No lock check: layers.session_lock covers every toplevel while locked.
     bool visible = toplevel->workspace == toplevel->server->active_workspace && !toplevel->minimized;
     wlr_scene_node_set_enabled(&toplevel->scene_tree->node, visible);
     // Not before the first configure has gone out (toplevel_configure_premap).

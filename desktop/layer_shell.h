@@ -1,22 +1,15 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 //
-// wlr-layer-shell-unstable-v1: lets a client (panel, wallpaper, launcher,
-// OSD) place a surface in one of four fixed layers
-// (background/bottom/top/overlay - see core/server.h's BiomeServer::layers
-// doc comment for how these fit into the compositor's overall scene-layer
-// stack) with an optional exclusive-zone strut reservation, anchors, and
-// margins. wlroots' own wlr_scene_layer_surface_v1_configure() does all the
-// anchor/margin/exclusive-zone box math per surface; this module's job is
-// just resolving each surface's target output/layer and calling that
-// helper, in order, for every mapped surface on a given output whenever
-// something about the arrangement could have changed.
+// wlr-layer-shell-unstable-v1 (panels, wallpaper, OSDs). wlroots does the
+// per-surface box math; this module picks each surface's output and layer
+// tree and re-arranges an output whenever its layout may have changed.
 
 #pragma once
 
 #include "core/server.h"
 
-// Creates the wlr_layer_shell_v1 global and wires its new_surface listener.
 void layer_shell_init(BiomeServer *server);
+void layer_shell_finish(BiomeServer *server);
 
 // The mapped top/overlay `exclusive` surface that must hold keyboard focus
 // (overlay first, then newest), or nullptr. Always nullptr while locked.
@@ -26,24 +19,12 @@ wlr_surface *layer_shell_exclusive_focus(BiomeServer *server);
 // already holds it. Returns false when there's no such surface.
 bool layer_shell_claim_exclusive_focus(BiomeServer *server);
 
-// Re-arranges every mapped layer surface on this output: exclusive-zone
-// surfaces first (overlay -> background), then the rest against what's left,
-// calling wlr_scene_layer_surface_v1_configure() for each and leaving the
-// leftover box in output->usable_area. Called on output
-// add/resolution-change (core/output.cpp) and on any layer surface's own
-// commit/map/unmap/destroy (this file).
+// Configures exclusive-zone surfaces first (overlay -> background), then the
+// rest, leaving the remainder in output->usable_area.
 void arrange_layers(BiomeOutput *output);
 
-// Advances this output's in-progress layer-surface fades (map-triggered
-// fade-in, unmap-triggered fade-out - see core/fade_config.h for which
-// namespaces are eligible, and FadeKind in layer_shell.cpp for the two
-// mechanisms) by one step: fading_namespaces surfaces via
-// wlr_scene_buffer_set_opacity(), scanout_fading_namespaces surfaces via a
-// compositor-rendered opaque buffer swap. Returns true if at least one fade
-// on this output is still in progress, in which case the caller
-// (core/output.cpp's output_frame()) must call wlr_output_schedule_frame()
-// to keep the frame loop alive - Biome's rendering is otherwise
-// damage-driven, not continuous.
+// Steps this output's fades (core/fade_config.h). True while any is still
+// running: the caller must schedule another frame.
 bool update_layer_surface_fades(BiomeOutput *output);
 
 // Closes every layer surface bound to this output (`closed` event) and drops

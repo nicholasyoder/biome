@@ -19,17 +19,31 @@ static BiomeUnmanaged *create_unmanaged(BiomeServer *server, wlr_xwayland_surfac
 static void unmanaged_associate(wl_listener *listener, void *data);
 
 void xwayland_init(BiomeServer *server, wlr_compositor *compositor) {
-    server->xwayland = wlr_xwayland_create(server->display, compositor, true);
-    if (server->xwayland == nullptr) {
+    server->xwayland.server = server;
+    server->xwayland.wlr = wlr_xwayland_create(server->display, compositor, true);
+    if (server->xwayland.wlr == nullptr) {
         wlr_log(WLR_ERROR, "failed to start Xwayland; X11 apps will not work");
         return;
     }
-    server->new_xwayland_surface.notify = server_new_xwayland_surface;
-    wl_signal_add(&server->xwayland->events.new_surface, &server->new_xwayland_surface);
-    server->xwayland_ready.notify = server_xwayland_ready;
-    wl_signal_add(&server->xwayland->events.ready, &server->xwayland_ready);
-    wlr_xwayland_set_seat(server->xwayland, server->seat);
-    setenv("DISPLAY", server->xwayland->display_name, true);
+    server->xwayland.new_surface.notify = server_new_xwayland_surface;
+    wl_signal_add(&server->xwayland.wlr->events.new_surface, &server->xwayland.new_surface);
+    server->xwayland.ready.notify = server_xwayland_ready;
+    wl_signal_add(&server->xwayland.wlr->events.ready, &server->xwayland.ready);
+    wlr_xwayland_set_seat(server->xwayland.wlr, server->seat);
+    setenv("DISPLAY", server->xwayland.wlr->display_name, true);
+}
+
+void xwayland_finish(BiomeServer *server) {
+    if (server->xwayland.ewmh_ready) {
+        xcb_ewmh_connection_wipe(&server->xwayland.ewmh);
+    }
+    if (server->xwayland.wlr == nullptr) {
+        return;
+    }
+    wl_list_remove(&server->xwayland.new_surface.link);
+    wl_list_remove(&server->xwayland.ready.link);
+    wlr_xwayland_destroy(server->xwayland.wlr);
+    server->xwayland.wlr = nullptr;
 }
 
 // --- Xwayland: managed toplevels -------------------------------------
@@ -420,7 +434,7 @@ static BiomeToplevel *create_xwayland_toplevel(BiomeServer *server, wlr_xwayland
 }
 
 static void server_new_xwayland_surface(wl_listener *listener, void *data) {
-    BiomeServer *server = wl_container_of(listener, server, new_xwayland_surface);
+    BiomeServer *server = biome_server_from(listener, BiomeXwayland, new_surface);
     auto *xsurface = static_cast<wlr_xwayland_surface *>(data);
     if (xsurface->override_redirect) {
         create_unmanaged(server, xsurface);
@@ -433,13 +447,13 @@ static void server_new_xwayland_surface(wl_listener *listener, void *data) {
 // clients show no cursor at all until they set their own.
 static void server_xwayland_ready(wl_listener *listener, void *data) {
     (void)data;
-    BiomeServer *server = wl_container_of(listener, server, xwayland_ready);
+    BiomeServer *server = biome_server_from(listener, BiomeXwayland, ready);
     wlr_xcursor *xcursor = wlr_xcursor_manager_get_xcursor(server->cursor_mgr, "default", 1.0f);
     if (xcursor != nullptr && xcursor->image_count > 0) {
         wlr_xcursor_image *image = xcursor->images[0];
         wlr_buffer *cursor_buffer = wlr_xcursor_image_get_buffer(image);
         if (cursor_buffer != nullptr) {
-            wlr_xwayland_set_cursor(server->xwayland, cursor_buffer,
+            wlr_xwayland_set_cursor(server->xwayland.wlr, cursor_buffer,
                 static_cast<int32_t>(image->hotspot_x), static_cast<int32_t>(image->hotspot_y));
         }
     }
@@ -447,9 +461,9 @@ static void server_xwayland_ready(wl_listener *listener, void *data) {
     // Atom-initialize the EWMH connection used for _NET_WM_ICON lookup
     // (desktop/app_icon.h) - the underlying xcb connection is only valid
     // from this event onward.
-    xcb_connection_t *conn = wlr_xwayland_get_xwm_connection(server->xwayland);
+    xcb_connection_t *conn = wlr_xwayland_get_xwm_connection(server->xwayland.wlr);
     if (conn != nullptr) {
-        xcb_intern_atom_cookie_t *cookies = xcb_ewmh_init_atoms(conn, &server->ewmh);
-        server->ewmh_ready = xcb_ewmh_init_atoms_replies(&server->ewmh, cookies, nullptr) != 0;
+        xcb_intern_atom_cookie_t *cookies = xcb_ewmh_init_atoms(conn, &server->xwayland.ewmh);
+        server->xwayland.ewmh_ready = xcb_ewmh_init_atoms_replies(&server->xwayland.ewmh, cookies, nullptr) != 0;
     }
 }

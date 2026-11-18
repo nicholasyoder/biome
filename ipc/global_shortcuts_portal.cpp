@@ -30,8 +30,9 @@ const QDBusArgument &operator>>(const QDBusArgument &arg, GlobalShortcutSpec &sp
     return arg;
 }
 
-GlobalShortcutsPortal::GlobalShortcutsPortal(QObject *parent)
+GlobalShortcutsPortal::GlobalShortcutsPortal(BiomeServer *server, QObject *parent)
     : QObject(parent),
+      m_server(server),
       m_callerWatcher(new QDBusServiceWatcher(QString(), QDBusConnection::sessionBus(),
           QDBusServiceWatcher::WatchForUnregistration, this)) {
     connect(m_callerWatcher, &QDBusServiceWatcher::serviceUnregistered, this, [this](const QString &caller) {
@@ -85,12 +86,6 @@ uint GlobalShortcutsPortal::BindShortcuts(const QDBusObjectPath &handle,
         return 2; // no such session
     }
 
-    // "An application can only attempt to bind shortcuts of a session
-    // once" per the real frontend spec - not enforced here yet (this
-    // prototype doesn't model session state that deeply), but rebinding
-    // just re-registers on top of whatever's already there rather than
-    // replacing it, which would double-fire on a second call. Left as a
-    // known gap for the later step that actually wires up reloadhotkeys().
     // A repeat call adds shortcuts (or retries rejected ones); ids already
     // bound keep their existing binding.
     QList<GlobalShortcutSpec> bound = m_sessions.value(owner);
@@ -121,7 +116,7 @@ uint GlobalShortcutsPortal::BindShortcuts(const QDBusObjectPath &handle,
             continue;
         }
 
-        if (trigger_in_use(*parsed)) {
+        if (trigger_in_use(m_server, *parsed)) {
             wlr_log(WLR_INFO,
                 "GlobalShortcuts: trigger \"%s\" for shortcut \"%s\" is already in use - skipping",
                 qPrintable(preferred_trigger), qPrintable(spec.id));
@@ -129,7 +124,7 @@ uint GlobalShortcutsPortal::BindShortcuts(const QDBusObjectPath &handle,
         }
 
         const QString shortcut_id = spec.id;
-        add_portal_keybinding(owner, *parsed,
+        add_portal_keybinding(m_server, owner, *parsed,
             [this, session_handle, shortcut_id](BiomeServer *server, uint32_t) {
                 // Queued: the token must be issued after input.cpp notes this
                 // press, which would otherwise make it stale at once.
@@ -157,10 +152,7 @@ uint GlobalShortcutsPortal::BindShortcuts(const QDBusObjectPath &handle,
         // toString(): description is optional on the wire, and an invalid QVariant in an a{sv} aborts in libdbus.
         out.options.insert(QStringLiteral("description"),
             spec.options.value(QStringLiteral("description")).toString());
-        // A real backend renders a localized, human-readable string here
-        // (e.g. "Ctrl+Alt+Return"); echoing the raw trigger string back is a
-        // stand-in good enough to confirm round-tripping for this
-        // prototype.
+        // Human-readable, not localized.
         out.options.insert(QStringLiteral("trigger_description"), describe_trigger(*parsed));
         bound.push_back(out);
     }
@@ -195,12 +187,18 @@ void GlobalShortcutsPortal::ConfigureShortcuts(const QDBusObjectPath &session_ha
     (void)options;
 }
 
-void GlobalShortcutsPortal::closeSession(const QString &owner) {
+void GlobalShortcutsPortal::closeSession(const QString &owner, PortalSession *closing) {
     QDBusConnection::sessionBus().unregisterObject(owner);
-    remove_session_keybindings(owner);
+    remove_session_keybindings(m_server, owner);
     m_sessions.remove(owner);
+    // deleteLater() only runs if posted from inside a dispatch, so only
+    // for the object whose slot is on the stack.
     if (PortalSession *sessionObject = m_sessionObjects.take(owner)) {
-        sessionObject->deleteLater();
+        if (sessionObject == closing) {
+            sessionObject->deleteLater();
+        } else {
+            delete sessionObject;
+        }
     }
 
     const QString caller = m_sessionCallers.take(owner);
@@ -214,16 +212,14 @@ PortalSession::PortalSession(GlobalShortcutsPortal *portal, QString path)
 }
 
 void PortalSession::Close() {
-    m_portal->closeSession(m_path);
+    m_portal->closeSession(m_path, this);
 }
 
 void global_shortcuts_portal_init(BiomeServer *server) {
-    (void)server; // dispatch is the qt_glib_bridge's problem now, already live before this runs
-
     qDBusRegisterMetaType<GlobalShortcutSpec>();
     qDBusRegisterMetaType<QList<GlobalShortcutSpec>>();
 
-    static GlobalShortcutsPortal *portal = new GlobalShortcutsPortal();
+    static GlobalShortcutsPortal *portal = new GlobalShortcutsPortal(server);
 
     QDBusConnection bus = QDBusConnection::sessionBus();
     if (!bus.isConnected()) {
@@ -237,10 +233,7 @@ void global_shortcuts_portal_init(BiomeServer *server) {
             qPrintable(bus.lastError().message()));
         return;
     }
-    // Real backend bus-name convention (org.freedesktop.impl.portal.desktop.<name>)
-    // - matters once portals.conf wiring routes xdg-desktop-portal to this
-    // name in a later step; harmless to claim now even though nothing looks
-    // it up yet.
+    // The name biome.portal routes xdg-desktop-portal to.
     if (!bus.registerService(QStringLiteral("org.freedesktop.impl.portal.desktop.biome"))) {
         wlr_log(WLR_ERROR, "Biome: failed to register GlobalShortcuts portal bus name: %s",
             qPrintable(bus.lastError().message()));

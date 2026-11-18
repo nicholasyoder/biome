@@ -10,6 +10,7 @@
 
 // Creates the manager global.
 void output_power_init(BiomeServer *server);
+void output_power_finish(BiomeServer *server);
 
 // Powers every powered-off output back on; a modeset on an off DRM
 // connector fails, so output-management calls this before applying.

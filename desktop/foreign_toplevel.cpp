@@ -14,13 +14,8 @@
 struct BiomeForeignToplevel {
     BiomeToplevel *toplevel = nullptr;
     wlr_foreign_toplevel_handle_v1 *handle = nullptr;
-    // ext-foreign-toplevel-list-v1's handle for the same toplevel, created
-    // immediately alongside `handle` above so Forest's windowlist can pair
-    // the two client-side objects by creation order - see
-    // BiomeServer::ext_foreign_toplevel_list's doc comment in
-    // core/server.h. Only exists to hand out ext_identifier below; no
-    // request listeners of its own (the list protocol has no requests
-    // beyond destroy).
+    // Created right after `handle`, so clients can pair the two by creation
+    // order; exists for its stable identifier.
     wlr_ext_foreign_toplevel_handle_v1 *ext_handle = nullptr;
     // Private always-enabled scene holding a second copy of the surface tree:
     // capturing scene_tree itself would skip hidden (minimized/other-workspace)
@@ -87,35 +82,33 @@ static void handle_capture_request(wl_listener *listener, void *data) {
     wlr_ext_foreign_toplevel_image_capture_source_manager_v1_request_accept(request, wrapper->capture_source);
 }
 
-static wl_listener capture_request_listener = {};
-static wl_listener capture_manager_destroy_listener = {};
+void foreign_toplevel_init(BiomeServer *server) {
+    server->ftl.server = server;
+    server->ftl.manager = wlr_foreign_toplevel_manager_v1_create(server->display);
+    server->ftl.ext_list = wlr_ext_foreign_toplevel_list_v1_create(server->display, 1);
 
-// wlroots asserts new_request has no listeners when the manager goes.
-static void handle_capture_manager_destroy(wl_listener *, void *) {
-    wl_list_remove(&capture_request_listener.link);
-    wl_list_remove(&capture_manager_destroy_listener.link);
+    // Screen capture: screencopy and ext-image-copy-capture with output and per-window sources.
+    wlr_screencopy_manager_v1_create(server->display);
+    wlr_ext_image_copy_capture_manager_v1_create(server->display, 1);
+    wlr_ext_output_image_capture_source_manager_v1_create(server->display, 1);
+    auto *capture_manager = wlr_ext_foreign_toplevel_image_capture_source_manager_v1_create(server->display, 1);
+    server->ftl.capture_request.notify = handle_capture_request;
+    wl_signal_add(&capture_manager->events.new_request, &server->ftl.capture_request);
 }
 
-void foreign_toplevel_init(BiomeServer *server) {
-    server->foreign_toplevel_manager = wlr_foreign_toplevel_manager_v1_create(server->display);
-    server->ext_foreign_toplevel_list = wlr_ext_foreign_toplevel_list_v1_create(server->display, 1);
-
-    auto *capture_manager = wlr_ext_foreign_toplevel_image_capture_source_manager_v1_create(server->display, 1);
-    capture_request_listener.notify = handle_capture_request;
-    wl_signal_add(&capture_manager->events.new_request, &capture_request_listener);
-    capture_manager_destroy_listener.notify = handle_capture_manager_destroy;
-    wl_signal_add(&capture_manager->events.destroy, &capture_manager_destroy_listener);
+void foreign_toplevel_finish(BiomeServer *server) {
+    wl_list_remove(&server->ftl.capture_request.link);
 }
 
 void foreign_toplevel_create(BiomeToplevel *toplevel) {
     BiomeServer *server = toplevel->server;
-    if (server->foreign_toplevel_manager == nullptr) {
+    if (server->ftl.manager == nullptr) {
         return;
     }
 
     auto *wrapper = static_cast<BiomeForeignToplevel *>(calloc(1, sizeof(BiomeForeignToplevel)));
     wrapper->toplevel = toplevel;
-    wrapper->handle = wlr_foreign_toplevel_handle_v1_create(server->foreign_toplevel_manager);
+    wrapper->handle = wlr_foreign_toplevel_handle_v1_create(server->ftl.manager);
     wrapper->handle->data = wrapper;
     toplevel->foreign_toplevel = wrapper;
 
@@ -135,14 +128,14 @@ void foreign_toplevel_create(BiomeToplevel *toplevel) {
     foreign_toplevel_update_outputs(toplevel);
     foreign_toplevel_update_parent(toplevel);
 
-    if (server->ext_foreign_toplevel_list != nullptr) {
+    if (server->ftl.ext_list != nullptr) {
         wlr_ext_foreign_toplevel_handle_v1_state ext_state = {};
         const char *title = toplevel_title(toplevel);
         const char *app_id = toplevel_app_id(toplevel);
         ext_state.title = title != nullptr ? title : "";
         ext_state.app_id = app_id != nullptr ? app_id : "";
         wrapper->ext_handle =
-            wlr_ext_foreign_toplevel_handle_v1_create(server->ext_foreign_toplevel_list, &ext_state);
+            wlr_ext_foreign_toplevel_handle_v1_create(server->ftl.ext_list, &ext_state);
         wrapper->ext_handle->data = wrapper;
 
         wrapper->capture_scene = wlr_scene_create();

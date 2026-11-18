@@ -1,20 +1,8 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 //
-// wlr-foreign-toplevel-management-unstable-v1: exposes every open
-// BiomeToplevel to external clients (a taskbar like Forest's windowlist
-// plugin, or Waybar's wlr/taskbar module) for listing and basic control
-// (activate/maximize/minimize/close). One BiomeForeignToplevel wrapper per
-// BiomeToplevel, created/destroyed alongside it in toplevel_map/
-// toplevel_unmap (desktop/toplevel.cpp) - same create-once-per-visible-
-// lifetime shape as decoration_bridge.h's create_toplevel_decoration/
-// destroy_toplevel_decoration. State (maximized/minimized/activated) is
-// never tracked independently here - foreign_toplevel_sync_state() just
-// re-pushes BiomeToplevel's own flags (maximized/minimized/activated/
-// fullscreen), and wlroots itself dedups a no-op set against the handle's
-// current state, so callers don't need to guard against redundant calls
-// either. handle_request_fullscreen forwards straight to
-// set_toplevel_fullscreen (desktop/toplevel.h), same as
-// handle_request_maximize does for set_toplevel_maximized.
+// wlr-foreign-toplevel-management and ext-foreign-toplevel-list for taskbars,
+// one handle pair per mapped toplevel, plus per-window capture sources. State
+// is re-pushed from BiomeToplevel; wlroots drops no-op updates.
 
 #pragma once
 
@@ -22,8 +10,9 @@
 
 struct BiomeToplevel;
 
-// Creates the zwlr_foreign_toplevel_manager_v1 global.
+// Also creates the screen-capture globals.
 void foreign_toplevel_init(BiomeServer *server);
+void foreign_toplevel_finish(BiomeServer *server);
 
 // Creates this toplevel's handle and sends its initial title/app_id/output/
 // state. Called once from toplevel_map.
@@ -55,18 +44,8 @@ void foreign_toplevel_update_outputs(BiomeToplevel *toplevel);
 // the set_parent listeners.
 void foreign_toplevel_update_parent(BiomeToplevel *toplevel);
 
-// Finds the toplevel whose ext-foreign-toplevel-list-v1 identifier matches
-// (see BiomeServer::ext_foreign_toplevel_list's doc comment in
-// core/server.h) - used by ipc/workspace_bridge.cpp's
-// MoveToplevelToWorkspace to resolve the identifier a DBus caller passed
-// back to a real BiomeToplevel. Returns nullptr if no live toplevel has
-// that identifier (already closed, or a stale/malformed identifier).
+// The live toplevel with this ext-foreign-toplevel-list identifier, or null.
 BiomeToplevel *foreign_toplevel_find_by_identifier(BiomeServer *server, const char *identifier);
 
-// Returns this toplevel's ext-foreign-toplevel-list-v1 identifier, or
-// nullptr if it doesn't have one (no ext_foreign_toplevel_list global, or
-// wlroots hasn't assigned one yet). Used by ipc/workspace_bridge.cpp to key
-// its per-window workspace map by the same identifier Forest's windowlist
-// pairs against - see foreign_toplevel_find_by_identifier's doc comment
-// above for the reverse direction.
+// This toplevel's ext-foreign-toplevel-list identifier; null while unmapped.
 const char *foreign_toplevel_identifier(BiomeToplevel *toplevel);

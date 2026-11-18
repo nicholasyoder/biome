@@ -33,8 +33,7 @@ RenderedFrame render_widget(QWidget *widget, double scale);
 
 // A resolved window icon - square ARGB32-premultiplied pixel data at
 // whatever fixed size desktop/app_icon.h rasterizes to. size == 0 (pixels
-// empty) means no icon was found - callers show frame_widget.h's
-// fallback_icon() instead, rather than leaving a gap.
+// empty) means no icon was found; icon_from_image() substitutes a generic one.
 struct IconImage {
     int size = 0;
     std::vector<uint8_t> pixels;

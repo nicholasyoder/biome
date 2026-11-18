@@ -9,8 +9,9 @@
 
 #include "desktop/toplevel.h"
 
-// Creates the hidden panel scene nodes. Called once at startup.
+// Creates the hidden panel scene nodes.
 void window_menu_init(BiomeServer *server);
+void window_menu_finish(BiomeServer *server);
 
 // Opens the menu for toplevel with its top-left at (x, y) in layout
 // coordinates, flipping/clamping to stay on the output. anchor_height is the
@@ -23,7 +24,7 @@ void window_menu_open(BiomeToplevel *toplevel, int x, int y, int anchor_height =
 void window_menu_open_snap(BiomeToplevel *toplevel, int x, int y, int anchor_height, bool armed);
 
 void window_menu_close(BiomeServer *server);
-bool window_menu_active();
+bool window_menu_active(BiomeServer *server);
 
 // Must run before a toplevel is freed or leaves the active workspace.
 void window_menu_remove_toplevel(BiomeServer *server, BiomeToplevel *toplevel);

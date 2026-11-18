@@ -20,28 +20,34 @@ static void server_new_kde_decoration(wl_listener *listener, void *data);
 static void claim_pending_kde_decoration(BiomeServer *server, BiomeToplevel *toplevel, wlr_surface *surface);
 
 void xdg_shell_init(BiomeServer *server) {
+    server->xdg.server = server;
     wl_list_init(&server->toplevels);
     wl_list_init(&server->unmanaged);
-    wl_list_init(&server->pending_kde_decorations);
-    server->xdg_shell = wlr_xdg_shell_create(server->display, 6);
-    server->new_xdg_toplevel.notify = server_new_xdg_toplevel;
-    wl_signal_add(&server->xdg_shell->events.new_toplevel, &server->new_xdg_toplevel);
-    server->new_xdg_popup.notify = server_new_xdg_popup;
-    wl_signal_add(&server->xdg_shell->events.new_popup, &server->new_xdg_popup);
+    wl_list_init(&server->xdg.pending_kde_decorations);
+    server->xdg.shell = wlr_xdg_shell_create(server->display, 6);
+    server->xdg.new_toplevel.notify = server_new_xdg_toplevel;
+    wl_signal_add(&server->xdg.shell->events.new_toplevel, &server->xdg.new_toplevel);
+    server->xdg.new_popup.notify = server_new_xdg_popup;
+    wl_signal_add(&server->xdg.shell->events.new_popup, &server->xdg.new_popup);
 
-    server->xdg_decoration_manager = wlr_xdg_decoration_manager_v1_create(server->display);
-    server->new_xdg_toplevel_decoration.notify = server_new_xdg_toplevel_decoration;
-    wl_signal_add(&server->xdg_decoration_manager->events.new_toplevel_decoration,
-        &server->new_xdg_toplevel_decoration);
+    server->xdg.decoration_manager = wlr_xdg_decoration_manager_v1_create(server->display);
+    server->xdg.new_toplevel_decoration.notify = server_new_xdg_toplevel_decoration;
+    wl_signal_add(&server->xdg.decoration_manager->events.new_toplevel_decoration,
+        &server->xdg.new_toplevel_decoration);
 
-    // GTK3 clients (which never adopted xdg-decoration above) look for this
-    // older KDE protocol instead - see kde_decoration_manager's declaration
-    // in server.h.
-    server->kde_decoration_manager = wlr_server_decoration_manager_create(server->display);
+    // GTK3 only speaks this older KDE protocol.
+    server->xdg.kde_decoration_manager = wlr_server_decoration_manager_create(server->display);
     wlr_server_decoration_manager_set_default_mode(
-        server->kde_decoration_manager, WLR_SERVER_DECORATION_MANAGER_MODE_SERVER);
-    server->new_kde_decoration.notify = server_new_kde_decoration;
-    wl_signal_add(&server->kde_decoration_manager->events.new_decoration, &server->new_kde_decoration);
+        server->xdg.kde_decoration_manager, WLR_SERVER_DECORATION_MANAGER_MODE_SERVER);
+    server->xdg.new_kde_decoration.notify = server_new_kde_decoration;
+    wl_signal_add(&server->xdg.kde_decoration_manager->events.new_decoration, &server->xdg.new_kde_decoration);
+}
+
+void xdg_shell_finish(BiomeServer *server) {
+    wl_list_remove(&server->xdg.new_toplevel.link);
+    wl_list_remove(&server->xdg.new_popup.link);
+    wl_list_remove(&server->xdg.new_toplevel_decoration.link);
+    wl_list_remove(&server->xdg.new_kde_decoration.link);
 }
 
 static void xdg_toplevel_commit(wl_listener *listener, void *data) {
@@ -50,12 +56,8 @@ static void xdg_toplevel_commit(wl_listener *listener, void *data) {
 
     if (toplevel->xdg_toplevel->base->initial_commit) {
         if (toplevel->decoration != nullptr) {
-            // By now the client has already sent set_mode/unset_mode (both
-            // required to happen before its first surface.commit), so
-            // requested_mode already reflects its ask - see
-            // xdg_toplevel_decoration_request_mode for why acking couldn't
-            // happen there instead: this is the first point a configure is
-            // valid to send.
+            // set_mode/unset_mode precede the first commit, and this is the
+            // first point a configure may be sent.
             toplevel->xdg_client_side_decorated = toplevel->decoration->requested_mode ==
                 WLR_XDG_TOPLEVEL_DECORATION_V1_MODE_CLIENT_SIDE;
             wlr_xdg_toplevel_decoration_v1_set_mode(toplevel->decoration,
@@ -63,25 +65,10 @@ static void xdg_toplevel_commit(wl_listener *listener, void *data) {
                     ? WLR_XDG_TOPLEVEL_DECORATION_V1_MODE_CLIENT_SIDE
                     : WLR_XDG_TOPLEVEL_DECORATION_V1_MODE_SERVER_SIDE);
         } else if (toplevel->kde_decoration != nullptr) {
-            // apply_kde_decoration_mode already resolved xdg_client_side_decorated
-            // when this KDE object was created (server_new_kde_decoration runs
-            // before this commit for a pre-map object) and deferred the
-            // content_tree/render update to here, since it ran before
-            // base->initialized was set - nothing left to do.
+            // Resolved when the KDE object was created.
         } else {
-            // Neither protocol was ever negotiated. Per both protocols' specs,
-            // absence of a decoration object means client-side decorated - see
-            // toplevel_decorated's comment - not Biome's own frame. This is
-            // also the path libadwaita/GNOME HeaderBar apps hit (org.gnome.baobab
-            // confirmed live): GTK4's gdk_wayland_toplevel_set_decorated() has a
-            // bug where self->decorated is never initialized to GTK's documented
-            // TRUE default, so a HeaderBar window's desired value (TRUE &&
-            // !client_decorated == FALSE) equals that already-FALSE default and
-            // its `if (self->decorated == decorated) return;` guard silently
-            // no-ops the decoration request - it never reaches the compositor,
-            // so no decoration object of either kind ever gets created for
-            // these windows. Nothing Biome can do about the upstream bug, but
-            // this default now happens to produce the right result anyway.
+            // No decoration object means client-side per both protocols (and
+            // is what libadwaita HeaderBar windows do, via a GTK4 bug).
             toplevel->xdg_client_side_decorated = true;
             wlr_log(WLR_DEBUG, "xdg-decoration: app_id=%s created no decoration object -> client-side",
                 toplevel->xdg_toplevel->app_id ? toplevel->xdg_toplevel->app_id : "(null)");
@@ -100,18 +87,18 @@ static void xdg_toplevel_commit(wl_listener *listener, void *data) {
     // cursor.cpp's process_cursor_resize for why the eager position update
     // was removed for xdg-shell toplevels.
     BiomeServer *server = toplevel->server;
-    if (server->cursor_mode == BiomeCursorMode::Resize && server->grabbed_toplevel == toplevel &&
-            (server->resize_edges & (WLR_EDGE_LEFT | WLR_EDGE_TOP))) {
+    if (server->grab.mode == BiomeCursorMode::Resize && server->grab.toplevel == toplevel &&
+            (server->grab.resize_edges & (WLR_EDGE_LEFT | WLR_EDGE_TOP))) {
         wlr_box geo;
         toplevel_get_geometry(toplevel, &geo);
         int x = static_cast<int>(toplevel->scene_tree->node.x);
         int y = static_cast<int>(toplevel->scene_tree->node.y);
-        if (server->resize_edges & WLR_EDGE_LEFT) {
-            int content_right = server->grab_geobox.x + server->grab_geobox.width;
+        if (server->grab.resize_edges & WLR_EDGE_LEFT) {
+            int content_right = server->grab.geobox.x + server->grab.geobox.width;
             x = content_right - geo.width - geo.x - decoration_border_width(toplevel, toplevel->maximized);
         }
-        if (server->resize_edges & WLR_EDGE_TOP) {
-            int content_bottom = server->grab_geobox.y + server->grab_geobox.height;
+        if (server->grab.resize_edges & WLR_EDGE_TOP) {
+            int content_bottom = server->grab.geobox.y + server->grab.geobox.height;
             y = content_bottom - geo.height - geo.y - decoration_titlebar_height(toplevel, toplevel->maximized);
         }
         toplevel_set_position(toplevel, x, y);
@@ -273,7 +260,7 @@ static void xdg_toplevel_request_minimize(wl_listener *listener, void *data) {
 }
 
 static void server_new_xdg_toplevel(wl_listener *listener, void *data) {
-    BiomeServer *server = wl_container_of(listener, server, new_xdg_toplevel);
+    BiomeServer *server = biome_server_from(listener, BiomeXdgShell, new_toplevel);
     auto *xdg_toplevel = static_cast<wlr_xdg_toplevel *>(data);
 
     BiomeToplevel *toplevel = toplevel_create(server, BiomeToplevelType::Xdg);
@@ -345,8 +332,8 @@ static void xdg_popup_destroy(wl_listener *listener, void *data) {
     (void)data;
     BiomePopup *popup = wl_container_of(listener, popup, destroy);
 
-    if (popup->server->activated_unmapped_popup == popup->xdg_popup->base->surface) {
-        popup->server->activated_unmapped_popup = nullptr;
+    if (popup->server->activation.unmapped_popup == popup->xdg_popup->base->surface) {
+        popup->server->activation.unmapped_popup = nullptr;
     }
     wl_list_remove(&popup->map.link);
     wl_list_remove(&popup->unmap.link);
@@ -456,8 +443,8 @@ static void xdg_popup_map(wl_listener *listener, void *data) {
 
     // Only grabbing or xdg-activated popups take focus on map.
     wlr_surface *surface = popup->xdg_popup->base->surface;
-    const bool activated = server->activated_unmapped_popup == surface;
-    server->activated_unmapped_popup = nullptr;
+    const bool activated = server->activation.unmapped_popup == surface;
+    server->activation.unmapped_popup = nullptr;
     if (popup->xdg_popup->seat == nullptr && !activated) {
         return;
     }
@@ -510,7 +497,7 @@ static void xdg_popup_unmap(wl_listener *listener, void *data) {
 }
 
 static void server_new_xdg_popup(wl_listener *listener, void *data) {
-    BiomeServer *server = wl_container_of(listener, server, new_xdg_popup);
+    BiomeServer *server = biome_server_from(listener, BiomeXdgShell, new_popup);
     auto *xdg_popup = static_cast<wlr_xdg_popup *>(data);
 
     // A new grab while locked would capture the lock client's input; popup_done.
@@ -690,7 +677,7 @@ static void attach_kde_decoration(BiomeToplevel *toplevel, wlr_server_decoration
 // role yet - GTK routinely creates it that way (wl_surface ->
 // server_decoration -> get_xdg_surface -> get_toplevel), so
 // server_new_kde_decoration can't resolve a BiomeToplevel for it right away
-// (confirmed live: gtk4-image-tool). Stashed on server->pending_kde_decorations
+// (confirmed live: gtk4-image-tool). Stashed on server->xdg.pending_kde_decorations
 // and claimed by server_new_xdg_toplevel once a toplevel appears for the
 // same surface - see claim_pending_kde_decoration. Without this, such a
 // decoration object is silently dropped and the surface falls back to
@@ -713,7 +700,7 @@ static void pending_kde_decoration_destroy(wl_listener *listener, void *data) {
 // surface already has a KDE decoration object stashed above.
 static void claim_pending_kde_decoration(BiomeServer *server, BiomeToplevel *toplevel, wlr_surface *surface) {
     BiomePendingKdeDecoration *pending, *tmp;
-    wl_list_for_each_safe(pending, tmp, &server->pending_kde_decorations, link) {
+    wl_list_for_each_safe(pending, tmp, &server->xdg.pending_kde_decorations, link) {
         if (pending->decoration->surface == surface) {
             wlr_server_decoration *decoration = pending->decoration;
             wl_list_remove(&pending->link);
@@ -725,15 +712,10 @@ static void claim_pending_kde_decoration(BiomeServer *server, BiomeToplevel *top
     }
 }
 
-// The org_kde_kwin_server_decoration protocol GTK3 (and thus Firefox) uses
-// instead of xdg-decoration - see kde_decoration_manager's declaration in
-// server.h. Unlike xdg-decoration, this protocol has no compositor-side
-// override: wlroots auto-accepts whatever mode the client requests and
-// echoes it straight back (see wlr_server_decoration.c) - so honoring the
-// client's request here just means finally reading what it already decided,
-// there's no negotiation to perform.
+// KDE server-decoration (GTK3, Firefox). wlroots echoes back whatever mode
+// the client asks for, so this just reads its decision.
 static void server_new_kde_decoration(wl_listener *listener, void *data) {
-    BiomeServer *server = wl_container_of(listener, server, new_kde_decoration);
+    BiomeServer *server = biome_server_from(listener, BiomeXdgShell, new_kde_decoration);
     auto *decoration = static_cast<wlr_server_decoration *>(data);
     wlr_xdg_surface *xdg_surface = wlr_xdg_surface_try_from_wlr_surface(decoration->surface);
     BiomeToplevel *toplevel = (xdg_surface != nullptr && xdg_surface->toplevel != nullptr)
@@ -746,7 +728,7 @@ static void server_new_kde_decoration(wl_listener *listener, void *data) {
     // BiomePendingKdeDecoration.
     auto *pending = static_cast<BiomePendingKdeDecoration *>(calloc(1, sizeof(BiomePendingKdeDecoration)));
     pending->decoration = decoration;
-    wl_list_insert(&server->pending_kde_decorations, &pending->link);
+    wl_list_insert(&server->xdg.pending_kde_decorations, &pending->link);
     pending->destroy.notify = pending_kde_decoration_destroy;
     wl_signal_add(&decoration->events.destroy, &pending->destroy);
 }

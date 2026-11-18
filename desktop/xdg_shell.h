@@ -10,9 +10,9 @@
 
 #include "core/server.h"
 
-// Creates the xdg_shell, xdg_decoration_manager, and kde_decoration_manager
-// globals and wires their listeners.
+// xdg-shell plus both decoration protocols.
 void xdg_shell_init(BiomeServer *server);
+void xdg_shell_finish(BiomeServer *server);
 
 // Whether a clicked popup may take keyboard focus (core/cursor.cpp).
 bool popup_wants_keyboard_focus(wlr_xdg_popup *xdg_popup);

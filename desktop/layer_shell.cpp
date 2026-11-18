@@ -7,6 +7,7 @@
 #include "desktop/toplevel.h"
 #include "desktop/workspace.h"
 
+#include <algorithm>
 #include <cstring>
 
 // Namespace is the client's zwlr_layer_surface_v1 "namespace" argument
@@ -20,14 +21,18 @@ enum class FadeKind { None, Opacity, ScanoutSnapshot };
 static constexpr int kOpacityWarmupTicks = 1;
 static constexpr int kScanoutWarmupTicks = 2;
 
+static bool contains(const std::vector<std::string> &names, const char *name) {
+    return std::find(names.begin(), names.end(), name) != names.end();
+}
+
 static FadeKind layer_surface_fade_kind(const BiomeServer *server, const wlr_layer_surface_v1 *layer_surface) {
     if (layer_surface->namespace_ == nullptr) {
         return FadeKind::None;
     }
-    if (server->fade_config.fading_namespaces.count(layer_surface->namespace_) != 0) {
+    if (contains(server->layer.fade_config.fading_namespaces, layer_surface->namespace_)) {
         return FadeKind::Opacity;
     }
-    if (server->fade_config.scanout_fading_namespaces.count(layer_surface->namespace_) != 0) {
+    if (contains(server->layer.fade_config.scanout_fading_namespaces, layer_surface->namespace_)) {
         return FadeKind::ScanoutSnapshot;
     }
     return FadeKind::None;
@@ -114,7 +119,7 @@ void arrange_layers(BiomeOutput *output) {
     for (bool exclusive_pass : {true, false}) {
         for (uint32_t layer : kLayersMostToLeastPriority) {
             BiomeLayerSurface *wrapper;
-            wl_list_for_each(wrapper, &output->server->layer_surfaces, link) {
+            wl_list_for_each(wrapper, &output->server->layer.surfaces, link) {
                 if (wrapper->output != output || wrapper->layer_surface->current.layer != layer) {
                     continue;
                 }
@@ -161,7 +166,7 @@ wlr_surface *layer_shell_exclusive_focus(BiomeServer *server) {
     }
     wlr_layer_surface_v1 *best = nullptr;
     BiomeLayerSurface *wrapper;
-    wl_list_for_each(wrapper, &server->layer_surfaces, link) { // newest first
+    wl_list_for_each(wrapper, &server->layer.surfaces, link) { // newest first
         wlr_layer_surface_v1 *candidate = wrapper->layer_surface;
         if (!candidate->surface->mapped
                 || candidate->current.keyboard_interactive != ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_EXCLUSIVE
@@ -357,7 +362,7 @@ static void handle_layer_surface_unmap(wl_listener *listener, void *data) {
         fading->tree = holding_tree;
         fading->fade_from = fade_from;
         clock_gettime(CLOCK_MONOTONIC, &fading->fade_start);
-        wl_list_insert(&wrapper->server->fading_out_layer_surfaces, &fading->link);
+        wl_list_insert(&wrapper->server->layer.fading_out, &fading->link);
 
         wlr_output_schedule_frame(wrapper->output->wlr);
         break;
@@ -366,7 +371,7 @@ static void handle_layer_surface_unmap(wl_listener *listener, void *data) {
         // No reparenting needed here. scanout_fade may be null if
         // scanout_fade_create() failed at map time (a no-op on null).
         scanout_fade_start_fade_out(wrapper->scanout_fade);
-        // Now owned solely by scanout_fading_surfaces; may be freed before `wrapper`.
+        // Now owned solely by server->layer.scanout_fading; may be freed before `wrapper`.
         wrapper->scanout_fade = nullptr;
         break;
     case FadeKind::None:
@@ -403,7 +408,7 @@ void layer_shell_close_output_surfaces(BiomeOutput *output) {
     // Before the surfaces below: their unmap would otherwise start a fade-out
     // here, and the fade's scene_buffer lives in this output's layer trees.
     BiomeScanoutFade *fade, *fade_tmp;
-    wl_list_for_each_safe(fade, fade_tmp, &output->server->scanout_fading_surfaces, link) {
+    wl_list_for_each_safe(fade, fade_tmp, &output->server->layer.scanout_fading, link) {
         if (fade->output == output) {
             scanout_fade_destroy(fade);
         }
@@ -412,7 +417,7 @@ void layer_shell_close_output_surfaces(BiomeOutput *output) {
     // Fires handle_layer_surface_destroy() synchronously (unmap first if
     // mapped), which frees the wrapper.
     BiomeLayerSurface *wrapper, *tmp;
-    wl_list_for_each_safe(wrapper, tmp, &output->server->layer_surfaces, link) {
+    wl_list_for_each_safe(wrapper, tmp, &output->server->layer.surfaces, link) {
         if (wrapper->output == output) {
             wlr_layer_surface_v1_destroy(wrapper->layer_surface);
         }
@@ -421,7 +426,7 @@ void layer_shell_close_output_surfaces(BiomeOutput *output) {
     // Fade-outs started by the unmaps above (or in flight); a disabled output
     // stops ticking, so they would never finish.
     BiomeFadingOutSurface *fading, *fading_tmp;
-    wl_list_for_each_safe(fading, fading_tmp, &output->server->fading_out_layer_surfaces, link) {
+    wl_list_for_each_safe(fading, fading_tmp, &output->server->layer.fading_out, link) {
         if (fading->output == output) {
             wlr_scene_node_destroy(&fading->tree->node);
             wl_list_remove(&fading->link);
@@ -467,7 +472,7 @@ static void handle_layer_surface_new_popup(wl_listener *listener, void *data) {
 }
 
 static void handle_new_layer_surface(wl_listener *listener, void *data) {
-    BiomeServer *server = wl_container_of(listener, server, new_layer_surface);
+    BiomeServer *server = biome_server_from(listener, BiomeLayerShell, new_surface);
     auto *layer_surface = static_cast<wlr_layer_surface_v1 *>(data);
 
     BiomeOutput *output = nullptr;
@@ -502,7 +507,7 @@ static void handle_new_layer_surface(wl_listener *listener, void *data) {
         output_layer_tree(output, layer_surface->current.layer), layer_surface);
     layer_surface->data = wrapper;
 
-    wl_list_insert(&server->layer_surfaces, &wrapper->link);
+    wl_list_insert(&server->layer.surfaces, &wrapper->link);
 
     wrapper->commit.notify = handle_layer_surface_commit;
     wl_signal_add(&layer_surface->surface->events.commit, &wrapper->commit);
@@ -534,7 +539,7 @@ bool update_layer_surface_fades(BiomeOutput *output) {
     }
 
     BiomeLayerSurface *wrapper;
-    wl_list_for_each(wrapper, &server->layer_surfaces, link) {
+    wl_list_for_each(wrapper, &server->layer.surfaces, link) {
         if (wrapper->output != output || !wrapper->fading_in) {
             continue;
         }
@@ -555,7 +560,7 @@ bool update_layer_surface_fades(BiomeOutput *output) {
     }
 
     BiomeFadingOutSurface *fading, *tmp;
-    wl_list_for_each_safe(fading, tmp, &server->fading_out_layer_surfaces, link) {
+    wl_list_for_each_safe(fading, tmp, &server->layer.fading_out, link) {
         if (fading->output != output) {
             continue;
         }
@@ -571,7 +576,7 @@ bool update_layer_surface_fades(BiomeOutput *output) {
     }
 
     BiomeScanoutFade *scanout_fade, *scanout_tmp;
-    wl_list_for_each_safe(scanout_fade, scanout_tmp, &server->scanout_fading_surfaces, link) {
+    wl_list_for_each_safe(scanout_fade, scanout_tmp, &server->layer.scanout_fading, link) {
         if (scanout_fade->output != output) {
             continue;
         }
@@ -606,11 +611,16 @@ bool update_layer_surface_fades(BiomeOutput *output) {
 }
 
 void layer_shell_init(BiomeServer *server) {
-    wl_list_init(&server->layer_surfaces);
-    wl_list_init(&server->fading_out_layer_surfaces);
-    wl_list_init(&server->scanout_fading_surfaces);
-    server->fade_config = load_fade_config();
-    server->layer_shell = wlr_layer_shell_v1_create(server->display, 4);
-    server->new_layer_surface.notify = handle_new_layer_surface;
-    wl_signal_add(&server->layer_shell->events.new_surface, &server->new_layer_surface);
+    server->layer.server = server;
+    wl_list_init(&server->layer.surfaces);
+    wl_list_init(&server->layer.fading_out);
+    wl_list_init(&server->layer.scanout_fading);
+    server->layer.fade_config = load_fade_config();
+    server->layer.shell = wlr_layer_shell_v1_create(server->display, 4);
+    server->layer.new_surface.notify = handle_new_layer_surface;
+    wl_signal_add(&server->layer.shell->events.new_surface, &server->layer.new_surface);
+}
+
+void layer_shell_finish(BiomeServer *server) {
+    wl_list_remove(&server->layer.new_surface.link);
 }

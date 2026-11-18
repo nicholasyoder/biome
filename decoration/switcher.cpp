@@ -2,7 +2,7 @@
 
 #include "switcher.h"
 
-#include "frame_widget.h" // IconButton, repolish_tree, show_offscreen, flush_layouts, fallback_icon
+#include "frame_widget.h" // IconButton, repolish_tree, show_offscreen, flush_layouts, icon_from_image
 
 #include <QFontMetrics>
 #include <QFrame>
@@ -96,15 +96,7 @@ void SwitcherPanel::setEntries(const std::vector<SwitcherEntry> &entries, int se
         icon->setProperty("selected", static_cast<int>(i) == selected_index);
         icon->setProperty("urgent", entries[i].urgent);
 
-        const IconImage &icon_image = entries[i].icon;
-        bool has_icon = icon_image.size > 0 && !icon_image.pixels.empty();
-        if (has_icon) {
-            QImage image(icon_image.pixels.data(), icon_image.size, icon_image.size,
-                QImage::Format_ARGB32_Premultiplied);
-            icon->setIcon(QIcon(QPixmap::fromImage(image)));
-        } else {
-            icon->setIcon(fallback_icon());
-        }
+        icon->setIcon(icon_from_image(entries[i].icon));
         icon->setVisible(true);
     }
 

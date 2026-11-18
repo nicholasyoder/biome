@@ -20,3 +20,26 @@ std::vector<int> layout_components(const std::vector<wlr_box> &boxes);
 // component; boxes[anchor]'s component never moves. Returns false if some component can't
 // be attached without overlapping another box; `boxes` then holds the partial result.
 bool close_layout_gaps(std::vector<wlr_box> &boxes, size_t anchor);
+
+// Layout size of a mode under a transform and scale; truncates like
+// wlr_output_effective_resolution.
+wlr_box effective_layout_box(int x, int y, int width, int height, int transform, float scale);
+
+// One enabled output as output_relayout() sees it.
+struct RelayoutOutput {
+    bool has_position = false; // configured position
+    int x = 0, y = 0;
+    unsigned generation = 0;
+    bool auto_configured = false; // current layout state
+    int cur_x = 0, cur_y = 0;
+};
+
+enum class RelayoutAction { Keep, AutoPlace, Place };
+
+struct RelayoutStep {
+    RelayoutAction action = RelayoutAction::Keep;
+    bool manual = false; // takes part in gap closing
+};
+
+// Configured positions older than the newest live apply are auto-placed.
+std::vector<RelayoutStep> plan_relayout(const std::vector<RelayoutOutput> &outputs);

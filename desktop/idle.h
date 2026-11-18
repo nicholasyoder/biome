@@ -9,6 +9,7 @@
 
 // Creates both globals.
 void idle_init(BiomeServer *server);
+void idle_finish(BiomeServer *server);
 
 // Call from every keyboard/pointer input handler.
 void idle_notify_activity(BiomeServer *server);

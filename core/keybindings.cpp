@@ -15,41 +15,11 @@
 
 namespace {
 
-// 0 for a non-modifier keysym; otherwise the single kMatchableModifierMask
-// bit that keysym corresponds to.
-uint32_t modifier_bit_for_keysym(xkb_keysym_t sym) {
-    switch (sym) {
-    case XKB_KEY_Shift_L:
-    case XKB_KEY_Shift_R:
-        return WLR_MODIFIER_SHIFT;
-    case XKB_KEY_Control_L:
-    case XKB_KEY_Control_R:
-        return WLR_MODIFIER_CTRL;
-    case XKB_KEY_Alt_L:
-    case XKB_KEY_Alt_R:
-        return WLR_MODIFIER_ALT;
-    case XKB_KEY_Super_L:
-    case XKB_KEY_Super_R:
-        return WLR_MODIFIER_LOGO;
-    default:
-        return 0;
-    }
-}
-
-bool is_modifier_keysym(xkb_keysym_t sym) {
-    return modifier_bit_for_keysym(sym) != 0;
-}
-
 struct PortalBinding {
     QString owner;
     BiomeKeybinding binding;
     std::function<void()> release;
 };
-
-std::vector<PortalBinding> &portal_bindings() {
-    static std::vector<PortalBinding> bindings;
-    return bindings;
-}
 
 // A key currently held down that triggered a portal binding. `release` is
 // cleared if the session ends mid-hold; the entry stays so the release is
@@ -61,10 +31,24 @@ struct HeldBinding {
     std::function<void()> release;
 };
 
-std::vector<HeldBinding> &held_bindings() {
-    static std::vector<HeldBinding> held;
-    return held;
+} // namespace
+
+struct BiomeKeys {
+    std::vector<PortalBinding> portal;
+    std::vector<HeldBinding> held; // portal-bound keys still down
+    ModifierTap tap;
+};
+
+void keybindings_init(BiomeServer *server) {
+    server->keys = new BiomeKeys;
 }
+
+void keybindings_finish(BiomeServer *server) {
+    delete server->keys;
+    server->keys = nullptr;
+}
+
+namespace {
 
 // Alt-Tab/Alt-Shift-Tab. Not a builtin_keybindings() entry: it spans a whole
 // Alt-hold, and xkb turns Shift+Tab into ISO_Left_Tab, which the table's exact
@@ -186,12 +170,12 @@ bool handle_key_press(BiomeServer *server, wlr_keyboard *keyboard, uint32_t keyc
         }
     }
 
-    for (const PortalBinding &entry : portal_bindings()) {
+    for (const PortalBinding &entry : server->keys->portal) {
         if (trigger_matches(entry.binding.trigger, sym, level0, modifiers)) {
             if (!entry.binding.invoke(server, modifiers)) {
                 return false;
             }
-            held_bindings().push_back(HeldBinding{keyboard, keycode, entry.owner, entry.release});
+            server->keys->held.push_back(HeldBinding{keyboard, keycode, entry.owner, entry.release});
             return true;
         }
     }
@@ -199,9 +183,9 @@ bool handle_key_press(BiomeServer *server, wlr_keyboard *keyboard, uint32_t keyc
     return false;
 }
 
-bool handle_key_release(wlr_keyboard *keyboard, uint32_t keycode) {
+bool handle_key_release(BiomeServer *server, wlr_keyboard *keyboard, uint32_t keycode) {
     std::vector<HeldBinding> released;
-    std::vector<HeldBinding> &held = held_bindings();
+    std::vector<HeldBinding> &held = server->keys->held;
     for (auto it = held.begin(); it != held.end();) {
         if (it->keyboard == keyboard && it->keycode == keycode) {
             released.push_back(std::move(*it));
@@ -220,66 +204,16 @@ bool handle_key_release(wlr_keyboard *keyboard, uint32_t keycode) {
 
 bool handle_modifier_tap(BiomeServer *server, xkb_keysym_t sym, uint32_t modifiers, bool pressed,
         bool consumed) {
-    // Same lockout as handle_key_press() - no keybinding of any kind fires
-    // while the lock surface needs real keystrokes.
+    // No keybinding fires while the lock surface needs real keystrokes.
     if (server->session_locked) {
         return false;
     }
-
-    // wlr_keyboard_notify_key() emits events.key BEFORE applying that same
-    // event to its own xkb_state (types/wlr_keyboard.c) - so `modifiers`
-    // here is always one event behind for the key currently being
-    // processed. That's invisible for ordinary combos (a modifier key's
-    // own press already landed in xkb_state by the time some *later* key's
-    // event arrives), but fatal for a bare-tap trigger, which only ever
-    // looks at the modifier key's own press/release events. Patch in that
-    // key's own bit by hand rather than trusting `modifiers` for it.
-    const uint32_t ownBit = modifier_bit_for_keysym(sym);
-    uint32_t mods = modifiers & kMatchableModifierMask;
-    if (ownBit != 0) {
-        mods = pressed ? (mods | ownBit) : (mods & ~ownBit);
+    const ModifierTap::Result step = server->keys->tap.step(sym, modifiers, pressed, consumed);
+    if (step.fire == 0) {
+        return step.swallow;
     }
-
-    if (pressed) {
-        if (is_modifier_keysym(sym) && mods != 0 && (mods & (mods - 1)) == 0) {
-            // Exactly one matchable modifier held, and this press is that
-            // modifier's own key going down - (re)arm a fresh candidate.
-            server->modifier_tap_candidate = mods;
-            server->modifier_tap_interrupted = false;
-            server->modifier_tap_forwarded = false;
-        } else if (server->modifier_tap_candidate != 0) {
-            // Some other key (or a second modifier) went down mid-hold -
-            // this is now a combo, not a bare tap.
-            server->modifier_tap_interrupted = true;
-            server->modifier_tap_forwarded |= !consumed;
-        }
-        return false;
-    }
-
-    if (!is_modifier_keysym(sym)) {
-        return false;
-    }
-
-    const uint32_t candidate = server->modifier_tap_candidate;
-    const bool interrupted = server->modifier_tap_interrupted;
-    const bool forwarded = server->modifier_tap_forwarded;
-    const bool fire = candidate != 0 && !interrupted && mods == 0;
-    if (mods == 0) {
-        // The last held matchable modifier just came up - the candidate
-        // hold is over either way, fired or not.
-        server->modifier_tap_candidate = 0;
-        server->modifier_tap_interrupted = false;
-        server->modifier_tap_forwarded = false;
-    }
-    if (!fire) {
-        // Every interrupting key was swallowed by Biome (e.g. Alt+Tab), so
-        // the client saw only this modifier's press: swallow the release too,
-        // or Qt/GTK read a standalone tap (e.g. menu-bar activation). If any
-        // key reached the client (e.g. Ctrl+C), forward it to keep press/release balanced.
-        return candidate != 0 && interrupted && !forwarded && mods == 0;
-    }
-
-    for (const PortalBinding &entry : portal_bindings()) {
+    const uint32_t candidate = step.fire;
+    for (const PortalBinding &entry : server->keys->portal) {
         if (entry.binding.trigger.keysym == XKB_KEY_NoSymbol && entry.binding.trigger.modmask == candidate) {
             if (!entry.binding.invoke(server, modifiers)) {
                 return false;
@@ -297,9 +231,9 @@ bool handle_switcher_key_release(BiomeServer *server, xkb_keysym_t sym) {
     return server->switcher.active && (sym == XKB_KEY_Tab || sym == XKB_KEY_ISO_Left_Tab);
 }
 
-void release_keyboard_bindings(wlr_keyboard *keyboard) {
+void release_keyboard_bindings(BiomeServer *server, wlr_keyboard *keyboard) {
     std::vector<HeldBinding> released;
-    std::vector<HeldBinding> &held = held_bindings();
+    std::vector<HeldBinding> &held = server->keys->held;
     for (auto it = held.begin(); it != held.end();) {
         if (it->keyboard == keyboard) {
             released.push_back(std::move(*it));
@@ -315,14 +249,14 @@ void release_keyboard_bindings(wlr_keyboard *keyboard) {
     }
 }
 
-void add_portal_keybinding(const QString &owner, ParsedTrigger trigger,
+void add_portal_keybinding(BiomeServer *server, const QString &owner, ParsedTrigger trigger,
         std::function<bool(BiomeServer *, uint32_t)> invoke, std::function<void()> release) {
-    portal_bindings().push_back(
+    server->keys->portal.push_back(
         PortalBinding{owner, BiomeKeybinding{trigger, std::move(invoke)}, std::move(release)});
 }
 
-void remove_session_keybindings(const QString &owner) {
-    for (HeldBinding &entry : held_bindings()) {
+void remove_session_keybindings(BiomeServer *server, const QString &owner) {
+    for (HeldBinding &entry : server->keys->held) {
         if (entry.owner == owner && entry.release) {
             std::function<void()> release = std::move(entry.release);
             entry.release = nullptr;
@@ -330,14 +264,14 @@ void remove_session_keybindings(const QString &owner) {
         }
     }
 
-    std::vector<PortalBinding> &bindings = portal_bindings();
+    std::vector<PortalBinding> &bindings = server->keys->portal;
     bindings.erase(
         std::remove_if(bindings.begin(), bindings.end(),
             [&owner](const PortalBinding &entry) { return entry.owner == owner; }),
         bindings.end());
 }
 
-bool trigger_in_use(const ParsedTrigger &trigger) {
+bool trigger_in_use(BiomeServer *server, const ParsedTrigger &trigger) {
     const auto same = [&](const ParsedTrigger &other) {
         return other.keysym == trigger.keysym
             && (other.modmask & kMatchableModifierMask) == (trigger.modmask & kMatchableModifierMask);
@@ -347,7 +281,7 @@ bool trigger_in_use(const ParsedTrigger &trigger) {
             return true;
         }
     }
-    for (const PortalBinding &entry : portal_bindings()) {
+    for (const PortalBinding &entry : server->keys->portal) {
         if (same(entry.binding.trigger)) {
             return true;
         }

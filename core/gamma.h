@@ -9,3 +9,4 @@
 
 // Creates the manager global.
 void gamma_init(BiomeServer *server);
+void gamma_finish(BiomeServer *server);

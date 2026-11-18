@@ -306,7 +306,7 @@ BiomeScanoutFade *scanout_fade_create(BiomeLayerSurface *wrapper) {
 
     fade->phase = ScanoutFadePhase::In;
     fade->fade_from = 0.0f;
-    wl_list_insert(&server->scanout_fading_surfaces, &fade->link);
+    wl_list_insert(&server->layer.scanout_fading, &fade->link);
 
     // Render tick 0 synchronously so the node is never briefly empty - this
     // pays the first wlr_swapchain_acquire()'s real allocation cost up

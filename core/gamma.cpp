@@ -23,7 +23,12 @@ void handle_set_gamma(wl_listener *, void *data) {
 } // namespace
 
 void gamma_init(BiomeServer *server) {
-    server->gamma_manager = wlr_gamma_control_manager_v1_create(server->display);
-    server->gamma_set_gamma.notify = handle_set_gamma;
-    wl_signal_add(&server->gamma_manager->events.set_gamma, &server->gamma_set_gamma);
+    server->gamma.server = server;
+    server->gamma.manager = wlr_gamma_control_manager_v1_create(server->display);
+    server->gamma.set_gamma.notify = handle_set_gamma;
+    wl_signal_add(&server->gamma.manager->events.set_gamma, &server->gamma.set_gamma);
+}
+
+void gamma_finish(BiomeServer *server) {
+    wl_list_remove(&server->gamma.set_gamma.link);
 }

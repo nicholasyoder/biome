@@ -2,6 +2,8 @@
 
 #include "core/output_power.h"
 
+#include <algorithm>
+
 #include "core/output.h"
 #include "desktop/session_lock.h"
 
@@ -64,7 +66,7 @@ void set_power(BiomeOutput *output, bool on) {
 }
 
 void handle_set_mode(wl_listener *listener, void *data) {
-    BiomeServer *server = wl_container_of(listener, server, output_power_set_mode);
+    BiomeServer *server = biome_server_from(listener, BiomeOutputPower, set_mode);
     auto *event = static_cast<wlr_output_power_v1_set_mode_event *>(data);
     BiomeOutput *output = biome_output_from_wlr(server, event->output);
     if (event->mode == ZWLR_OUTPUT_POWER_V1_MODE_ON) {
@@ -79,9 +81,14 @@ void handle_set_mode(wl_listener *listener, void *data) {
 } // namespace
 
 void output_power_init(BiomeServer *server) {
-    server->output_power_manager = wlr_output_power_manager_v1_create(server->display);
-    server->output_power_set_mode.notify = handle_set_mode;
-    wl_signal_add(&server->output_power_manager->events.set_mode, &server->output_power_set_mode);
+    server->output_power.server = server;
+    server->output_power.manager = wlr_output_power_manager_v1_create(server->display);
+    server->output_power.set_mode.notify = handle_set_mode;
+    wl_signal_add(&server->output_power.manager->events.set_mode, &server->output_power.set_mode);
+}
+
+void output_power_finish(BiomeServer *server) {
+    wl_list_remove(&server->output_power.set_mode.link);
 }
 
 void output_power_wake_all(BiomeServer *server) {
@@ -97,7 +104,7 @@ void output_power_wake_all(BiomeServer *server) {
 void output_power_handle_output_destroy(BiomeOutput *output) {
     cancel_retry(output);
     if (output->powered_off && output->wlr->name != nullptr) {
-        output->server->unplugged_while_off.insert(output->wlr->name);
+        output->server->output_power.unplugged_while_off.emplace_back(output->wlr->name);
     }
 }
 
@@ -105,9 +112,15 @@ bool output_power_reconnected_off(BiomeServer *server, const char *name) {
     if (name == nullptr) {
         return false;
     }
-    return server->unplugged_while_off.erase(name) > 0;
+    std::vector<std::string> &off = server->output_power.unplugged_while_off;
+    auto it = std::find(off.begin(), off.end(), name);
+    if (it == off.end()) {
+        return false;
+    }
+    off.erase(it);
+    return true;
 }
 
 void output_power_forget_unplugged(BiomeServer *server) {
-    server->unplugged_while_off.clear();
+    server->output_power.unplugged_while_off.clear();
 }

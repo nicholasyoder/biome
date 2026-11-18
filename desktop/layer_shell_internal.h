@@ -1,9 +1,6 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 //
-// Private to layer_shell.cpp/layer_shell_fade.cpp: the structs and helpers
-// both files need. Not part of layer_shell.h's public API - core/output.cpp
-// and other external callers only ever need the handful of functions that
-// header declares.
+// Shared by layer_shell.cpp and layer_shell_fade.cpp only.
 
 #pragma once
 
@@ -12,10 +9,7 @@
 #include <algorithm>
 #include <ctime>
 
-// Per-wlr_layer_surface_v1 bookkeeping - not exposed outside this file.
-// Kept on BiomeServer::layer_surfaces (all outputs together, not split into
-// per-output/per-layer lists) since arrange_layers() below just filters by
-// output+layer and the expected surface count is small.
+// On server->layer.surfaces (all outputs; arrange_layers() filters).
 struct BiomeLayerSurface {
     wl_list link = {};
     BiomeServer *server = nullptr;
@@ -34,9 +28,7 @@ struct BiomeLayerSurface {
     bool fading_in = false;
     timespec fade_start = {};
 
-    // Set only for the ScanoutSnapshot fade kind, cleared when fade-out
-    // starts. Lives independently on BiomeServer::scanout_fading_surfaces
-    // since it must outlive this wrapper across unmap -> destroy.
+    // ScanoutSnapshot kind only; outlives this wrapper (server->layer.scanout_fading).
     struct BiomeScanoutFade *scanout_fade = nullptr;
 };
 
@@ -45,58 +37,32 @@ struct BiomeLayerSurface {
 // `tree` is an orphaned holding tree owned solely by this struct, freed once
 // the fade-out finishes.
 struct BiomeFadingOutSurface {
-    wl_list link = {}; // BiomeServer::fading_out_layer_surfaces
+    wl_list link = {}; // server->layer.fading_out
     BiomeOutput *output = nullptr;
     wlr_scene_tree *tree = nullptr;
     timespec fade_start = {};
     float fade_from = 1.0f; // starting opacity - see handle_layer_surface_unmap
 };
 
-// The second fade mechanism (FadeKind::ScanoutSnapshot in layer_shell.cpp):
-// bakes the fade into an opaque buffer's own pixels each tick and presents it
-// at opacity 1.0, instead of animating opacity on the client's own
-// translucent content. Necessary because wlr_scene's direct-scanout path
-// requires the render list to collapse to one entry, and any node with
-// opacity != 1 blocks that (scene_node_opaque_region()) - so an opaque
-// buffer is the only way to make a fading surface scanout-eligible. See
-// scanout_fade_create()/scanout_fade_render_tick() (layer_shell_fade.cpp)
-// for the mechanics.
-//
-// Lives independently of BiomeLayerSurface, on
-// BiomeServer::scanout_fading_surfaces, for the same reason
-// BiomeFadingOutSurface does: it must outlive the wrapper across unmap ->
-// destroy. Unlike BiomeFadingOutSurface, no reparenting is needed -
-// scene_buffer is a *sibling* of scene_layer_surface->tree, never a child,
-// so wlroots' teardown of that tree never touches it.
+// FadeKind::ScanoutSnapshot: bakes each fade step into an opaque buffer,
+// since any opacity != 1 node blocks direct scanout. Outlives its
+// BiomeLayerSurface; scene_buffer is a sibling of the surface's tree, so
+// wlroots' teardown of that tree never touches it.
 enum class ScanoutFadePhase { In, Out };
 
 struct BiomeScanoutFade {
-    wl_list link = {}; // BiomeServer::scanout_fading_surfaces
+    wl_list link = {}; // server->layer.scanout_fading
     BiomeOutput *output = nullptr;
-    // Non-null only while the owning BiomeLayerSurface is mapped; nulled by
-    // scanout_fade_start_fade_out() when fade-out begins (see
-    // frozen_client_texture for why fade-out can't just keep reading it).
+    // Null once fade-out begins.
     BiomeLayerSurface *wrapper = nullptr;
 
-    // Compositor-owned scene node - sibling of (never child of)
-    // scene_layer_surface->tree, same parent, positioned to match it. Its
-    // buffer is replaced every render tick via wlr_scene_buffer_set_buffer().
+    // Replaced every tick.
     wlr_scene_buffer *scene_buffer = nullptr;
-    // The pre-overlay desktop. Captured at map time for the fade-in, and
-    // re-captured fresh in scanout_fade_start_fade_out() right as fade-out
-    // begins - a surface like forest-startup's cover maps before anything
-    // meaningful is behind it and only reveals the real desktop once other
-    // clients have mapped in the meantime, so reusing the map-time capture
-    // for fade-out would reveal a stale, mostly-empty frame instead. For a
-    // logout dim (background already static for the surface's whole
-    // lifetime) the re-capture is a no-op in practice - same image either
-    // way.
+    // The desktop behind it, captured at map and again when fade-out starts
+    // (forest-startup's cover maps before the desktop exists).
     wlr_texture *snapshot_texture = nullptr;
-    // A frozen copy of the client's content, captured right as fade-out
-    // begins, used instead of a live wlr_surface_get_texture() lookup.
-    // Necessary: wlroots tears down a closing client's surface almost
-    // immediately after unmap, so a live lookup would lose the content on
-    // fade-out's first tick. Null during fade-in.
+    // The client's content frozen when fade-out starts (its surface goes
+    // right after unmap). Null during fade-in.
     wlr_texture *frozen_client_texture = nullptr;
     // Per-instance pool of opaque (DRM_FORMAT_XRGB8888) buffers each tick's
     // blend renders into - opaque so wlr_buffer_is_opaque() (format-derived,

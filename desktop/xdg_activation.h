@@ -10,6 +10,7 @@
 #include <string>
 
 void xdg_activation_init(BiomeServer *server);
+void xdg_activation_finish(BiomeServer *server);
 
 // Call for every button/key press. recipient is the client it went to, or
 // null for Biome itself (consumed hotkeys, clicks on nothing).

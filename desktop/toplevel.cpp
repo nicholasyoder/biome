@@ -6,6 +6,7 @@
 #include "core/output.h"
 #include "desktop/app_icon.h"
 #include "desktop/decoration_bridge.h"
+#include "desktop/qt_buffer.h"
 #include "desktop/ext_workspace.h"
 #include "desktop/foreign_toplevel.h"
 #include "decoration/switcher_highlight.h"
@@ -55,12 +56,12 @@ void toplevel_get_frame_box(BiomeToplevel *toplevel, wlr_box *box) {
 }
 
 bool toplevel_is_splash(const BiomeToplevel *toplevel) {
-    if (toplevel->type != BiomeToplevelType::Xwayland || !toplevel->server->ewmh_ready) {
+    if (toplevel->type != BiomeToplevelType::Xwayland || !toplevel->server->xwayland.ewmh_ready) {
         return false;
     }
     const wlr_xwayland_surface *xsurface = toplevel->xwayland_surface;
     for (size_t i = 0; i < xsurface->window_type_len; i++) {
-        if (xsurface->window_type[i] == toplevel->server->ewmh._NET_WM_WINDOW_TYPE_SPLASH) {
+        if (xsurface->window_type[i] == toplevel->server->xwayland.ewmh._NET_WM_WINDOW_TYPE_SPLASH) {
             return true;
         }
     }
@@ -251,21 +252,10 @@ void focus_toplevel(BiomeToplevel *toplevel) {
         return;
     }
     BiomeServer *server = toplevel->server;
-    // While the session is locked, no normal toplevel may take keyboard
-    // focus from the lock surfaces - this is the one choke point both
-    // click-to-focus and auto-focus-on-map go through, so gating it here is
-    // enough (see desktop/session_lock.h). Doesn't need to also guard
-    // against raising the scene node above the lock anymore: toplevel->
-    // scene_tree's parent is always one of the fixed server->layers trees
-    // (layers.toplevels normally, layers.fullscreen while fullscreen - see
-    // set_toplevel_fullscreen), both structurally below
-    // server->layers.session_lock regardless of sibling order within them.
+    // The chokepoint for click- and map-focus; the lock surfaces keep focus.
     if (server->session_locked) {
         return;
     }
-    // Always the toplevel's own canonical role surface, never whatever
-    // surface a caller's hit-test happened to land on - see this function's
-    // doc comment in desktop/toplevel.h for why that distinction matters.
     wlr_surface *surface = toplevel_surface(toplevel);
     wlr_seat *seat = server->seat;
     wlr_surface *prev_surface = seat->keyboard_state.focused_surface;
@@ -751,8 +741,6 @@ static SnapZone snap_zone_at_point(BiomeServer *server, double lx, double ly) {
     return SnapZone::None;
 }
 
-static wlr_output *g_snap_output = nullptr; // output the active/pending zone is on
-
 static void snap_preview_show(BiomeServer *server, SnapZone zone, double lx, double ly) {
     wlr_output *output = wlr_output_layout_output_at(server->output_layout, lx, ly);
     if (output == nullptr) { // pointer left every output while dwelling
@@ -763,43 +751,40 @@ static void snap_preview_show(BiomeServer *server, SnapZone zone, double lx, dou
         return;
     }
     wlr_box box = snap_frame_box(area, zone);
-    g_snap_output = output;
-    if (server->snap_preview == nullptr) {
-        server->snap_preview = wlr_scene_buffer_create(server->layers.above, nullptr);
+    server->snap.output = output;
+    if (server->snap.preview == nullptr) {
+        server->snap.preview = wlr_scene_buffer_create(server->layers.above, nullptr);
     }
     // Shares the Alt-Tab highlight's widget and theme rule.
-    if (!set_decoration_buffer(server->snap_preview,
-            biome_decoration::render_switcher_highlight(box.width, box.height, output->scale))) {
-        return;
+    if (osd_node_show(server->snap.preview,
+            biome_decoration::render_switcher_highlight(box.width, box.height, output->scale), box.x, box.y)) {
+        server->snap.preview_zone = zone;
     }
-    server->snap_preview_zone = zone;
-    wlr_scene_node_set_position(&server->snap_preview->node, box.x, box.y);
-    wlr_scene_node_set_enabled(&server->snap_preview->node, true);
-    wlr_scene_node_raise_to_top(&server->snap_preview->node);
 }
-
-// Dwell tracking: a zone only activates after the pointer rests in it.
-static wl_event_source *g_snap_timer = nullptr;
-static SnapZone g_snap_pending = SnapZone::None;
-static double g_snap_anchor_x = 0, g_snap_anchor_y = 0;
-static double g_snap_pending_x = 0, g_snap_pending_y = 0;
 
 static int snap_dwell_fired(void *data) {
     auto *server = static_cast<BiomeServer *>(data);
-    if (g_snap_pending != SnapZone::None) {
-        snap_preview_show(server, g_snap_pending, g_snap_pending_x, g_snap_pending_y);
+    if (server->snap.pending != SnapZone::None) {
+        snap_preview_show(server, server->snap.pending, server->snap.pending_x, server->snap.pending_y);
     }
     return 0;
 }
 
-void snap_preview_hide(BiomeServer *server) {
-    g_snap_pending = SnapZone::None;
-    if (g_snap_timer != nullptr) {
-        wl_event_source_timer_update(g_snap_timer, 0);
+void snap_finish(BiomeServer *server) {
+    if (server->snap.dwell_timer != nullptr) {
+        wl_event_source_remove(server->snap.dwell_timer);
+        server->snap.dwell_timer = nullptr;
     }
-    server->snap_preview_zone = SnapZone::None;
-    if (server->snap_preview != nullptr) {
-        wlr_scene_node_set_enabled(&server->snap_preview->node, false);
+}
+
+void snap_preview_hide(BiomeServer *server) {
+    server->snap.pending = SnapZone::None;
+    if (server->snap.dwell_timer != nullptr) {
+        wl_event_source_timer_update(server->snap.dwell_timer, 0);
+    }
+    server->snap.preview_zone = SnapZone::None;
+    if (server->snap.preview != nullptr) {
+        wlr_scene_node_set_enabled(&server->snap.preview->node, false);
     }
 }
 
@@ -808,35 +793,35 @@ void snap_drag_motion(BiomeServer *server, double lx, double ly) {
     constexpr double kJitter = 6; // pointer movement that restarts the dwell
     SnapZone zone = snap_zone_at_point(server, lx, ly);
     wlr_output *output = wlr_output_layout_output_at(server->output_layout, lx, ly);
-    if (zone == server->snap_preview_zone && zone != SnapZone::None && output == g_snap_output) {
+    if (zone == server->snap.preview_zone && zone != SnapZone::None && output == server->snap.output) {
         return;
     }
-    double dx = lx - g_snap_anchor_x, dy = ly - g_snap_anchor_y;
-    if (zone == g_snap_pending && zone != SnapZone::None && dx * dx + dy * dy <= kJitter * kJitter) {
+    double dx = lx - server->snap.anchor_x, dy = ly - server->snap.anchor_y;
+    if (zone == server->snap.pending && zone != SnapZone::None && dx * dx + dy * dy <= kJitter * kJitter) {
         return;
     }
     snap_preview_hide(server);
     if (zone == SnapZone::None) {
         return;
     }
-    g_snap_pending = zone;
-    g_snap_anchor_x = g_snap_pending_x = lx;
-    g_snap_anchor_y = g_snap_pending_y = ly;
-    if (g_snap_timer == nullptr) {
-        g_snap_timer = wl_event_loop_add_timer(wl_display_get_event_loop(server->display), snap_dwell_fired, server);
+    server->snap.pending = zone;
+    server->snap.anchor_x = server->snap.pending_x = lx;
+    server->snap.anchor_y = server->snap.pending_y = ly;
+    if (server->snap.dwell_timer == nullptr) {
+        server->snap.dwell_timer = wl_event_loop_add_timer(wl_display_get_event_loop(server->display), snap_dwell_fired, server);
     }
-    if (g_snap_timer != nullptr) {
-        wl_event_source_timer_update(g_snap_timer, kDwellMs);
+    if (server->snap.dwell_timer != nullptr) {
+        wl_event_source_timer_update(server->snap.dwell_timer, kDwellMs);
     }
 }
 
 void snap_drag_finish(BiomeServer *server) {
-    SnapZone zone = server->snap_preview_zone;
-    wlr_output *output = g_snap_output;
+    SnapZone zone = server->snap.preview_zone;
+    wlr_output *output = server->snap.output;
     snap_preview_hide(server);
-    BiomeToplevel *toplevel = server->grabbed_toplevel;
-    if (zone != SnapZone::None && toplevel != nullptr && server->cursor_mode == BiomeCursorMode::Move &&
-            !server->grab_from_menu) {
+    BiomeToplevel *toplevel = server->grab.toplevel;
+    if (zone != SnapZone::None && toplevel != nullptr && server->grab.mode == BiomeCursorMode::Move &&
+            !server->grab.from_menu) {
         set_toplevel_snapped(toplevel, zone, output);
     }
 }
@@ -1069,7 +1054,7 @@ void toplevels_relocate_for_layout(BiomeServer *server) {
             changed = true;
         }
 
-        if (changed && toplevel == server->grabbed_toplevel) {
+        if (changed && toplevel == server->grab.toplevel) {
             reset_cursor_mode(server);
         }
         // Unmoved windows can still gain/lose an output that moved or toggled.
@@ -1193,7 +1178,7 @@ void toplevel_map(wl_listener *listener, void *data) {
         } else {
             const char *wm_class = toplevel->xwayland_surface->class_;
             xcb_ewmh_connection_t *ewmh =
-                toplevel->server->ewmh_ready ? &toplevel->server->ewmh : nullptr;
+                toplevel->server->xwayland.ewmh_ready ? &toplevel->server->xwayland.ewmh : nullptr;
             toplevel->icon = resolve_xwayland_icon(
                 ewmh, toplevel->xwayland_surface->window_id, wm_class != nullptr ? wm_class : "");
         }
@@ -1284,11 +1269,11 @@ void toplevel_unmap(wl_listener *listener, void *data) {
 
 void toplevel_forget(BiomeToplevel *toplevel) {
     BiomeServer *server = toplevel->server;
-    if (toplevel == server->grabbed_toplevel) {
+    if (toplevel == server->grab.toplevel) {
         reset_cursor_mode(server);
     }
-    if (server->last_left_click_toplevel == toplevel) {
-        server->last_left_click_toplevel = nullptr;
+    if (server->pointer.last_click_toplevel == toplevel) {
+        server->pointer.last_click_toplevel = nullptr;
     }
     if (server->activated_toplevel == toplevel) {
         server->activated_toplevel = nullptr;

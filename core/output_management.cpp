@@ -35,7 +35,7 @@ void remember_live_state(BiomeOutput *output) {
     if (cfg.enabled) {
         cfg.position = std::make_pair(output->layout_x, output->layout_y);
     }
-    cfg.position_generation = output->server->output_layout_generation;
+    cfg.position_generation = output->server->output_mgmt.layout_generation;
 }
 
 void publish_configuration(BiomeServer *server) {
@@ -48,12 +48,12 @@ void publish_configuration(BiomeServer *server) {
         head->state.x = output->layout_x;
         head->state.y = output->layout_y;
     }
-    wlr_output_manager_v1_set_configuration(server->output_manager, config);
+    wlr_output_manager_v1_set_configuration(server->output_mgmt.manager, config);
 }
 
 void on_publish_idle(void *data) {
     auto *server = static_cast<BiomeServer *>(data);
-    server->output_publish_idle = nullptr;
+    server->output_mgmt.publish_idle = nullptr;
     publish_configuration(server);
 }
 
@@ -117,11 +117,7 @@ wlr_box head_layout_box(const wlr_output_head_v1_state &state) {
             height = mode->height;
         }
     }
-    if (state.transform & 1) {
-        std::swap(width, height);
-    }
-    float scale = state.scale > 0.0f ? state.scale : 1.0f;
-    return wlr_box{state.x, state.y, static_cast<int>(width / scale), static_cast<int>(height / scale)};
+    return effective_layout_box(state.x, state.y, width, height, state.transform, state.scale);
 }
 
 // A gap between outputs traps the cursor (wlr_cursor clamps to the closest
@@ -196,7 +192,7 @@ void handle_configuration(BiomeServer *server, wlr_output_configuration_v1 *conf
     }
 
     if (ok && commit) {
-        ++server->output_layout_generation;
+        ++server->output_mgmt.layout_generation;
         std::vector<std::pair<std::string, OutputConfig>> applied;
         wlr_output_configuration_head_v1 *head;
         wl_list_for_each(head, &config->heads, link) {
@@ -237,29 +233,39 @@ void handle_configuration(BiomeServer *server, wlr_output_configuration_v1 *conf
 }
 
 void handle_apply(wl_listener *listener, void *data) {
-    BiomeServer *server = wl_container_of(listener, server, output_apply);
+    BiomeServer *server = biome_server_from(listener, BiomeOutputManagement, apply);
     handle_configuration(server, static_cast<wlr_output_configuration_v1 *>(data), true);
 }
 
 void handle_test(wl_listener *listener, void *data) {
-    BiomeServer *server = wl_container_of(listener, server, output_test);
+    BiomeServer *server = biome_server_from(listener, BiomeOutputManagement, test);
     handle_configuration(server, static_cast<wlr_output_configuration_v1 *>(data), false);
 }
 
 } // namespace
 
 void output_management_init(BiomeServer *server) {
-    server->output_manager = wlr_output_manager_v1_create(server->display);
-    server->output_apply.notify = handle_apply;
-    wl_signal_add(&server->output_manager->events.apply, &server->output_apply);
-    server->output_test.notify = handle_test;
-    wl_signal_add(&server->output_manager->events.test, &server->output_test);
+    server->output_mgmt.server = server;
+    server->output_mgmt.manager = wlr_output_manager_v1_create(server->display);
+    server->output_mgmt.apply.notify = handle_apply;
+    wl_signal_add(&server->output_mgmt.manager->events.apply, &server->output_mgmt.apply);
+    server->output_mgmt.test.notify = handle_test;
+    wl_signal_add(&server->output_mgmt.manager->events.test, &server->output_mgmt.test);
+}
+
+void output_management_finish(BiomeServer *server) {
+    wl_list_remove(&server->output_mgmt.apply.link);
+    wl_list_remove(&server->output_mgmt.test.link);
+    if (server->output_mgmt.publish_idle != nullptr) {
+        wl_event_source_remove(server->output_mgmt.publish_idle);
+        server->output_mgmt.publish_idle = nullptr;
+    }
 }
 
 void output_management_schedule_publish(BiomeServer *server) {
-    if (server->output_manager == nullptr || server->output_publish_idle != nullptr) {
+    if (server->output_mgmt.manager == nullptr || server->output_mgmt.publish_idle != nullptr) {
         return;
     }
     wl_event_loop *event_loop = wl_display_get_event_loop(server->display);
-    server->output_publish_idle = wl_event_loop_add_idle(event_loop, on_publish_idle, server);
+    server->output_mgmt.publish_idle = wl_event_loop_add_idle(event_loop, on_publish_idle, server);
 }

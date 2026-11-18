@@ -20,20 +20,30 @@ static void seat_request_start_drag(wl_listener *listener, void *data);
 static void seat_start_drag(wl_listener *listener, void *data);
 
 void input_init(BiomeServer *server) {
-    wl_list_init(&server->keyboards);
-    server->new_input.notify = server_new_input;
-    wl_signal_add(&server->backend->events.new_input, &server->new_input);
+    server->input.server = server;
+    wl_list_init(&server->input.keyboards);
+    server->input.new_input.notify = server_new_input;
+    wl_signal_add(&server->backend->events.new_input, &server->input.new_input);
     server->seat = wlr_seat_create(server->display, "seat0");
-    server->request_cursor.notify = seat_request_cursor;
-    wl_signal_add(&server->seat->events.request_set_cursor, &server->request_cursor);
-    server->request_set_selection.notify = seat_request_set_selection;
-    wl_signal_add(&server->seat->events.request_set_selection, &server->request_set_selection);
-    server->request_set_primary_selection.notify = seat_request_set_primary_selection;
-    wl_signal_add(&server->seat->events.request_set_primary_selection, &server->request_set_primary_selection);
-    server->request_start_drag.notify = seat_request_start_drag;
-    wl_signal_add(&server->seat->events.request_start_drag, &server->request_start_drag);
-    server->start_drag.notify = seat_start_drag;
-    wl_signal_add(&server->seat->events.start_drag, &server->start_drag);
+    server->input.request_cursor.notify = seat_request_cursor;
+    wl_signal_add(&server->seat->events.request_set_cursor, &server->input.request_cursor);
+    server->input.request_set_selection.notify = seat_request_set_selection;
+    wl_signal_add(&server->seat->events.request_set_selection, &server->input.request_set_selection);
+    server->input.request_set_primary_selection.notify = seat_request_set_primary_selection;
+    wl_signal_add(&server->seat->events.request_set_primary_selection, &server->input.request_set_primary_selection);
+    server->input.request_start_drag.notify = seat_request_start_drag;
+    wl_signal_add(&server->seat->events.request_start_drag, &server->input.request_start_drag);
+    server->input.start_drag.notify = seat_start_drag;
+    wl_signal_add(&server->seat->events.start_drag, &server->input.start_drag);
+}
+
+void input_finish(BiomeServer *server) {
+    wl_list_remove(&server->input.new_input.link);
+    wl_list_remove(&server->input.request_cursor.link);
+    wl_list_remove(&server->input.request_set_selection.link);
+    wl_list_remove(&server->input.request_set_primary_selection.link);
+    wl_list_remove(&server->input.request_start_drag.link);
+    wl_list_remove(&server->input.start_drag.link);
 }
 
 static void keyboard_handle_modifiers(wl_listener *listener, void *data) {
@@ -103,7 +113,7 @@ static void keyboard_handle_key(wl_listener *listener, void *data) {
         if (chord && !handled) {
             handled = menu_key();
         }
-    } else if (handle_key_release(keyboard->wlr, event->keycode)) {
+    } else if (handle_key_release(server, keyboard->wlr, event->keycode)) {
         handled = true;
     }
 
@@ -144,7 +154,7 @@ static void update_seat_capabilities(BiomeServer *server) {
     // Biome always has a cursor, even with no pointer devices, so the
     // pointer capability is always advertised.
     uint32_t caps = WL_SEAT_CAPABILITY_POINTER;
-    if (!wl_list_empty(&server->keyboards)) {
+    if (!wl_list_empty(&server->input.keyboards)) {
         caps |= WL_SEAT_CAPABILITY_KEYBOARD;
     }
     wlr_seat_set_capabilities(server->seat, caps);
@@ -157,7 +167,7 @@ static void keyboard_handle_destroy(wl_listener *listener, void *data) {
     wl_list_remove(&keyboard->key.link);
     wl_list_remove(&keyboard->destroy.link);
     wl_list_remove(&keyboard->link);
-    release_keyboard_bindings(keyboard->wlr);
+    release_keyboard_bindings(keyboard->server, keyboard->wlr);
     update_seat_capabilities(keyboard->server);
     free(keyboard);
 }
@@ -187,7 +197,7 @@ static void server_new_keyboard(BiomeServer *server, wlr_input_device *device) {
     wl_signal_add(&device->events.destroy, &keyboard->destroy);
 
     wlr_seat_set_keyboard(server->seat, keyboard->wlr);
-    wl_list_insert(&server->keyboards, &keyboard->link);
+    wl_list_insert(&server->input.keyboards, &keyboard->link);
 }
 
 static void server_new_pointer(BiomeServer *server, wlr_input_device *device) {
@@ -195,7 +205,7 @@ static void server_new_pointer(BiomeServer *server, wlr_input_device *device) {
 }
 
 static void server_new_input(wl_listener *listener, void *data) {
-    BiomeServer *server = wl_container_of(listener, server, new_input);
+    BiomeServer *server = biome_server_from(listener, BiomeInput, new_input);
     auto *device = static_cast<wlr_input_device *>(data);
     switch (device->type) {
     case WLR_INPUT_DEVICE_KEYBOARD:
@@ -211,32 +221,32 @@ static void server_new_input(wl_listener *listener, void *data) {
 }
 
 static void seat_request_cursor(wl_listener *listener, void *data) {
-    BiomeServer *server = wl_container_of(listener, server, request_cursor);
+    BiomeServer *server = biome_server_from(listener, BiomeInput, request_cursor);
     auto *event = static_cast<wlr_seat_pointer_request_set_cursor_event *>(data);
     wlr_seat_client *focused_client = server->seat->pointer_state.focused_client;
     // Any client can send this, so only honor it from the one that actually
     // has pointer focus.
     if (focused_client == event->seat_client) {
-        server->cursor_xcursor_name[0] = '\0';
+        server->pointer.xcursor_name[0] = '\0';
         wlr_cursor_set_surface(server->cursor, event->surface,
             event->hotspot_x, event->hotspot_y);
     }
 }
 
 static void seat_request_set_selection(wl_listener *listener, void *data) {
-    BiomeServer *server = wl_container_of(listener, server, request_set_selection);
+    BiomeServer *server = biome_server_from(listener, BiomeInput, request_set_selection);
     auto *event = static_cast<wlr_seat_request_set_selection_event *>(data);
     wlr_seat_set_selection(server->seat, event->source, event->serial);
 }
 
 static void seat_request_set_primary_selection(wl_listener *listener, void *data) {
-    BiomeServer *server = wl_container_of(listener, server, request_set_primary_selection);
+    BiomeServer *server = biome_server_from(listener, BiomeInput, request_set_primary_selection);
     auto *event = static_cast<wlr_seat_request_set_primary_selection_event *>(data);
     wlr_seat_set_primary_selection(server->seat, event->source, event->serial);
 }
 
 static void seat_request_start_drag(wl_listener *listener, void *data) {
-    BiomeServer *server = wl_container_of(listener, server, request_start_drag);
+    BiomeServer *server = biome_server_from(listener, BiomeInput, request_start_drag);
     auto *event = static_cast<wlr_seat_request_start_drag_event *>(data);
     if (wlr_seat_validate_pointer_grab_serial(server->seat, event->origin, event->serial)) {
         wlr_seat_start_pointer_drag(server->seat, event->drag, event->serial);
@@ -247,7 +257,7 @@ static void seat_request_start_drag(wl_listener *listener, void *data) {
 }
 
 static void seat_start_drag(wl_listener *listener, void *data) {
-    BiomeServer *server = wl_container_of(listener, server, start_drag);
+    BiomeServer *server = biome_server_from(listener, BiomeInput, start_drag);
     auto *drag = static_cast<wlr_drag *>(data);
     if (drag->icon != nullptr) {
         drag_icon_create(server, drag->icon);

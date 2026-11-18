@@ -169,3 +169,35 @@ bool close_layout_gaps(std::vector<wlr_box> &boxes, size_t anchor) {
         }
     }
 }
+
+wlr_box effective_layout_box(int x, int y, int width, int height, int transform, float scale) {
+    if (transform & 1) {
+        std::swap(width, height);
+    }
+    if (scale <= 0.0f) {
+        scale = 1.0f;
+    }
+    return wlr_box{x, y, static_cast<int>(width / scale), static_cast<int>(height / scale)};
+}
+
+std::vector<RelayoutStep> plan_relayout(const std::vector<RelayoutOutput> &outputs) {
+    unsigned newest = 0;
+    for (const RelayoutOutput &o : outputs) {
+        if (o.has_position) {
+            newest = std::max(newest, o.generation);
+        }
+    }
+    std::vector<RelayoutStep> steps(outputs.size());
+    for (size_t i = 0; i < outputs.size(); ++i) {
+        const RelayoutOutput &o = outputs[i];
+        if (!o.has_position) {
+            steps[i].manual = !o.auto_configured;
+        } else if (o.generation < newest) {
+            steps[i].action = o.auto_configured ? RelayoutAction::Keep : RelayoutAction::AutoPlace;
+        } else {
+            bool moved = o.auto_configured || o.cur_x != o.x || o.cur_y != o.y;
+            steps[i] = {moved ? RelayoutAction::Place : RelayoutAction::Keep, true};
+        }
+    }
+    return steps;
+}

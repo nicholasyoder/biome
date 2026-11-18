@@ -10,6 +10,7 @@
 
 // After input_init(): needs the seat.
 void pointer_constraints_init(BiomeServer *server);
+void pointer_constraints_finish(BiomeServer *server);
 
 // Clamps a pending cursor delta to the active constraint.
 void pointer_constraints_clamp_motion(BiomeServer *server, double *dx, double *dy);

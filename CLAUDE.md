@@ -16,9 +16,11 @@ greetd is started via the `greetd.service.d/50-forest.conf` drop-in with `--conf
 ## Code conventions
 
 - Module-private compositor state goes in a per-subsystem struct embedded in
-  `BiomeServer`, with its own listeners and an `X_finish()` teardown (decided
-  2026-11-14). File-scope statics and loose `BiomeServer` fields are legacy,
-  migrating in the server-split refactor (`docs/review-2026-11.md`).
+  `BiomeServer` (or an owned pointer for module-private types), with its own
+  listeners and an `X_finish()` teardown — not file-scope statics. See
+  architecture-notes "Module state and teardown".
+- `ctest` in `build/` runs unit and headless integration tests
+  (`tests/integration/run.sh`; `KEEP=1` keeps the logs).
 - `calloc`'d structs (`BiomeOutput`, `BiomeLayerSurface`, …) must stay POD plus
   `wl_listener`s: no `std::string`/`std::vector` members (`free()` skips
   destructors).

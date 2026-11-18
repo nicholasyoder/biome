@@ -15,16 +15,12 @@ namespace biome_decoration {
 
 struct SwitcherEntry {
     std::string label; // title, falling back to app_id/class if empty
-    IconImage icon;    // empty (size == 0) shows fallback_icon() instead of a gap
+    IconImage icon;    // empty (size == 0) shows a generic icon
     bool urgent = false; // drives #biomeSwitcherIcon[urgent=...]
 };
 
-// Renders the persistent, QSS-styled SwitcherPanel widget tree (biome-dark
-// .qss's #biomeSwitcherPanel/#biomeSwitcherIcon/#biomeSwitcherTitleLabel
-// rules) - the same build/resize/QWidget::render() pattern renderer.cpp uses
-// for the window frame, not a hand-painted overlay. A horizontal row of one
-// icon per entry, with the selected_index entry's icon highlighted and its
-// full title shown in a single label below the row.
+// A row of entry icons with the selected one highlighted and its title below,
+// styled by #biomeSwitcherPanel/#biomeSwitcherIcon/#biomeSwitcherTitleLabel.
 RenderedFrame render_switcher(const std::vector<SwitcherEntry> &entries, int selected_index, double scale);
 
 } // namespace biome_decoration

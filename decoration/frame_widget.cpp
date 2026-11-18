@@ -64,9 +64,14 @@ void flush_layouts() {
     QCoreApplication::instance()->removeEventFilter(&counter);
 }
 
-QIcon fallback_icon() {
-    static const QIcon icon = QIcon::fromTheme("application-x-executable");
-    return icon;
+QIcon icon_from_image(const IconImage &image) {
+    if (image.size <= 0 || image.pixels.empty()) {
+        static const QIcon fallback = QIcon::fromTheme("application-x-executable");
+        return fallback;
+    }
+    // Wraps image.pixels without a copy; QPixmap::fromImage copies before return.
+    QImage wrapped(image.pixels.data(), image.size, image.size, QImage::Format_ARGB32_Premultiplied);
+    return QIcon(QPixmap::fromImage(wrapped));
 }
 
 namespace {
@@ -307,6 +312,20 @@ void DecorationFrame::setMaximizedState(bool maximized) {
     flush_layouts();
 }
 
+const DecorationFrame::Metrics &DecorationFrame::metrics(bool maximized) {
+    if (!metrics_valid_) {
+        const bool current = property("biomeMaximized").toBool();
+        for (bool state : {false, true}) {
+            setMaximizedState(state);
+            flush_layouts();
+            metrics_[state] = {borderWidth(), titlebarHeight(), rightBorderWidth(), bottomBorderHeight()};
+        }
+        setMaximizedState(current);
+        metrics_valid_ = true;
+    }
+    return metrics_[maximized];
+}
+
 void DecorationFrame::setTitle(const QString &title) {
     // A client's title is untrusted text - simplified() collapses any
     // embedded newlines, which QLabel would otherwise render as a hard line
@@ -315,18 +334,11 @@ void DecorationFrame::setTitle(const QString &title) {
 }
 
 void DecorationFrame::setIcon(const IconImage &icon) {
-    bool has_icon = icon.size > 0 && !icon.pixels.empty();
-    if (has_icon) {
-        // QImage wraps icon.pixels' own memory (no copy) - fine since
-        // QPixmap::fromImage() below copies out of it before this returns.
-        QImage image(icon.pixels.data(), icon.size, icon.size, QImage::Format_ARGB32_Premultiplied);
-        icon_button_->setIcon(QIcon(QPixmap::fromImage(image)));
-    } else {
-        icon_button_->setIcon(fallback_icon());
-    }
+    icon_button_->setIcon(icon_from_image(icon));
     if (icon_button_->isHidden()) {
         icon_button_->setVisible(true); // only on the first call; never hidden again
         flush_layouts();
+        invalidateMetrics();
     }
 }
 

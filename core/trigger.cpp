@@ -108,3 +108,57 @@ QString describe_trigger(const ParsedTrigger &trigger) {
     }
     return parts.join('+');
 }
+
+uint32_t modifier_bit_for_keysym(xkb_keysym_t sym) {
+    switch (sym) {
+    case XKB_KEY_Shift_L:
+    case XKB_KEY_Shift_R:
+        return WLR_MODIFIER_SHIFT;
+    case XKB_KEY_Control_L:
+    case XKB_KEY_Control_R:
+        return WLR_MODIFIER_CTRL;
+    case XKB_KEY_Alt_L:
+    case XKB_KEY_Alt_R:
+        return WLR_MODIFIER_ALT;
+    case XKB_KEY_Super_L:
+    case XKB_KEY_Super_R:
+        return WLR_MODIFIER_LOGO;
+    default:
+        return 0;
+    }
+}
+
+ModifierTap::Result ModifierTap::step(xkb_keysym_t sym, uint32_t modifiers, bool pressed, bool consumed) {
+    // wlroots emits the key before applying it to xkb_state, so patch in this key's own bit.
+    const uint32_t own_bit = modifier_bit_for_keysym(sym);
+    uint32_t mods = modifiers & kMatchableModifierMask;
+    if (own_bit != 0) {
+        mods = pressed ? (mods | own_bit) : (mods & ~own_bit);
+    }
+
+    if (pressed) {
+        if (own_bit != 0 && mods != 0 && (mods & (mods - 1)) == 0) {
+            // This modifier's own press, held alone: (re)arm.
+            *this = ModifierTap{mods, false, false};
+        } else if (candidate != 0) {
+            // Another key or modifier mid-hold: a combo, not a tap.
+            interrupted = true;
+            forwarded |= !consumed;
+        }
+        return {};
+    }
+    if (own_bit == 0) {
+        return {};
+    }
+
+    const ModifierTap held = *this;
+    if (mods == 0) {
+        *this = ModifierTap{}; // the hold is over, fired or not
+    }
+    if (held.candidate != 0 && !held.interrupted && mods == 0) {
+        return {held.candidate, false};
+    }
+    // If every interrupting key was swallowed (e.g. Alt+Tab) the client saw a
+    // lone modifier press; swallow its release too so it doesn't read a tap.
+    return {0, held.candidate != 0 && held.interrupted && !held.forwarded && mods == 0};
+}
