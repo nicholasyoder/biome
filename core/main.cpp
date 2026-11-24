@@ -9,6 +9,7 @@
 
 #include "core/cursor.h"
 #include "core/input.h"
+#include "core/touch.h"
 #include "core/keybindings.h"
 #include "core/output.h"
 #include "core/gamma.h"
@@ -99,6 +100,7 @@ void teardown(BiomeServer &server) {
     output_manager_finish(&server);
     wlr_backend_destroy(server.backend);
     wlr_scene_node_destroy(&server.scene->tree.node);
+    touch_finish(&server);
     cursor_finish(&server);
     wlr_allocator_destroy(server.allocator);
     wlr_renderer_destroy(server.renderer);
@@ -254,6 +256,7 @@ int main(int argc, char *argv[]) {
     window_menu_init(&server);
     xdg_shell_init(&server);
     cursor_init(&server);
+    touch_init(&server);
     keybindings_init(&server);
     input_init(&server);
     pointer_constraints_init(&server);

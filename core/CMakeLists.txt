@@ -39,6 +39,12 @@ add_executable(biome
     trigger.cpp
     cursor.h
     cursor.cpp
+    touch.h
+    touch.cpp
+    touch_map.h
+    touch_map.cpp
+    touch_store.h
+    touch_store.cpp
     pointer_constraints.h
     pointer_constraints.cpp
     qt_glib_bridge.h

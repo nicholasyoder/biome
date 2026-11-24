@@ -33,6 +33,8 @@ void reset_cursor_mode(BiomeServer *server);
 // Re-runs pointer focus/hover at the current position, e.g. after a warp.
 void cursor_rebase(BiomeServer *server);
 
+// A client-requested one (check_pointer_focus) follows a touch point instead
+// of the pointer when one is down on the toplevel.
 // check_pointer_focus should be true for client-requested moves/resizes
 // (xdg-shell/Xwayland request_move/request_resize - an unfocused client
 // could send these unprompted, so they're checked against actual pointer
@@ -42,5 +44,14 @@ void cursor_rebase(BiomeServer *server);
 void begin_interactive(BiomeToplevel *toplevel, BiomeCursorMode mode, uint32_t edges,
     bool check_pointer_focus);
 
-// Shows a drag's icon at the cursor; it removes itself when the icon goes.
-void drag_icon_create(BiomeServer *server, wlr_drag_icon *drag_icon);
+// Shows a drag's icon at lx/ly; it removes itself when the icon goes.
+void drag_icon_create(BiomeServer *server, wlr_drag_icon *drag_icon, double lx, double ly);
+
+// Pointer emulation for touch (core/touch.cpp): a warp plus the usual motion
+// routing, and a left-button press/release.
+void cursor_warp(BiomeServer *server, double lx, double ly, uint32_t time);
+void cursor_emulate_button(BiomeServer *server, uint32_t time_msec, bool pressed);
+
+// What a press on surface (null: empty space) does to keyboard focus and
+// xdg-activation; toplevel is its BiomeToplevel, if any.
+void focus_for_press(BiomeServer *server, BiomeToplevel *toplevel, wlr_surface *surface);

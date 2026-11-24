@@ -11,3 +11,6 @@
 
 void input_init(BiomeServer *server);
 void input_finish(BiomeServer *server);
+
+// Re-advertises keyboard/touch after a device comes or goes.
+void input_update_seat_capabilities(BiomeServer *server);

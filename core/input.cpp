@@ -4,6 +4,7 @@
 
 #include "core/cursor.h"
 #include "core/keybindings.h"
+#include "core/touch.h"
 #include "desktop/idle.h"
 #include "desktop/switcher.h"
 #include "desktop/window_menu.h"
@@ -101,6 +102,11 @@ static void keyboard_handle_key(wl_listener *listener, void *data) {
     if (!chord && menu_key()) {
         return;
     }
+    for (int i = 0; pressed && i < nsyms; i++) {
+        if (syms[i] == XKB_KEY_Escape && touch_identify_dismiss(server)) {
+            return;
+        }
+    }
 
     // handle_key_press() runs on every press regardless of which modifiers
     // are held - portal-registered shortcuts (core/keybindings.h) aren't
@@ -150,12 +156,15 @@ static void keyboard_handle_key(wl_listener *listener, void *data) {
     }
 }
 
-static void update_seat_capabilities(BiomeServer *server) {
+void input_update_seat_capabilities(BiomeServer *server) {
     // Biome always has a cursor, even with no pointer devices, so the
     // pointer capability is always advertised.
     uint32_t caps = WL_SEAT_CAPABILITY_POINTER;
     if (!wl_list_empty(&server->input.keyboards)) {
         caps |= WL_SEAT_CAPABILITY_KEYBOARD;
+    }
+    if (touch_has_devices(server)) {
+        caps |= WL_SEAT_CAPABILITY_TOUCH;
     }
     wlr_seat_set_capabilities(server->seat, caps);
 }
@@ -168,7 +177,7 @@ static void keyboard_handle_destroy(wl_listener *listener, void *data) {
     wl_list_remove(&keyboard->destroy.link);
     wl_list_remove(&keyboard->link);
     release_keyboard_bindings(keyboard->server, keyboard->wlr);
-    update_seat_capabilities(keyboard->server);
+    input_update_seat_capabilities(keyboard->server);
     free(keyboard);
 }
 
@@ -214,10 +223,13 @@ static void server_new_input(wl_listener *listener, void *data) {
     case WLR_INPUT_DEVICE_POINTER:
         server_new_pointer(server, device);
         break;
+    case WLR_INPUT_DEVICE_TOUCH:
+        touch_new_device(server, device);
+        break;
     default:
         break;
     }
-    update_seat_capabilities(server);
+    input_update_seat_capabilities(server);
 }
 
 static void seat_request_cursor(wl_listener *listener, void *data) {
@@ -248,8 +260,11 @@ static void seat_request_set_primary_selection(wl_listener *listener, void *data
 static void seat_request_start_drag(wl_listener *listener, void *data) {
     BiomeServer *server = biome_server_from(listener, BiomeInput, request_start_drag);
     auto *event = static_cast<wlr_seat_request_start_drag_event *>(data);
+    wlr_touch_point *point = nullptr;
     if (wlr_seat_validate_pointer_grab_serial(server->seat, event->origin, event->serial)) {
         wlr_seat_start_pointer_drag(server->seat, event->drag, event->serial);
+    } else if (wlr_seat_validate_touch_grab_serial(server->seat, event->origin, event->serial, &point)) {
+        wlr_seat_start_touch_drag(server->seat, event->drag, event->serial, point);
     }
     // An invalid serial (spoofed/stale client request) is simply dropped -
     // wlroots has no public wlr_drag_destroy() to release the rejected
@@ -260,6 +275,10 @@ static void seat_start_drag(wl_listener *listener, void *data) {
     BiomeServer *server = biome_server_from(listener, BiomeInput, start_drag);
     auto *drag = static_cast<wlr_drag *>(data);
     if (drag->icon != nullptr) {
-        drag_icon_create(server, drag->icon);
+        double lx = server->cursor->x, ly = server->cursor->y;
+        if (drag->grab_type == WLR_DRAG_GRAB_KEYBOARD_TOUCH) {
+            touch_point_position(server, drag->grab_touch_id, &lx, &ly);
+        }
+        drag_icon_create(server, drag->icon, lx, ly);
     }
 }

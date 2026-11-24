@@ -3,6 +3,7 @@
 #include "core/cursor.h"
 
 #include "core/pointer_constraints.h"
+#include "core/touch.h"
 #include "desktop/decoration_bridge.h"
 #include "desktop/idle.h"
 #include "desktop/toplevel.h"
@@ -156,12 +157,12 @@ static void drag_icon_tree_handle_destroy(wl_listener *listener, void *data) {
     server->pointer.drag_icon = nullptr;
 }
 
-void drag_icon_create(BiomeServer *server, wlr_drag_icon *drag_icon) {
+void drag_icon_create(BiomeServer *server, wlr_drag_icon *drag_icon, double lx, double ly) {
     server->pointer.drag_icon = wlr_scene_drag_icon_create(server->layers.osd, drag_icon);
     if (server->pointer.drag_icon == nullptr) {
         return;
     }
-    wlr_scene_node_set_position(&server->pointer.drag_icon->node, server->cursor->x, server->cursor->y);
+    wlr_scene_node_set_position(&server->pointer.drag_icon->node, lx, ly);
     server->pointer.drag_icon_destroy.notify = drag_icon_tree_handle_destroy;
     wl_signal_add(&server->pointer.drag_icon->node.events.destroy, &server->pointer.drag_icon_destroy);
 }
@@ -172,7 +173,11 @@ void begin_interactive(BiomeToplevel *toplevel, BiomeCursorMode mode, uint32_t e
     if (toplevel->fullscreen) {
         return;
     }
-    if (check_pointer_focus) {
+    // A touch on the client (its CSD) wins over a stale pointer focus.
+    const int32_t touch_id = check_pointer_focus ? touch_point_on(server, toplevel_surface(toplevel)) : -1;
+    if (touch_id >= 0) {
+        touch_begin_grab(server, touch_id);
+    } else if (check_pointer_focus) {
         wlr_surface *focused_surface = server->seat->pointer_state.focused_surface;
         // wlr_surface_get_root_surface() dereferences its argument
         // unconditionally - nothing having pointer focus at all trivially
@@ -493,12 +498,60 @@ void cursor_rebase(BiomeServer *server) {
     process_cursor_motion(server, static_cast<uint32_t>(now.tv_sec * 1000 + now.tv_nsec / 1000000));
 }
 
-void server_cursor_button(wl_listener *listener, void *data) {
-    BiomeServer *server = biome_server_from(listener, BiomePointer, button);
-    auto *event = static_cast<wlr_pointer_button_event *>(data);
-    const bool pressed = event->state == WL_POINTER_BUTTON_STATE_PRESSED;
+void cursor_warp(BiomeServer *server, double lx, double ly, uint32_t time) {
+    wlr_cursor_warp_closest(server->cursor, nullptr, lx, ly);
+    process_cursor_motion(server, time);
+}
+
+void focus_for_press(BiomeServer *server, BiomeToplevel *toplevel, wlr_surface *surface) {
+    xdg_activation_note_press(server, surface != nullptr ? wl_resource_get_client(surface->resource) : nullptr);
+    if (toplevel == nullptr && surface != nullptr) {
+        // A click on a surface with no BiomeToplevel of its own -
+        // a layer-shell surface (e.g. the panel), an xdg_popup (e.g. one
+        // of its menus), or a session-lock surface (a different
+        // monitor's password prompt) - none of which focus_toplevel()
+        // below applies to. Excluded outside session lock: an
+        // override-redirect Xwayland surface (positions/dismisses
+        // itself; clicking one is not expected to steal focus, matching
+        // its X11 click-through behavior), identified by being
+        // Xwayland-backed - a *managed* Xwayland toplevel would already
+        // have resolved via desktop_toplevel_at above, so reaching here
+        // with one means it's unmanaged.
+        bool unmanaged_xwayland = wlr_xwayland_surface_try_from_wlr_surface(surface) != nullptr;
+
+        // See popup_wants_keyboard_focus() (desktop/xdg_shell.cpp).
+        // root_surface resolves through any subsurface (e.g. Chromium
+        // renders a popup's content as one) to the actual role surface,
+        // both for the check below and for what gets granted focus.
+        wlr_surface *root_surface = wlr_surface_get_root_surface(surface);
+        wlr_xdg_surface *xdg_surface = wlr_xdg_surface_try_from_wlr_surface(root_surface);
+        bool unwanted_popup_focus = xdg_surface != nullptr &&
+            xdg_surface->role == WLR_XDG_SURFACE_ROLE_POPUP &&
+            xdg_surface->popup != nullptr && !popup_wants_keyboard_focus(xdg_surface->popup);
+        // Spec: a NONE layer surface (e.g. wallpaper) never takes focus, even on click.
+        wlr_layer_surface_v1 *layer_surface = wlr_layer_surface_v1_try_from_wlr_surface(root_surface);
+        bool unwanted_layer_focus = layer_surface != nullptr &&
+            layer_surface->current.keyboard_interactive == ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_NONE;
+
+        if ((!unmanaged_xwayland || server->session_locked) && !unwanted_popup_focus && !unwanted_layer_focus) {
+            // An ordinary click on the panel reliably lands here
+            // (toplevel==nullptr, surface==the panel's) - see
+            // grant_keyboard_focus_to_non_toplevel()'s doc comment
+            // (desktop/toplevel.h) for why this must go through it
+            // rather than calling wlr_seat_keyboard_enter() directly.
+            grant_keyboard_focus_to_non_toplevel(server, root_surface);
+        }
+    }
+    focus_toplevel(toplevel);
+}
+
+static void cursor_button(BiomeServer *server, uint32_t time_msec, uint32_t button, bool pressed) {
+    if (pressed && touch_identify_dismiss(server)) {
+        server->grab.swallow_release = true;
+        return;
+    }
     if (window_menu_active(server)) {
-        window_menu_button(server, event->time_msec, event->button, pressed);
+        window_menu_button(server, time_msec, button, pressed);
         return;
     }
     if (server->grab.from_menu) {
@@ -512,15 +565,15 @@ void server_cursor_button(wl_listener *listener, void *data) {
         server->grab.swallow_release = false;
         return;
     }
-    wlr_seat_pointer_notify_button(server->seat,
-        event->time_msec, event->button, event->state);
+    wlr_seat_pointer_notify_button(server->seat, time_msec, button,
+        pressed ? WL_POINTER_BUTTON_STATE_PRESSED : WL_POINTER_BUTTON_STATE_RELEASED);
 
-    if (event->state == WL_POINTER_BUTTON_STATE_RELEASED) {
+    if (!pressed) {
         // Commits an armed button's action (min/max/close) only if this
         // release lands back on the same button that was pressed - armed
         // state was only ever set from a BTN_LEFT press, so a release of
         // some other button while BTN_LEFT is still held shouldn't commit.
-        if (event->button == BTN_LEFT) {
+        if (button == BTN_LEFT) {
             handle_decoration_release(server);
             snap_drag_finish(server);
         }
@@ -552,22 +605,22 @@ void server_cursor_button(wl_listener *listener, void *data) {
             wlr_surface *decorated = toplevel_surface(decoration_toplevel);
             xdg_activation_note_press(server, decorated != nullptr ? wl_resource_get_client(decorated->resource) : nullptr);
             focus_toplevel(decoration_toplevel);
-            if (event->button == BTN_RIGHT && region == biome_decoration::Region::ButtonMaximize) {
+            if (button == BTN_RIGHT && region == biome_decoration::Region::ButtonMaximize) {
                 open_snap_menu(decoration_toplevel, false);
                 return;
             }
-            if (event->button == BTN_RIGHT && (region == biome_decoration::Region::Titlebar ||
+            if (button == BTN_RIGHT && (region == biome_decoration::Region::Titlebar ||
                     region == biome_decoration::Region::Icon)) {
                 window_menu_open(decoration_toplevel, static_cast<int>(server->cursor->x),
                     static_cast<int>(server->cursor->y));
                 return;
             }
-            if (event->button == BTN_LEFT) {
+            if (button == BTN_LEFT) {
                 set_decoration_pressed(server, decoration_toplevel, region);
                 constexpr uint32_t kDoubleClickMs = 400;
                 if (region == biome_decoration::Region::Titlebar &&
                         server->pointer.last_click_toplevel == decoration_toplevel &&
-                        event->time_msec - server->pointer.last_click_time <= kDoubleClickMs) {
+                        time_msec - server->pointer.last_click_time <= kDoubleClickMs) {
                     // Double-click on the titlebar toggles maximize, standard
                     // WM convention - consume the click pair so a third quick
                     // click doesn't immediately toggle it back again.
@@ -575,7 +628,7 @@ void server_cursor_button(wl_listener *listener, void *data) {
                     server->pointer.last_click_toplevel = nullptr;
                 } else {
                     server->pointer.last_click_toplevel = decoration_toplevel;
-                    server->pointer.last_click_time = event->time_msec;
+                    server->pointer.last_click_time = time_msec;
                     handle_decoration_press(decoration_toplevel, region);
                 }
             }
@@ -586,46 +639,18 @@ void server_cursor_button(wl_listener *listener, void *data) {
         wlr_surface *surface = nullptr;
         BiomeToplevel *toplevel = desktop_toplevel_at(server,
             server->cursor->x, server->cursor->y, &surface, &sx, &sy);
-        xdg_activation_note_press(server, surface != nullptr ? wl_resource_get_client(surface->resource) : nullptr);
-        if (toplevel == nullptr && surface != nullptr) {
-            // A click on a surface with no BiomeToplevel of its own -
-            // a layer-shell surface (e.g. the panel), an xdg_popup (e.g. one
-            // of its menus), or a session-lock surface (a different
-            // monitor's password prompt) - none of which focus_toplevel()
-            // below applies to. Excluded outside session lock: an
-            // override-redirect Xwayland surface (positions/dismisses
-            // itself; clicking one is not expected to steal focus, matching
-            // its X11 click-through behavior), identified by being
-            // Xwayland-backed - a *managed* Xwayland toplevel would already
-            // have resolved via desktop_toplevel_at above, so reaching here
-            // with one means it's unmanaged.
-            bool unmanaged_xwayland = wlr_xwayland_surface_try_from_wlr_surface(surface) != nullptr;
-
-            // See popup_wants_keyboard_focus() (desktop/xdg_shell.cpp).
-            // root_surface resolves through any subsurface (e.g. Chromium
-            // renders a popup's content as one) to the actual role surface,
-            // both for the check below and for what gets granted focus.
-            wlr_surface *root_surface = wlr_surface_get_root_surface(surface);
-            wlr_xdg_surface *xdg_surface = wlr_xdg_surface_try_from_wlr_surface(root_surface);
-            bool unwanted_popup_focus = xdg_surface != nullptr &&
-                xdg_surface->role == WLR_XDG_SURFACE_ROLE_POPUP &&
-                xdg_surface->popup != nullptr && !popup_wants_keyboard_focus(xdg_surface->popup);
-            // Spec: a NONE layer surface (e.g. wallpaper) never takes focus, even on click.
-            wlr_layer_surface_v1 *layer_surface = wlr_layer_surface_v1_try_from_wlr_surface(root_surface);
-            bool unwanted_layer_focus = layer_surface != nullptr &&
-                layer_surface->current.keyboard_interactive == ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_NONE;
-
-            if ((!unmanaged_xwayland || server->session_locked) && !unwanted_popup_focus && !unwanted_layer_focus) {
-                // An ordinary click on the panel reliably lands here
-                // (toplevel==nullptr, surface==the panel's) - see
-                // grant_keyboard_focus_to_non_toplevel()'s doc comment
-                // (desktop/toplevel.h) for why this must go through it
-                // rather than calling wlr_seat_keyboard_enter() directly.
-                grant_keyboard_focus_to_non_toplevel(server, root_surface);
-            }
-        }
-        focus_toplevel(toplevel);
+        focus_for_press(server, toplevel, surface);
     }
+}
+
+void cursor_emulate_button(BiomeServer *server, uint32_t time_msec, bool pressed) {
+    cursor_button(server, time_msec, BTN_LEFT, pressed);
+}
+
+void server_cursor_button(wl_listener *listener, void *data) {
+    BiomeServer *server = biome_server_from(listener, BiomePointer, button);
+    auto *event = static_cast<wlr_pointer_button_event *>(data);
+    cursor_button(server, event->time_msec, event->button, event->state == WL_POINTER_BUTTON_STATE_PRESSED);
 }
 
 void server_cursor_axis(wl_listener *listener, void *data) {

@@ -25,6 +25,13 @@ target_include_directories(trigger_test PRIVATE ${CMAKE_SOURCE_DIR})
 target_link_libraries(trigger_test PRIVATE PkgConfig::WLROOTS PkgConfig::XKBCOMMON Qt6::Core)
 add_test(NAME trigger COMMAND trigger_test)
 
+add_executable(touch_map_test
+    touch_map_test.cpp
+    ${CMAKE_SOURCE_DIR}/core/touch_map.cpp
+)
+target_include_directories(touch_map_test PRIVATE ${CMAKE_SOURCE_DIR})
+add_test(NAME touch_map COMMAND touch_map_test)
+
 # Headless integration scenarios (tests/integration/run.sh).
 find_program(DBUS_RUN_SESSION dbus-run-session)
 option(BIOME_INTEGRATION_TESTS "Headless biome integration tests (needs dbus-run-session)" ON)

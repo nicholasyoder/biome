@@ -37,6 +37,8 @@ add_library(biome_desktop STATIC
     xdg_activation.cpp
     qt_buffer.h
     qt_buffer.cpp
+    touch_identify.h
+    touch_identify.cpp
 )
 
 add_dependencies(biome_desktop biome_wlroots_cxx_shim
