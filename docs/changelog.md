@@ -2,6 +2,7 @@ Changelog
 ============
 
 * Unreleased
+  - Touchscreen support: apps that handle touch get it natively (multi-touch, drag-and-drop, dragging a client-drawn title bar), and taps elsewhere act as left clicks, so title bars, window buttons and the window menu work by touch. Each touchscreen is matched to its monitor automatically, rotation included; when that's unclear, Biome asks you to tap a target on the touchscreen once and remembers the answer
   - Window frames render as four edge strips instead of one window-sized buffer: a button hover or title change redraws only the title bar, and a maximized 4K window's frame no longer re-renders and uploads ~33 MB per change. Frame pixels go to the renderer without a copy, and the Alt-Tab/snap highlight is reused while its size is unchanged
   - ext-workspace-v1 now uses wlroots' implementation and sends each workspace's `id` (its `org.biome.Workspaces` number) and coordinates; outputs join the workspace group
   - Internal: compositor state split into per-subsystem structs, each removing its own listeners at shutdown; headless integration tests (`ctest`) cover exit and SIGTERM teardown, window remap, locking with outputs off, lock focus across a monitor unplug, and ext-workspace; decoration sizes are cached per theme instead of restyling the frame on every read

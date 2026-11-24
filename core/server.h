@@ -187,6 +187,37 @@ struct BiomeInput {
     wl_list keyboards = {};
 };
 
+// core/touch.cpp. A point lands natively on a surface that binds wl_touch;
+// otherwise (decorations, compositor UI, touch-less clients) one point at a
+// time drives the pointer instead.
+struct BiomeTouchPoint {
+    int32_t id = 0;
+    double lx = 0, ly = 0; // last layout position
+    double origin_x = 0, origin_y = 0; // layout origin of its down surface
+};
+
+struct BiomeTouch {
+    BiomeServer *server = nullptr;
+    wl_listener down = {};
+    wl_listener up = {};
+    wl_listener motion = {};
+    wl_listener cancel = {};
+    wl_listener frame = {};
+    wl_listener layout_change = {};
+    wl_list devices = {}; // BiomeTouchDevice
+    std::vector<BiomeTouchPoint> points; // native points only
+    int32_t pointer_id = -1; // point emulating the pointer
+    int32_t grab_id = -1; // native point driving a client-requested move/resize
+    bool pointer_frame = false; // emulated pointer events await a frame
+    // Tap-to-identify (desktop/touch_identify.h): the device being asked about,
+    // the outputs offered (slot order) and the overlay's per-output trees.
+    struct BiomeTouchDevice *identifying = nullptr;
+    std::vector<wlr_output *> identify_outputs;
+    std::vector<wlr_scene_tree *> identify_trees;
+    wl_event_source *identify_timer = nullptr; // lets the layout settle first
+    std::vector<int32_t> swallowed; // points consumed by the prompt
+};
+
 // core/output.cpp: output hotplug and layout changes.
 struct BiomeOutputEvents {
     BiomeServer *server = nullptr;
@@ -275,6 +306,7 @@ BIOME_LISTENER_STRUCT(BiomeForeignToplevels);
 BIOME_LISTENER_STRUCT(BiomePointer);
 BIOME_LISTENER_STRUCT(BiomeConstraints);
 BIOME_LISTENER_STRUCT(BiomeInput);
+BIOME_LISTENER_STRUCT(BiomeTouch);
 BIOME_LISTENER_STRUCT(BiomeOutputEvents);
 BIOME_LISTENER_STRUCT(BiomeOutputManagement);
 BIOME_LISTENER_STRUCT(BiomeOutputPower);
@@ -343,6 +375,7 @@ struct BiomeServer {
     BiomeDecorationState decor;
     BiomeConstraints constraints;
     BiomeInput input;
+    BiomeTouch touch;
     BiomeOutputEvents output_events;
     BiomeOutputManagement output_mgmt;
     BiomeOutputPower output_power;

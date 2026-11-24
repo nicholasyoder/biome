@@ -45,16 +45,13 @@ session logs or design discussion.
 
 ## 0.4.0 — server structure & touch input (Phase 7)
 
-Pairs with Forest 0.12.0. Currently the single biggest user-visible gap versus
-sway/Hyprland (`core/input.cpp`/`cursor.cpp` have zero touch/tablet handling).
+Pairs with Forest 0.12.0.
 
 - **Theme/cursor/icon watchers** ([detail](review-2026-11.md#watchers)). One watch helper;
   qt6ct.conf reload; app-icon caches.
 - **Theme-format version coupling** ([detail](review-2026-11.md#theme-coupling)). Versioned
   `ForestTheme` dependency; regenerate `builtin.qss` after Forest 0.12.0's
   CSS consolidation.
-- **Touch** — no `wlr_touch` handling at all; touchscreens/tablet-PC hardware
-  unusable.
 - **`tearing-control-v1`** — lets fullscreen games/mpv request immediate
   presentation for lower latency. Supported by sway, Hyprland, gamescope.
 - **`wp_presentation`** (presentation-time) — frame-timing feedback for

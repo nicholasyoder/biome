@@ -403,6 +403,31 @@ Relaunching an app from a terminal (no `XDG_ACTIVATION_TOKEN`) only marks it
 urgent — intended, but only if the client sends a token wlroots accepted
 (e.g. seat-less); see the roadmap's rejected-token item.
 
+## Touch (`core/touch.cpp`, `core/touch_map.cpp`)
+
+A touch-down goes natively (`wl_touch`) to the surface under it if that surface's
+client binds touch and no compositor UI or grab owns input; otherwise one point at
+a time emulates a left-button pointer (sway's model), which covers decorations,
+the window menu and touch-less clients. A client move/resize request follows a
+touch point down on that window in preference to the pointer.
+
+No input config, so each touchscreen's output is worked out (`touch_pick_output`):
+libinput's output name, else an earlier tap-to-identify answer, else the output
+with matching physical size (EDID mm), else the sole built-in panel, else the
+sole output. It is redone on every layout change, since wlroots keeps a stale
+mapping when its output goes. The output's transform is applied to the
+coordinates by hand.
+
+When that leaves it unclear among several outputs (cheap USB panels often report
+no size, and generic EDIDs carry no name), Biome asks: every output shows a scrim
+and a target at its own slot, and since touch coordinates are panel-relative, the
+tap's position says which output's target was hit. All of that device's touches go
+to the prompt until then; Esc or a pointer press skips it for the session (whole
+layout). Answers go to `$XDG_STATE_HOME/biome/touch.conf` (state, not config),
+keyed by device name and matched by EDID serial, or connector + make/model
+without one. Chosen over a Forest settings control to keep touch mapping out of
+the Forest/Biome interface.
+
 ## Pointer constraints (`core/pointer_constraints.cpp`)
 
 A lock/confine is active only while its surface's root has keyboard focus
